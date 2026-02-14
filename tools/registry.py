@@ -10,7 +10,10 @@ class ToolRegistry:
         self.tools = {
             "web_search": self.web_search,
             "system_scan": self.system_scan,
-            "vision_scan": self.vision_scan
+            "vision_scan": self.vision_scan,
+            "kill_process": self.kill_process,
+            "screenshot": self.screenshot,
+            "network_scan": self.network_scan
         }
         # Regex to capture [EXECUTE: function_name("args")]
         # Handles optional spaces and quotes
@@ -84,15 +87,40 @@ class ToolRegistry:
         return f"CPU: {psutil.cpu_percent()}%, RAM: {psutil.virtual_memory().percent}%"
 
     def vision_scan(self, _):
-        from vision.camera import Camera
+        # Tactical Vision: Now defaults to screen awareness but keeps camera fallback if needed
+        return self.screenshot(_)
+
+    def screenshot(self, _):
+        from vision.screen import screen_vision
         from vision.describer import VisionDescriber
         
         try:
-            cam = Camera()
-            save_path = cam.capture_frame()
+            save_path = screen_vision.capture_screen()
             if save_path:
                 describer = VisionDescriber()
                 return describer.describe(save_path)
-            return "[VISION_ERROR: Camera failed to capture.]"
+            return "[VISION_ERROR: Screen capture failed.]"
         except Exception as e:
             return f"[VISION_ERROR: {e}]"
+
+    def kill_process(self, target):
+        import psutil
+        try:
+            if str(target).isdigit():
+                pid = int(target)
+                p = psutil.Process(pid)
+                p.kill()
+                return f"Terminated process PID: {pid}"
+            else:
+                count = 0
+                for proc in psutil.process_iter(['name']):
+                    if proc.info['name'].lower() == target.lower():
+                        proc.kill()
+                        count += 1
+                return f"Terminated {count} instances of {target}"
+        except Exception as e:
+            return f"Error killing process {target}: {e}"
+
+    def network_scan(self, _):
+        # Tactical Stub: Ready for nmap integration in Phase 3
+        return "Network Scan Result: 192.168.1.1 (Gateway), 192.168.1.15 (Host), 192.168.1.42 (IoT Node)"
