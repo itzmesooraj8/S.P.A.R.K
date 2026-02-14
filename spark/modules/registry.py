@@ -1,7 +1,11 @@
 from spark.modules.iot_bridge import iot_bridge
 from spark.modules.services import service_assistant
+from spark.modules.action import ActionModule
 from core.vault import spark_vault
 import json
+
+# Singleton for system actions
+action_handler = ActionModule()
 
 class ToolRegistry:
     def __init__(self):
@@ -31,6 +35,19 @@ class ToolRegistry:
         elif tool_name == "send_email":
             return service_assistant.send_email(kwargs.get("draft_id"))
         
+        # System Reflexes (Iron Man Upgrades)
+        elif tool_name == "kill_process":
+            return action_handler.act("kill_process", kwargs)
+            
+        elif tool_name == "screenshot":
+            return action_handler.act("screenshot")
+            
+        elif tool_name == "network_scan":
+            return action_handler.act("network_scan")
+            
+        elif tool_name == "adb_command":
+            return action_handler.act("adb_command", kwargs)
+
         # Phase 5: Vault (Internal use or management)
         elif tool_name == "store_secret":
             spark_vault.set_secret(kwargs.get("name"), kwargs.get("value"))
