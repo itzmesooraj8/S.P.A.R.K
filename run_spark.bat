@@ -1,0 +1,6 @@
+@echo off
+echo Starting S.P.A.R.K. System...
+echo --------------------------------
+echo [1/3] Loading Configuration...
+python -m core.main
+pause

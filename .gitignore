@@ -1,0 +1,17 @@
+.env
+__pycache__/
+*.pyc
+master.key
+spark_vault.enc
+spark_memory_db/
+spark.log
+*.mp3
+test_vault.enc
+test_master.key
+verify_phase4.py
+node_modules/
+dist/
+.agent/
+.gemini/
+.idea/
+.vscode/
