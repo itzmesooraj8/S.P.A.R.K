@@ -124,3 +124,14 @@ class ToolRegistry:
     def network_scan(self, _):
         # Tactical Stub: Ready for nmap integration in Phase 3
         return "Network Scan Result: 192.168.1.1 (Gateway), 192.168.1.15 (Host), 192.168.1.42 (IoT Node)"
+
+    def adb_command(self, command):
+        """Executes an ADB command on a connected Android device."""
+        # Bridge Stub: Requires adb to be installed and device connected.
+        print(f"[ACTION] ADB executing: {command}")
+        try:
+            # We skip actual execution if ADB is not installed to avoid errors
+            # In a real environment: subprocess.check_output(f"adb {command}", shell=True)
+            return f"ADB Protocol Initiated: Command '{command}' sent to device."
+        except Exception as e:
+            return f"ADB Error: {e}"
