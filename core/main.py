@@ -133,25 +133,31 @@ async def orchestrate():
     from spark.modules.scanner import scanner
     
     # --- PHASE 4: INITIAL KNOWLEDGE SCAN ---
-    # Now integrated properly via tools?
-    # We run it once at startup.
     logger.info("system_startup_scan")
-    request_scanner_scan = getattr(settings.memory, 'scan_on_startup', True) # hypothetical setting
+    request_scanner_scan = getattr(settings.memory, 'scan_on_startup', True) 
     if request_scanner_scan:
-         scanner.scan()
+        try:
+             scanner.scan()
+        except Exception as e:
+             logger.error("startup_scan_failed", error=str(e))
     
+    # Global Loop with robust error handling
     while True:
-        set_spark_visual_state("idle")
-        await wait_for_wake_word()
-        # Once wake word detected, enter conversation loop
-        # We might want to run the conversation loop for *one* interaction or a session?
-        # The previous code ran `streaming_conversation_loop` which had a `while True`.
-        # That implies once awoken, it NEVER sleeps again?
-        # Let's assume we want a session. For now, we call the loop.
-        # But `streaming_conversation_loop` is infinite. 
-        # So `wait_for_wake_word` is only called ONCE at boot?
-        # That seems to be the logic of the original file. 
-        await streaming_conversation_loop()
+        try:
+            set_spark_visual_state("idle")
+            await wait_for_wake_word()
+            
+            # Protected Conversation Loop
+            # If the loop crashes, we log and restart listening
+            await streaming_conversation_loop()
+        
+        except asyncio.CancelledError:
+            logger.info("orchestrator_cancelled")
+            break
+        except Exception as e:
+            logger.critical("global_orchestrator_crash", error=str(e), traceback=traceback.format_exc())
+            logger.info("system_restarting_services")
+            await asyncio.sleep(5) # Valid backoff
 
 def main():
     import threading
