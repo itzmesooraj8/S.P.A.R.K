@@ -9,6 +9,7 @@ class AudioSettings(BaseSettings):
     voice: str = "en-US-ChristopherNeural"
     rate: str = "+0%"
     volume: str = "+0%"
+    engine: str = "edge"
 
 class VisionSettings(BaseSettings):
     enabled: bool = True
@@ -26,6 +27,7 @@ class Secrets(BaseSettings):
     google_gemini_api_key: Optional[SecretStr] = Field(default=None, alias="GOOGLE_GEMINI_API_KEY")
     deepgram_api_key: Optional[SecretStr] = Field(default=None, alias="DEEPGRAM_API_KEY")
     openai_api_key: Optional[SecretStr] = Field(default=None, alias="OPENAI_API_KEY")
+    elevenlabs_api_key: Optional[SecretStr] = Field(default=None, alias="ELEVENLABS_API_KEY")
 
 class SparkConfig(BaseSettings):
     app_name: str = "S.P.A.R.K."

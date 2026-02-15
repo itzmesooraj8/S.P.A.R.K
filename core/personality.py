@@ -10,7 +10,8 @@ from spark.modules.memory import memory_engine
 logger = structlog.get_logger()
 
 # --- CONFIGURATION via settings ---
-MODEL_NAME = "models/gemini-pro"
+# --- CONFIGURATION via settings ---
+MODEL_NAME = "gemini-1.5-flash"
 FALLBACK_MODEL = "llama3"
 
 SPARK_PERSONALITY = """You are S.P.A.R.K., a Strategic Projection & Analytical Resource Kernel.

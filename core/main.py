@@ -4,6 +4,11 @@
 import asyncio
 import structlog
 import traceback
+from core.initialization import ensure_ffmpeg
+
+# FIX: Ensure FFmpeg is loaded before any audio modules
+ensure_ffmpeg()
+
 from core.config import settings
 from core.logging_config import configure_logging
 from spark.visuals.spark_visual import set_spark_visual_state, run_visual
