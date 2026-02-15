@@ -8,12 +8,16 @@ import json
 import asyncio
 import websockets
 import sounddevice as sd
-from dotenv import load_dotenv
+from core.config import settings
 
 class DeepgramStreamer:
     def __init__(self):
-        load_dotenv()
-        self.api_key = os.getenv("DEEPGRAM_API_KEY")
+        # Using centralized config
+        if settings.secrets.deepgram_api_key:
+            self.api_key = settings.secrets.deepgram_api_key.get_secret_value()
+        else:
+            self.api_key = None
+            print("❌ DEEPGRAM_API_KEY missing in secrets.yaml or env!")
         self.audio_queue = asyncio.Queue()
         self.loop = None  # Will be set to the main event loop
         # --- THE MAIN FIX IS HERE ---
@@ -45,7 +49,7 @@ class DeepgramStreamer:
         last_final_time = 0
         last_final_transcript = None
         try:
-            async with websockets.connect(self.deepgram_url, extra_headers=self.headers) as ws:
+            async with websockets.connect(self.deepgram_url, additional_headers=self.headers) as ws:
                 async def sender(ws):
                     print("✅ Sender started. Listening for your voice...")
                     try:
