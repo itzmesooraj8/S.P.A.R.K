@@ -173,13 +173,27 @@ def main():
     # OR we use asyncio for everything if visual supports it.
     # The original main.py ran `conversation_thread`. 
     
-    thread = threading.Thread(target=lambda: asyncio.run(orchestrate()), daemon=True)
+    # Start the orchestrator thread
+    import threading
+    shutdown_event = threading.Event()
+
+    def run_orchestrator():
+        try:
+            asyncio.run(orchestrate())
+        except Exception as e:
+            logger.critical("orchestrator_thread_crash", error=str(e))
+
+    thread = threading.Thread(target=run_orchestrator, daemon=True)
     thread.start()
     
     try:
         run_visual()
     except KeyboardInterrupt:
-        logger.info("system_shutdown")
+        logger.info("system_shutdown_requested")
+    finally:
+        print("[System] Shutting down...")
+        # Since the thread is daemon, it will die when main exits.
+        # But we can add cleanup logic here if needed.
 
 if __name__ == "__main__":
     main()

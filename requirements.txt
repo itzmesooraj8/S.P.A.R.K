@@ -30,6 +30,7 @@ selenium
 paho-mqtt
 pydub
 elevenlabs
-google-generativeai
+google-genai
+pygetwindow
 cryptography
 pypdf
