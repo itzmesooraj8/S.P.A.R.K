@@ -10,11 +10,13 @@
 
 - [x] **Context Awareness**: `pygetwindow` installed. S.P.A.R.K. can see active apps.
 - [x] **New Brain**: Upgraded to `google-genai` SDK with `gemini-flash-latest`.
+- [x] **Audio Loop**: Non-blocking playback implemented.
+- [x] **Deprecation**: Removed legacy `core.personality`.
 
 ## Ready to Launch
 1.  **Restart Terminal**: Close this window and open a new PowerShell.
 2.  **Run**: `python -m core.main`
-3.  **Interact**: Say "**Hey Jarvis**".
+3.  **Interact**: Say "**Hey Spark**".
 4.  **Test Context**: Open Notepad and ask "What am I doing?".
 
 The system is fully operational.

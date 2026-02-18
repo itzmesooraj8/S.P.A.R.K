@@ -17,12 +17,17 @@ from spark.visuals.spark_visual import set_spark_visual_state, run_visual
 configure_logging()
 logger = structlog.get_logger()
 
+import sounddevice as sd
+
 # --- SERVICES (Lazy Import / Injection) ---
 # In a full DI setup, these would be injected. For now, we import global instances.
-from core.personality import think_stream
-from spark.integrations.mouth import stream_speak, play_streaming_audio
+# FIX: Use the new Brain Manager (Hybrid Intelligence)
+from spark.modules.brain_manager import brain_manager
+from spark.integrations.mouth import stream_speak
 from spark.modules.memory import memory_engine
 from tools.registry import spark_tools
+# NEW: Orchestrator Integration (Phase 3)
+from spark.core.orchestrator import orchestrator, EventType
 
 async def listen_stream_async():
     """
@@ -47,8 +52,100 @@ async def listen_stream_async():
     await loop.run_in_executor(None, lambda: DeepgramStreamer().listen_stream(on_partial, on_final))
     return await future
 
+async def execute_tool(payload):
+    """
+    Helper to execute tools safely using the legacy tool runner for now.
+    """
+    tool_name = payload['tool']
+    args = payload['args']
+    
+    # Bridge to spark_tools._run_with_timeout or direct call
+    # In Phase 4, we rewrite tools to conform to V2 interface entirely.
+    if tool_name in ["search_web", "system_status", "read_file", "write_file", "delete_file", "terminal_command", "get_active_window"]:
+        # Bridge to spark_tools.tools execution
+        arg_val = args.get('raw', '')
+        # Strip quotes if present
+        arg_val = arg_val.strip('"').strip("'")
+        
+        logger.info("orchestrator_executing_tool", tool=tool_name, args=arg_val)
+        
+        # Use existing registry runner logic
+        try:
+            result = await asyncio.to_thread(spark_tools._run_with_timeout, tool_name, arg_val)
+            return f"Tool {tool_name} returned: {result}"
+        except Exception as e:
+            return f"Tool execution failed: {e}"
+        
+    return f"[SYSTEM_ERROR: Tool '{tool_name}' logic not bridged in main.py yet.]"
+
+async def handle_user_input(user_text):
+    """
+    Central Decision Router (Orchestrator Driven).
+    """
+    try:
+        set_spark_visual_state("thinking")
+        logger.info("orchestrator_thinking", input=user_text)
+
+        # 1. Orchestrator Decision
+        event = await orchestrator.process_user_input(user_text)
+        
+        set_spark_visual_state("speaking")
+        logger.info("orchestrator_decision", type=event.type.value)
+
+        # 2. Act on Event
+        if event.type == EventType.RESPONSE:
+            # Speak Response
+            async for pcm, sr in stream_speak(event.payload):
+                if len(pcm) > 0: await asyncio.to_thread(sd.play, pcm, sr, blocking=True)
+
+        elif event.type == EventType.CONFIRMATION_REQUIRED:
+            # Speak Confirmation Prompt
+            prompt = event.payload
+            async for pcm, sr in stream_speak(prompt):
+                if len(pcm) > 0: await asyncio.to_thread(sd.play, pcm, sr, blocking=True)
+            # Logic: We return to loop, next input will be processed by Orchestrator which remembers state
+
+        elif event.type == EventType.AUTH_REQUIRED:
+            # Speak Auth Prompt
+            prompt = event.payload
+            async for pcm, sr in stream_speak(prompt):
+                 if len(pcm) > 0: await asyncio.to_thread(sd.play, pcm, sr, blocking=True)
+            # Treated as confirmation for now
+
+        elif event.type == EventType.TOOL_EXECUTION:
+            # Speak "Executing..."
+            async for pcm, sr in stream_speak("Executing request..."):
+                 if len(pcm) > 0: await asyncio.to_thread(sd.play, pcm, sr, blocking=True)
+            
+            # Run Tool
+            result = await execute_tool(event.payload)
+            
+            # Speak Result
+            # In Phase 4, we might maximize this to a summary
+            summary = f"Done. {result[:150]}..." if len(result) > 150 else result
+            async for pcm, sr in stream_speak(summary):
+                 if len(pcm) > 0: await asyncio.to_thread(sd.play, pcm, sr, blocking=True)
+                 
+        elif event.type == EventType.ERROR:
+             # Speak Error
+             async for pcm, sr in stream_speak(event.payload):
+                 if len(pcm) > 0: await asyncio.to_thread(sd.play, pcm, sr, blocking=True)
+
+        # 3. Memory Update (Simplified for now)
+        # memory_engine.add_memory(f"User: {user_text}\nS.P.A.R.K: [Event: {event.type.value}]")
+        
+        set_spark_visual_state("idle")
+        
+    except Exception as e:
+        logger.error("orchestrator_handler_failed", error=str(e))
+        set_spark_visual_state("idle")
+
 async def streaming_conversation_loop():
     logger.info("orchestrator_loop_started")
+    
+    # Warmup Local Brain
+    asyncio.create_task(brain_manager.warmup())
+    
     try:
         while True:
             set_spark_visual_state("listening")
@@ -60,42 +157,12 @@ async def streaming_conversation_loop():
                 logger.debug("orchestrator_no_input")
                 continue
             
-            # 2. Think
-            set_spark_visual_state("thinking")
-            logger.info("orchestrator_state", state="thinking")
-            
-            # Check for tool triggers first (Fast Path) or just let Brain handle it?
-            # Current architecture: Brain streams text -> we speak it. 
-            # Tool usage is inside brain's logic or post-processing?
-            # "The user asked for 'Tool Chaining with Planning'". 
-            # For now, we stick to the existing Brain-Stream-Mouth pipeline.
-            
-            response_chunks = think_stream(user_text)
-            
-            # 3. Speak
-            set_spark_visual_state("speaking")
-            logger.info("orchestrator_state", state="speaking")
-            
-            full_response = ""
-            async for chunk in response_chunks:
-                full_response += chunk
-                print(chunk, end='', flush=True) # CLI output
-                
-                # Check for tool triggers in the chunk? 
-                # (Advanced: Parsing stream for [EXECUTE:...] tokens)
-                
-                async for pcm, sr in stream_speak(chunk):
-                    play_streaming_audio([(pcm, sr)])
-            
-            print("\n")
-            logger.info("orchestrator_finished_speaking")
-            
-            # 4. Memory Store
-            memory_engine.add_memory(f"User: {user_text}\nS.P.A.R.K: {full_response}")
-            logger.info("orchestrator_memory_updated")
-            
-            set_spark_visual_state("idle")
-            await asyncio.sleep(0.5)
+            # 2. Handle Input (Await for Voice Safety)
+            await handle_user_input(user_text)
+
+    except Exception as e:
+        logger.error("orchestrator_crash", error=str(e), traceback=traceback.format_exc())
+        await asyncio.sleep(2)
 
     except Exception as e:
         logger.error("orchestrator_crash", error=str(e), traceback=traceback.format_exc())
