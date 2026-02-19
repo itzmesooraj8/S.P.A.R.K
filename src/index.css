@@ -1,0 +1,342 @@
+@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  :root {
+    /* Base */
+    --background: 220 100% 2%;
+    --foreground: 190 100% 90%;
+
+    --card: 220 60% 5%;
+    --card-foreground: 190 100% 90%;
+
+    --popover: 220 60% 5%;
+    --popover-foreground: 190 100% 90%;
+
+    --primary: 186 100% 50%;
+    --primary-foreground: 220 100% 5%;
+
+    --secondary: 220 50% 10%;
+    --secondary-foreground: 190 100% 80%;
+
+    --muted: 220 40% 8%;
+    --muted-foreground: 200 30% 50%;
+
+    --accent: 210 100% 55%;
+    --accent-foreground: 220 100% 5%;
+
+    --destructive: 0 90% 55%;
+    --destructive-foreground: 0 0% 100%;
+
+    --border: 186 100% 20%;
+    --input: 220 50% 12%;
+    --ring: 186 100% 50%;
+
+    --radius: 0.25rem;
+
+    /* HUD Specific Tokens */
+    --hud-cyan: 186 100% 50%;
+    --hud-cyan-dim: 186 100% 30%;
+    --hud-cyan-glow: 186 100% 70%;
+    --hud-blue: 210 100% 55%;
+    --hud-blue-dim: 210 100% 30%;
+    --hud-red: 0 90% 55%;
+    --hud-red-dim: 0 90% 30%;
+    --hud-amber: 45 100% 50%;
+    --hud-amber-dim: 45 100% 30%;
+    --hud-green: 145 100% 45%;
+    --hud-green-dim: 145 100% 25%;
+    --hud-purple: 270 100% 65%;
+    --hud-surface: 220 60% 5%;
+    --hud-surface-glow: 220 60% 8%;
+    --hud-panel: 220 70% 4%;
+    --hud-glass: 220 50% 8%;
+
+    /* Sidebar */
+    --sidebar-background: 220 70% 3%;
+    --sidebar-foreground: 190 100% 80%;
+    --sidebar-primary: 186 100% 50%;
+    --sidebar-primary-foreground: 220 100% 5%;
+    --sidebar-accent: 220 50% 8%;
+    --sidebar-accent-foreground: 190 100% 80%;
+    --sidebar-border: 186 100% 15%;
+    --sidebar-ring: 186 100% 50%;
+  }
+
+  /* Red Alert Theme */
+  .theme-red {
+    --primary: 0 90% 55%;
+    --hud-cyan: 0 90% 55%;
+    --hud-cyan-dim: 0 90% 30%;
+    --hud-cyan-glow: 0 90% 70%;
+    --border: 0 90% 25%;
+    --ring: 0 90% 55%;
+    --hud-blue: 20 100% 55%;
+  }
+
+  /* White Ghost Theme */
+  .theme-white {
+    --primary: 0 0% 90%;
+    --hud-cyan: 0 0% 90%;
+    --hud-cyan-dim: 0 0% 60%;
+    --hud-cyan-glow: 0 0% 100%;
+    --border: 0 0% 40%;
+    --ring: 0 0% 90%;
+    --hud-blue: 0 0% 75%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+    box-sizing: border-box;
+  }
+
+  html, body {
+    @apply bg-background text-foreground;
+    overflow: hidden;
+    height: 100%;
+    width: 100%;
+  }
+
+  #root {
+    height: 100%;
+    width: 100%;
+    overflow: hidden;
+  }
+}
+
+@layer components {
+  .hud-panel {
+    background: rgba(0, 10, 30, 0.75);
+    backdrop-filter: blur(12px);
+    border: 1px solid hsl(var(--hud-cyan) / 0.3);
+    box-shadow:
+      0 0 15px hsl(var(--hud-cyan) / 0.1),
+      inset 0 0 15px hsl(var(--hud-cyan) / 0.03);
+  }
+
+  .hud-panel-glow {
+    background: rgba(0, 10, 30, 0.8);
+    backdrop-filter: blur(16px);
+    border: 1px solid hsl(var(--hud-cyan) / 0.5);
+    box-shadow:
+      0 0 25px hsl(var(--hud-cyan) / 0.2),
+      0 0 50px hsl(var(--hud-cyan) / 0.05),
+      inset 0 0 20px hsl(var(--hud-cyan) / 0.05);
+  }
+
+  .neon-text {
+    color: hsl(var(--hud-cyan));
+    text-shadow:
+      0 0 5px hsl(var(--hud-cyan) / 0.8),
+      0 0 15px hsl(var(--hud-cyan) / 0.5),
+      0 0 30px hsl(var(--hud-cyan) / 0.3);
+  }
+
+  .neon-text-blue {
+    color: hsl(var(--hud-blue));
+    text-shadow:
+      0 0 5px hsl(var(--hud-blue) / 0.8),
+      0 0 15px hsl(var(--hud-blue) / 0.5);
+  }
+
+  .neon-text-red {
+    color: hsl(var(--hud-red));
+    text-shadow:
+      0 0 5px hsl(var(--hud-red) / 0.8),
+      0 0 15px hsl(var(--hud-red) / 0.5);
+  }
+
+  .neon-text-amber {
+    color: hsl(var(--hud-amber));
+    text-shadow:
+      0 0 5px hsl(var(--hud-amber) / 0.8),
+      0 0 15px hsl(var(--hud-amber) / 0.5);
+  }
+
+  .neon-text-green {
+    color: hsl(var(--hud-green));
+    text-shadow:
+      0 0 5px hsl(var(--hud-green) / 0.8),
+      0 0 15px hsl(var(--hud-green) / 0.5);
+  }
+
+  .neon-border {
+    border-color: hsl(var(--hud-cyan) / 0.6);
+    box-shadow:
+      0 0 8px hsl(var(--hud-cyan) / 0.3),
+      inset 0 0 8px hsl(var(--hud-cyan) / 0.1);
+  }
+
+  .hud-btn {
+    @apply relative flex flex-col items-center gap-1 p-2 rounded transition-all duration-200;
+    background: rgba(0, 245, 255, 0.05);
+    border: 1px solid hsl(var(--hud-cyan) / 0.3);
+    color: hsl(var(--hud-cyan));
+  }
+
+  .hud-btn:hover {
+    background: rgba(0, 245, 255, 0.15);
+    border-color: hsl(var(--hud-cyan) / 0.8);
+    box-shadow:
+      0 0 12px hsl(var(--hud-cyan) / 0.4),
+      inset 0 0 8px hsl(var(--hud-cyan) / 0.1);
+    text-shadow: 0 0 8px hsl(var(--hud-cyan) / 0.8);
+  }
+
+  .font-orbitron {
+    font-family: 'Orbitron', monospace;
+  }
+
+  .font-rajdhani {
+    font-family: 'Rajdhani', sans-serif;
+  }
+
+  .font-mono-tech {
+    font-family: 'Share Tech Mono', monospace;
+  }
+}
+
+@layer utilities {
+  .scrollbar-hud {
+    scrollbar-width: thin;
+    scrollbar-color: hsl(var(--hud-cyan) / 0.4) transparent;
+  }
+
+  .scrollbar-hud::-webkit-scrollbar {
+    width: 3px;
+  }
+
+  .scrollbar-hud::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  .scrollbar-hud::-webkit-scrollbar-thumb {
+    background: hsl(var(--hud-cyan) / 0.4);
+    border-radius: 2px;
+  }
+}
+
+/* HUD Keyframe Animations */
+@keyframes rotate-cw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes rotate-ccw {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(-360deg); }
+}
+
+@keyframes radar-sweep {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+@keyframes pulse-glow {
+  0%, 100% { opacity: 0.6; box-shadow: 0 0 10px hsl(var(--hud-cyan) / 0.4); }
+  50% { opacity: 1; box-shadow: 0 0 25px hsl(var(--hud-cyan) / 0.8), 0 0 50px hsl(var(--hud-cyan) / 0.4); }
+}
+
+@keyframes pulse-ring {
+  0% { transform: scale(0.8); opacity: 1; }
+  100% { transform: scale(2); opacity: 0; }
+}
+
+@keyframes scan-line {
+  0% { top: 0%; }
+  100% { top: 100%; }
+}
+
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes data-flow {
+  0% { transform: translateY(-100%); }
+  100% { transform: translateY(100vh); }
+}
+
+@keyframes waveform {
+  0%, 100% { transform: scaleY(0.3); }
+  50% { transform: scaleY(1); }
+}
+
+@keyframes digit-flip {
+  0% { transform: rotateX(0deg); }
+  50% { transform: rotateX(-90deg); }
+  100% { transform: rotateX(0deg); }
+}
+
+@keyframes boot-slide-left {
+  from { transform: translateX(-100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes boot-slide-right {
+  from { transform: translateX(100%); opacity: 0; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+@keyframes boot-slide-down {
+  from { transform: translateY(-100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes boot-slide-up {
+  from { transform: translateY(100%); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+@keyframes type-cursor {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+
+@keyframes threat-scan {
+  0% { transform: translateY(-100%) scaleX(1.2); opacity: 0.8; }
+  100% { transform: translateY(100%) scaleX(1); opacity: 0.3; }
+}
+
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  92% { opacity: 1; }
+  93% { opacity: 0.4; }
+  94% { opacity: 1; }
+  96% { opacity: 0.6; }
+  97% { opacity: 1; }
+}
+
+@keyframes orbit {
+  from { transform: rotate(0deg) translateX(var(--orbit-radius)) rotate(0deg); }
+  to { transform: rotate(360deg) translateX(var(--orbit-radius)) rotate(-360deg); }
+}
+
+@keyframes satellite-pulse {
+  0%, 100% { r: 3; opacity: 1; }
+  50% { r: 6; opacity: 0.5; }
+}
+
+.animate-rotate-cw-slow { animation: rotate-cw 20s linear infinite; }
+.animate-rotate-cw-med { animation: rotate-cw 8s linear infinite; }
+.animate-rotate-cw-fast { animation: rotate-cw 3s linear infinite; }
+.animate-rotate-ccw-slow { animation: rotate-ccw 15s linear infinite; }
+.animate-rotate-ccw-med { animation: rotate-ccw 6s linear infinite; }
+.animate-rotate-ccw-fast { animation: rotate-ccw 2s linear infinite; }
+.animate-radar { animation: radar-sweep 4s linear infinite; }
+.animate-pulse-glow { animation: pulse-glow 2s ease-in-out infinite; }
+.animate-pulse-ring { animation: pulse-ring 2s ease-out infinite; }
+.animate-scan-line { animation: scan-line 2s linear infinite; }
+.animate-blink { animation: blink 1s step-end infinite; }
+.animate-waveform { animation: waveform 0.5s ease-in-out infinite; }
+.animate-flicker { animation: flicker 4s linear infinite; }
+.animate-type-cursor { animation: type-cursor 1s step-end infinite; }
+.animate-boot-left { animation: boot-slide-left 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-boot-right { animation: boot-slide-right 0.8s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-boot-down { animation: boot-slide-down 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }
+.animate-boot-up { animation: boot-slide-up 0.6s cubic-bezier(0.16, 1, 0.3, 1) forwards; }

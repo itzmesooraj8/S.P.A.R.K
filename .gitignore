@@ -18,3 +18,11 @@ dist/
 .vscode/
 screenshots/
 config/secrets.yaml
+# Frontend
+*.local
+dist-ssr
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
