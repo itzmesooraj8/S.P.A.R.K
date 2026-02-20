@@ -9,39 +9,23 @@ export interface CommandEntry {
   timestamp: Date;
 }
 
-const AI_RESPONSES: Record<string, string> = {
-  default: 'Processing your request. Analyzing neural patterns and cross-referencing quantum databases...',
-  weather: 'Current atmospheric conditions: 22°C, partly cloudy. Wind velocity: 12 km/h NE. Probability of precipitation: 18%. All systems nominal.',
-  status: 'System status: All modules operational. CPU at optimal load. Threat level: LOW. Firewall integrity: 100%. You are secure.',
-  time: `Current chronological reference: ${new Date().toLocaleTimeString()}. Synchronized with atomic clock UTC+0.`,
-  hello: 'SPARK AI online. Neural networks fully initialized. How may I assist you today, Commander?',
-  help: 'Available commands: STATUS, WEATHER, TIME, SCAN, LOCK, SHUTDOWN. Or speak naturally — I understand context.',
-  scan: 'Initiating full system scan. Scanning 4,096 sectors... No threats detected. Firewall: ACTIVE. Encryption: AES-256. All clear.',
-  lock: 'Engaging security lockdown protocol. Biometric verification required. Stand by...',
-  shutdown: 'Shutdown sequence initiated. Saving system state... Archiving session data... Goodbye, Commander.',
-};
-
-function getAiResponse(input: string): string {
-  const lower = input.toLowerCase();
-  for (const key of Object.keys(AI_RESPONSES)) {
-    if (lower.includes(key)) return AI_RESPONSES[key];
-  }
-  return AI_RESPONSES.default;
-}
-
 export function useVoiceEngine() {
   const [status, setStatus] = useState<AiStatus>('idle');
   const [isListening, setIsListening] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [commandHistory, setCommandHistory] = useState<CommandEntry[]>([
-    { id: '0', type: 'ai', text: 'SPARK v4.1 initialized. All systems online. Awaiting your command.', timestamp: new Date() },
+    { id: '0', type: 'ai', text: 'SPARK v4.1 Sovereign Core initialized. Awaiting input.', timestamp: new Date() },
   ]);
   const [amplitude, setAmplitude] = useState<number[]>(new Array(32).fill(0));
+
   const recognitionRef = useRef<any>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
   const animFrameRef = useRef<number>(0);
   const streamRef = useRef<MediaStream | null>(null);
+
+  // Real WebSocket Reference
+  const wsRef = useRef<WebSocket | null>(null);
 
   const addEntry = useCallback((type: 'user' | 'ai', text: string) => {
     setCommandHistory(prev => [...prev.slice(-49), {
@@ -51,31 +35,90 @@ export function useVoiceEngine() {
     }]);
   }, []);
 
-  const typeResponse = useCallback((text: string) => {
-    setStatus('responding');
-    setAiResponse('');
-    let i = 0;
-    const interval = setInterval(() => {
-      if (i < text.length) {
-        setAiResponse(prev => prev + text[i]);
-        i++;
-      } else {
-        clearInterval(interval);
-        setStatus('idle');
-        addEntry('ai', text);
-      }
-    }, 25);
-  }, [addEntry]);
+  // Set up WebSocket to /ws/ai on mount
+  useEffect(() => {
+    let reconnectTimeout: NodeJS.Timeout;
+
+    const connectWS = () => {
+      const ws = new WebSocket('ws://localhost:8000/ws/ai');
+      wsRef.current = ws;
+
+      ws.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+
+          if (data.type === 'TOKEN') {
+            // Progressively build the live streaming response
+            setStatus('responding');
+            setAiResponse((prev) => prev + data.content);
+          } else if (data.type === 'DONE') {
+            // Signal streaming completion
+            setStatus('idle');
+
+            // Atomically flush the streaming buffer into history to avoid race condition
+            setAiResponse((prev) => {
+              const finalMessage = prev;
+
+              if (finalMessage.trim() !== '') {
+                setCommandHistory((history) => [
+                  ...history.slice(-49),
+                  {
+                    id: Date.now().toString() + Math.random().toString(36).substring(2, 7),
+                    type: 'ai',
+                    text: finalMessage,
+                    timestamp: new Date(),
+                  },
+                ]);
+              }
+
+              return ''; // Clear the streaming buffer
+            });
+          }
+        } catch (err) {
+          console.error('[useVoiceEngine] Error parsing WS message:', err);
+        }
+      };
+
+      ws.onclose = () => {
+        console.warn("[useVoiceEngine] AI socket closed. Reconnecting...");
+        reconnectTimeout = setTimeout(connectWS, 3000);
+      };
+
+      ws.onerror = (e) => {
+        console.error("[useVoiceEngine] WS Error:", e);
+        ws.close();
+      };
+    };
+
+    connectWS();
+
+    return () => {
+      clearTimeout(reconnectTimeout);
+      if (wsRef.current) wsRef.current.close();
+    };
+  }, []);
 
   const processInput = useCallback((input: string) => {
     if (!input.trim()) return;
+
+    // 1. Add user message
     addEntry('user', input);
     setStatus('thinking');
-    setTimeout(() => {
-      const response = getAiResponse(input);
-      typeResponse(response);
-    }, 800 + Math.random() * 700);
-  }, [addEntry, typeResponse]);
+
+    // 2. Clear current AI buffer
+    setAiResponse('');
+
+    // 3. Send to real backend over WebSocket
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(input);
+    } else {
+      console.warn("WebSocket not connected. Cannot send prompt.");
+      setStatus('idle');
+      addEntry('ai', '[ERROR] Sovereign Core disconnected.');
+    }
+  }, [addEntry]);
+
+  // ---------- Microphone / Audio Architecture ----------
 
   const stopAmplitudeTracking = useCallback(() => {
     cancelAnimationFrame(animFrameRef.current);
@@ -105,7 +148,6 @@ export function useVoiceEngine() {
       };
       tick();
     } catch {
-      // Simulate amplitude if mic not available
       const tick = () => {
         setAmplitude(new Array(32).fill(0).map(() => Math.random() * 0.6));
         animFrameRef.current = requestAnimationFrame(tick);
@@ -125,7 +167,7 @@ export function useVoiceEngine() {
 
     const SpeechRecognitionAPI = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
     if (!SpeechRecognitionAPI) {
-      addEntry('ai', 'Speech recognition not supported in this browser. Please use text input.');
+      addEntry('ai', '[ERROR] Speech recognition not supported by browser viewport.');
       return;
     }
 
@@ -146,7 +188,7 @@ export function useVoiceEngine() {
       setTranscript(text);
       if (result.isFinal) {
         setTranscript('');
-        processInput(text);
+        processInput(text); // Pass directly to backend via processInput
       }
     };
 
@@ -164,6 +206,19 @@ export function useVoiceEngine() {
     await startAmplitudeTracking();
   }, [isListening, processInput, startAmplitudeTracking, stopAmplitudeTracking, addEntry]);
 
+  const cancelGeneration = useCallback(() => {
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'CANCEL' }));
+
+      // Optionally stop mic if we were listening, or force status reset
+      setStatus('idle');
+      setAiResponse((prev) => {
+        // Just clear incomplete data without putting it into memory
+        return '';
+      });
+    }
+  }, []);
+
   useEffect(() => {
     return () => {
       stopAmplitudeTracking();
@@ -174,6 +229,6 @@ export function useVoiceEngine() {
   return {
     status, isListening, transcript,
     aiResponse, commandHistory, amplitude,
-    toggleMic, processInput,
+    toggleMic, processInput, cancelGeneration
   };
 }

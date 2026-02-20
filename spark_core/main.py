@@ -1,0 +1,122 @@
+import asyncio
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from pydantic import BaseModel
+import uvicorn
+import os
+
+from ws.manager import ws_manager
+from orchestrator.brain import AIOrchestrator
+from system.monitor import SystemMonitor
+
+app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
+
+# CORS for local dev HUD
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
+# Initialize Core Services
+orchestrator = AIOrchestrator()
+sys_monitor = SystemMonitor()
+
+@app.on_event("startup")
+async def startup_event():
+    print("🛸 [SPARK] Core Node Initializing...")
+    # Start background intelligence loop
+    asyncio.create_task(sys_monitor.start_monitoring(ws_manager))
+    print("✅ [SPARK] Background monitor started.")
+
+# -----------------
+# WEBSOCKET NAMESPACES
+# -----------------
+@app.websocket("/ws/ai")
+async def websocket_ai(websocket: WebSocket):
+    await ws_manager.connect(websocket, "ai")
+    try:
+        while True:
+            raw_data = await websocket.receive_text()
+            
+            import json
+            try:
+                msg = json.loads(raw_data)
+                if msg.get("type") == "CANCEL":
+                    orchestrator.cancel_current_task()
+                    continue
+            except json.JSONDecodeError:
+                # If it's pure text, treat as user message
+                pass
+            
+            # Normal stream execution
+            async def _run_stream():
+                async for token in orchestrator.process_stream(raw_data):
+                    await websocket.send_json({
+                        "type": "TOKEN",
+                        "content": token
+                    })
+            
+            # Concurrency lock: Auto-kill previous stream if new user input overrides
+            if orchestrator.current_task and not orchestrator.current_task.done():
+                orchestrator.cancel_current_task()
+                
+            task = asyncio.create_task(_run_stream())
+            orchestrator.current_task = task
+            
+            try:
+                await task
+            except asyncio.CancelledError:
+                pass
+            
+            # Finalize Stream
+            await websocket.send_json({
+                "type": "DONE"
+            })
+            
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, "ai")
+
+@app.websocket("/ws/system")
+async def websocket_system(websocket: WebSocket):
+    await ws_manager.connect(websocket, "system")
+    try:
+        while True:
+            await websocket.receive_text()
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, "system")
+
+# -----------------
+# API ENDPOINTS
+# -----------------
+class AuthRequest(BaseModel):
+    username: str
+    password: str
+
+@app.post("/api/auth/login")
+async def login(req: AuthRequest):
+    from auth.jwt_handler import create_access_token
+    # Placeholder simple auth for Phase 1
+    if req.username == "root" and req.password == "sparkadmin":
+        return {"access_token": create_access_token({"sub": req.username, "role": "ROOT"}), "type": "bearer"}
+    return {"error": "Unauthorized"}
+
+@app.get("/api/state")
+async def get_state():
+    return orchestrator.get_state()
+
+# -----------------
+# SERVE REACT FRONTEND (STATIC)
+# -----------------
+frontend_build_path = os.path.join(os.path.dirname(__file__), "..", "dist")
+if os.path.exists(frontend_build_path):
+    app.mount("/", StaticFiles(directory=frontend_build_path, html=True), name="frontend")
+else:
+    print("⚠️ [SPARK] React build not found. Run 'npm run build' in root to serve HUD from backend.")
+
+if __name__ == "__main__":
+    print("🛸 [SPARK] Booting Sovereign Core...")
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
