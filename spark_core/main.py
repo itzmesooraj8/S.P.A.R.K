@@ -15,6 +15,7 @@ from intelligence.registry import project_registry
 from intelligence.cross_analyzer import cross_analyzer
 from intelligence.pattern_memory import pattern_store
 from intelligence.optimizer import optimizer
+from intelligence.trust_layer import trust_store
 
 app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
 
@@ -152,6 +153,29 @@ async def get_optimization_plan(project_id: str):
     
     plan = optimizer.analyze_project(project_id, snap, trends)
     return plan
+
+class FeedbackPayload(BaseModel):
+    project_id: str
+    recommendation_type: str
+    severity: str
+    confidence: float
+    user_action: int
+
+@app.post("/api/projects/optimize/feedback")
+async def submit_optimization_feedback(payload: FeedbackPayload):
+    """Phase 3B endpoint capturing structured trust metrics for bounded automation readiness"""
+    sev_map = {"low": 1, "medium": 2, "high": 3, "critical": 4}
+    sev_int = sev_map.get(payload.severity.lower(), 2)
+    
+    trust_store.ingest_feedback(
+        project_id=payload.project_id,
+        rec_type=payload.recommendation_type,
+        severity=sev_int,
+        confidence=payload.confidence,
+        user_action=payload.user_action,
+        user_weight=1.0  # Future hierarchical scaling hook
+    )
+    return {"status": "success"}
 
 @app.get("/api/projects")
 async def get_projects():

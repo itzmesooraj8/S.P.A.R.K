@@ -1,6 +1,7 @@
 from typing import Dict, Any, List
 import time
 from intelligence.pattern_memory import pattern_store
+from intelligence.trust_layer import trust_store
 
 class CrossProjectAnalyzer:
     """
@@ -99,9 +100,11 @@ class CrossProjectAnalyzer:
         
         # Pull trends per project to modify base health
         project_trends = {}
+        feedback_metrics = {}
         for pid in snapshots.keys():
             trend = pattern_store.compute_trends(pid)
             project_trends[pid] = trend
+            feedback_metrics[pid] = trust_store.compute_trust_metrics(pid)
             
             # Predictively penalize health score based on degrading trajectories
             if trend["structural_drift"] == "DECAYING":
@@ -120,6 +123,7 @@ class CrossProjectAnalyzer:
             "comparative_metrics": comparative_metrics,
             "cross_patterns": cross_patterns[:10],
             "project_trends": project_trends,
+            "feedback_metrics": feedback_metrics,
             "system_health_score": round(system_health_score, 1)
         }
 

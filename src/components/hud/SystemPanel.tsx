@@ -130,12 +130,28 @@ export default function SystemPanel({ metrics }: Props) {
     }
   };
 
-  const handleDecision = (id: string, accept: boolean) => {
-    // Stub log interaction for Phase 3A metrics
-    console.log(`[Phase 3A] User ${accept ? 'ACCEPTED' : 'REJECTED'} recommendation: ${id}`);
+  const handleDecision = async (rec: any, accept: boolean) => {
+    console.log(`[Phase 3B] User ${accept ? 'ACCEPTED' : 'REJECTED'} recommendation: ${rec.id}`);
+
+    try {
+      await fetch(`http://localhost:8000/api/projects/optimize/feedback`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          project_id: project_focus,
+          recommendation_type: rec.type,
+          severity: rec.severity || "medium",
+          confidence: rec.confidence,
+          user_action: accept ? 1 : -1
+        })
+      });
+    } catch (err) {
+      console.error("Failed to submit telemetry feedback", err);
+    }
+
     setOptimizationPlan((prev: any) => ({
       ...prev,
-      recommendations: prev.recommendations.filter((r: any) => r.id !== id)
+      recommendations: prev.recommendations.filter((r: any) => r.id !== rec.id)
     }));
   };
 
@@ -420,6 +436,23 @@ export default function SystemPanel({ metrics }: Props) {
                     </div>
                   ))}
                 </div>
+
+                {/* HUMAN TRUST VECTOR */}
+                {crossAnalysis.feedback_metrics && Object.keys(crossAnalysis.feedback_metrics).length > 0 && (
+                  <div className="mt-2 text-hud-purple/80 mb-0.5 tracking-wider text-[8px] font-orbitron">◈ HUMAN TRUST VECTOR</div>
+                )}
+                <div className="space-y-1">
+                  {crossAnalysis.feedback_metrics && Object.entries(crossAnalysis.feedback_metrics).map(([pid, fm]: [string, any]) => (
+                    <div key={pid} className="flex justify-between items-center p-1 bg-black/40 border border-hud-purple/20 text-[8px]">
+                      <span className="text-hud-cyan truncate w-24">{pid.toUpperCase()}</span>
+                      <div className="flex gap-2 font-bold tracking-widest text-[7px] items-center">
+                        <span className="text-slate-400">RTS: <span className="text-hud-green">{fm.overall_trust?.toFixed(2) || '0.0'}</span></span>
+                        <span className="text-slate-400">VOTES: <span className="text-hud-cyan">{fm.vote_count || 0}</span></span>
+                        <span className="text-slate-400">AUTO: <span className={fm.automation_candidates?.length > 0 ? 'text-hud-amber animate-pulse' : 'text-slate-500'}>{fm.automation_candidates?.length > 0 ? 'READY' : 'GATED'}</span></span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
@@ -463,8 +496,8 @@ export default function SystemPanel({ metrics }: Props) {
                         </div>
                         <div className="text-slate-300 text-[8px] leading-tight">{r.message}</div>
                         <div className="flex gap-1 mt-1 shrink-0">
-                          <button onClick={() => handleDecision(r.id, true)} className="flex-1 border border-hud-green/30 bg-hud-green/10 text-hud-green hover:bg-hud-green/20 text-[7px] py-1 transition-all">APPROVE</button>
-                          <button onClick={() => handleDecision(r.id, false)} className="flex-1 border border-slate-500/30 bg-slate-500/10 text-slate-400 hover:bg-slate-500/30 text-[7px] py-1 transition-all">IGNORE</button>
+                          <button onClick={() => handleDecision(r, true)} className="flex-1 border border-hud-green/30 bg-hud-green/10 text-hud-green hover:bg-hud-green/20 text-[7px] py-1 transition-all">APPROVE</button>
+                          <button onClick={() => handleDecision(r, false)} className="flex-1 border border-slate-500/30 bg-slate-500/10 text-slate-400 hover:bg-slate-500/30 text-[7px] py-1 transition-all">IGNORE</button>
                         </div>
                       </div>
                     );
