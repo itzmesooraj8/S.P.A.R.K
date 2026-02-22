@@ -1,5 +1,6 @@
 from typing import Dict, Any, List
 import time
+from intelligence.pattern_memory import pattern_store
 
 class CrossProjectAnalyzer:
     """
@@ -93,14 +94,32 @@ class CrossProjectAnalyzer:
                 })
                 system_health_score -= 2 * len(offline_sandboxes)
         
+        # Inject snapshots into Temporal Database
+        pattern_store.ingest(snapshots, snapshots)
+        
+        # Pull trends per project to modify base health
+        project_trends = {}
+        for pid in snapshots.keys():
+            trend = pattern_store.compute_trends(pid)
+            project_trends[pid] = trend
+            
+            # Predictively penalize health score based on degrading trajectories
+            if trend["structural_drift"] == "DECAYING":
+                system_health_score -= 5
+            if trend["risk_trend"] == "DEGRADING":
+                system_health_score -= 10
+        
         # Guard limits
         system_health_score = max(0.0, min(100.0, system_health_score))
         
+        # Scrub raw snapshots out of the return dict since memory footprint must stay O(1)
+        # We only emit bounded data to the caller/HUD
         return {
             "analyzed_projects": len(snapshots),
             "timestamp": time.time(),
             "comparative_metrics": comparative_metrics,
             "cross_patterns": cross_patterns[:10],
+            "project_trends": project_trends,
             "system_health_score": round(system_health_score, 1)
         }
 

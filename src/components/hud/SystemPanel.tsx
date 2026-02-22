@@ -371,6 +371,28 @@ export default function SystemPanel({ metrics }: Props) {
                     <div className="text-hud-cyan/40 text-[8px]">NO PATTERNS DETECTED.</div>
                   )}
                 </div>
+
+                {crossAnalysis.project_trends && Object.keys(crossAnalysis.project_trends).length > 0 && (
+                  <div className="mt-2 text-hud-purple/80 mb-0.5 tracking-wider text-[8px] font-orbitron">◈ TEMPORAL INTELLIGENCE</div>
+                )}
+                <div className="space-y-1">
+                  {crossAnalysis.project_trends && Object.entries(crossAnalysis.project_trends).map(([pid, trend]: [string, any]) => (
+                    <div key={pid} className="flex justify-between items-center p-1 bg-black/40 border border-hud-purple/20 text-[8px]">
+                      <span className="text-hud-cyan truncate w-24">{pid.toUpperCase()}</span>
+                      <div className="flex gap-2 font-bold tracking-widest text-[7px] items-center">
+                        <span className={trend.risk_trend === 'DEGRADING' ? 'text-hud-red' : trend.risk_trend === 'IMPROVING' ? 'text-hud-green' : 'text-slate-400'}>
+                          R: {trend.risk_trend === 'DEGRADING' ? '↑' : trend.risk_trend === 'IMPROVING' ? '↓' : '–'}
+                        </span>
+                        <span className={trend.structural_drift === 'DECAYING' ? 'text-hud-amber' : 'text-slate-400'}>
+                          S: {trend.structural_drift === 'DECAYING' ? '⚠' : '–'}
+                        </span>
+                        <span className={trend.mutation_volatility === 'HIGH' ? 'text-hud-red animate-pulse' : trend.mutation_volatility === 'MEDIUM' ? 'text-hud-amber' : 'text-slate-400'}>
+                          M: {trend.mutation_volatility === 'HIGH' ? '⚡' : trend.mutation_volatility === 'MEDIUM' ? '○' : '–'}
+                        </span>
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
             )}
           </div>
