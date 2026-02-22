@@ -1,8 +1,21 @@
 from typing import Dict, Optional, Any
 import time
+import os
 from system.state import UnifiedState
 from sandbox.docker_env import DockerEnvironment
 import hashlib
+
+def count_loc(root_path: str) -> int:
+    total = 0
+    for dirpath, _, filenames in os.walk(root_path):
+        for f in filenames:
+            if f.endswith(".py"):
+                try:
+                    with open(os.path.join(dirpath, f), "r", encoding="utf-8") as file:
+                        total += sum(1 for _ in file)
+                except Exception:
+                    continue
+    return total
 
 class ProjectContext:
     def __init__(self, project_id: str, root_path: str):
@@ -45,6 +58,12 @@ class ProjectContext:
         
         metrics = st.get("metrics", {})
         
+        # Hard fail if metrics are not available/computed.
+        required_keys = ["lint_errors", "type_errors", "known_vulnerabilities", "circular_dependencies"]
+        for k in required_keys:
+            if k not in metrics:
+                return {"error": "ANALYSIS FAILED — METRICS UNAVAILABLE"}
+        
         # Enforce exact bounding constraints
         return {
             "snapshot_schema_version": "1.0",
@@ -56,7 +75,7 @@ class ProjectContext:
                 "total_functions": num_funcs,
                 "total_classes": num_classes,
                 "dependency_edges": len(edges),
-                "circular_dependencies": metrics.get("circular_dependencies", 0),
+                "circular_dependencies": metrics["circular_dependencies"],
                 "largest_file_lines": 0  # To be fed from AST metrics over time
             },
             
@@ -82,14 +101,13 @@ class ProjectContext:
             },
             
             "risk_profile": {
-                "lint_errors": metrics.get("lint_errors", 0),
-                "type_errors": metrics.get("type_errors", 0),
-                "known_vulnerabilities": 0,
-                "unsafe_patterns_detected": 0,
+                "lint_errors": metrics["lint_errors"],
+                "type_errors": metrics["type_errors"],
+                "known_vulnerabilities": metrics["known_vulnerabilities"]
             },
             
             "resource_profile": {
-                "estimated_loc": num_files * 150,  # Estimator
+                "estimated_loc": count_loc(self.root_path),
                 "container_memory_mb": None, # Will be fetched dynamically
                 "container_cpu_percent": None,
             }

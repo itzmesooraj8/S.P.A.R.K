@@ -1,0 +1,20 @@
+{
+  "node_to_tests": {
+    "a.compute_a": [
+      "test_suite.py::test_b",
+      "test_suite.py::test_a"
+    ],
+    "b.compute_b": [
+      "test_suite.py::test_b"
+    ]
+  },
+  "test_to_nodes": {
+    "test_suite.py::test_a": [
+      "a.compute_a"
+    ],
+    "test_suite.py::test_b": [
+      "a.compute_a",
+      "b.compute_b"
+    ]
+  }
+}

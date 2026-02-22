@@ -1,0 +1,13 @@
+[
+  {
+    "target_node": "m_compute.compute",
+    "patch_hash": "f3d23b3a1249d7fd06a572d30ab27e6b83313c4497ac13f399db6159c573fd93",
+    "patch_content": "--- m_compute.py\n+++ m_compute.py\n@@ -1,3 +1,3 @@\n \n def compute():\n-    return 100\n+    return 999\n",
+    "success": false,
+    "duration_ms": 2164,
+    "test_passed": 0,
+    "test_failed": 1,
+    "test_total": 1,
+    "error_trace": "assert 999 == 100\n +  where 999 = compute()"
+  }
+]

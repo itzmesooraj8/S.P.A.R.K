@@ -32,12 +32,17 @@ class PatternMemoryStore:
             circular_deps = gp.get("circular_dependencies", 0)
             lint_errors = rp.get("lint_errors", 0)
             vulns = rp.get("known_vulnerabilities", 0)
-            unsafe = rp.get("unsafe_patterns_detected", 0)
-            
-            risk_score = float(lint_errors + rp.get("type_errors", 0) + (vulns * 10) + (unsafe * 5))
             
             loc = snap.get("resource_profile", {}).get("estimated_loc", 1)
             mutation_density = float(mp.get("total_mutations", 0)) / max(1, loc)
+            
+            risk_score = float(
+                lint_errors * 0.5 + 
+                rp.get("type_errors", 0) * 0.8 + 
+                (vulns * 2.0) + 
+                (circular_deps * 1.2) + 
+                (mutation_density * 0.5)
+            )
             
             frame = {
                 "timestamp": current_time,
@@ -66,6 +71,8 @@ class PatternMemoryStore:
                 "mutation_volatility": "LOW",
                 "structural_drift": "STABLE",
                 "risk_slope": 0.0,
+                "projected_risk_7d": 0.0,
+                "projected_trend": "Stable System",
                 "data_points": len(frames)
             }
             
@@ -81,11 +88,24 @@ class PatternMemoryStore:
         mutation_variance = max(f["mutation_density"] for f in frames) - min(f["mutation_density"] for f in frames)
         circ_slope = (last["circular_dependencies"] - first["circular_dependencies"]) / n
         
+        # 7-day projection modeling (assuming 'n' represents ~daily or per-run frames over an active window)
+        # We will normalize risk_slope to approximate per-day if we assume ticks are per hour, 
+        # but realistically we just multiply slope by an arbitrary forward window (e.g., 7 ticks).
+        projected_risk_7d = max(0.0, last["risk_score"] + (risk_slope * 7 * 24))
+        
+        projected_trend = "Stable System"
+        if risk_slope > 0.5:
+            projected_trend = "Escalating Risk"
+        elif risk_slope < -0.5:
+            projected_trend = "Improving Stability"
+        
         return {
-            "risk_trend": "DEGRADING" if risk_slope > 1.0 else "IMPROVING" if risk_slope < -1.0 else "STABLE",
+            "risk_trend": "DEGRADING" if risk_slope > 0.5 else "IMPROVING" if risk_slope < -0.5 else "STABLE",
             "mutation_volatility": "HIGH" if mutation_variance > 0.5 else "MEDIUM" if mutation_variance > 0.1 else "LOW",
             "structural_drift": "DECAYING" if circ_slope > 0 else "STABLE",
             "risk_slope": round(risk_slope, 4),
+            "projected_risk_7d": round(projected_risk_7d, 2),
+            "projected_trend": projected_trend,
             "data_points": n
         }
 

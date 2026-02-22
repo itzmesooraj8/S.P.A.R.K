@@ -16,10 +16,11 @@ class CrossProjectAnalyzer:
         Pulls synchronized, sanitized snapshots from all active project boundaries,
         and evaluates them for architectural, security, and mutational similarities.
         """
-        snapshots = {
-            pid: ctx.export_snapshot()
-            for pid, ctx in registry.active_projects.items()
-        }
+        snapshots = {}
+        for pid, ctx in registry.active_projects.items():
+            snap = ctx.export_snapshot()
+            if "error" not in snap:
+                snapshots[pid] = snap
         
         comparative_metrics = {
             "largest_project": "None",
@@ -34,7 +35,15 @@ class CrossProjectAnalyzer:
         if snapshots:
             def risk_score(s):
                 rp = s["risk_profile"]
-                return rp["lint_errors"] + rp["type_errors"] + (rp["known_vulnerabilities"] * 10) + (rp["unsafe_patterns_detected"] * 5)
+                gp = s["graph"]
+                mp = s["mutation_profile"]
+                loc = max(1, s["resource_profile"].get("estimated_loc", 1))
+                mutation_density = float(mp.get("total_mutations", 0)) / loc
+                return (rp.get("lint_errors", 0) * 0.5 + 
+                        rp.get("type_errors", 0) * 0.8 + 
+                        (rp.get("known_vulnerabilities", 0) * 2.0) + 
+                        (gp.get("circular_dependencies", 0) * 1.2) + 
+                        (mutation_density * 0.5))
                 
             # Compute extremes
             comparative_metrics["largest_project"] = max(
@@ -101,15 +110,31 @@ class CrossProjectAnalyzer:
         # Pull trends per project to modify base health
         project_trends = {}
         feedback_metrics = {}
+        interpretations = {}
         for pid in snapshots.keys():
             trend = pattern_store.compute_trends(pid)
             project_trends[pid] = trend
             feedback_metrics[pid] = trust_store.compute_trust_metrics(pid)
             
+            interp = []
+            snap = snapshots[pid]
+            rp = snap.get("risk_profile", {})
+            gp = snap.get("graph", {})
+            mp = snap.get("mutation_profile", {})
+            
+            if rp.get("lint_errors", 0) > 0 and trend.get("risk_trend") == "DEGRADING":
+                interp.append("Code quality is deteriorating. New changes are introducing style or structural violations.")
+            if gp.get("circular_dependencies", 0) > 0 and trend.get("structural_drift") == "DECAYING":
+                interp.append("Architectural boundary erosion detected. Modules are becoming cyclically coupled.")
+            if mp.get("recent_mutations_24h", 0) > 10 and trend.get("risk_trend") == "STABLE":
+                interp.append("High development velocity detected without quality regression.")
+                
+            interpretations[pid] = " ".join(interp) if interp else "System is performing nominally."
+            
             # Predictively penalize health score based on degrading trajectories
-            if trend["structural_drift"] == "DECAYING":
+            if trend.get("structural_drift") == "DECAYING":
                 system_health_score -= 5
-            if trend["risk_trend"] == "DEGRADING":
+            if trend.get("risk_trend") == "DEGRADING":
                 system_health_score -= 10
         
         # Guard limits
@@ -123,6 +148,7 @@ class CrossProjectAnalyzer:
             "comparative_metrics": comparative_metrics,
             "cross_patterns": cross_patterns[:10],
             "project_trends": project_trends,
+            "interpretations": interpretations,
             "feedback_metrics": feedback_metrics,
             "system_health_score": round(system_health_score, 1)
         }
