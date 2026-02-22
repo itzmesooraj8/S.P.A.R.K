@@ -1,4 +1,5 @@
-from typing import Callable, Dict, Any, Awaitable
+from typing import Callable, Dict, Any, Awaitable, List
+from security.policy import ToolDefinition, RiskLevel
 
 class ToolRegistry:
     """
@@ -6,13 +7,13 @@ class ToolRegistry:
     Only authorized async handlers should be bound here.
     """
     def __init__(self):
-        self.tools: Dict[str, Callable[..., Awaitable[Any]]] = {}
+        self.tools: Dict[str, ToolDefinition] = {}
 
-    def register(self, name: str, handler: Callable[..., Awaitable[Any]]):
-        self.tools[name] = handler
-        print(f"🔧 [TOOL REGISTRY] Registered: {name}")
+    def register(self, definition: ToolDefinition):
+        self.tools[definition.name] = definition
+        print(f"🔧 [TOOL REGISTRY] Registered: {definition.name} (Risk: {definition.risk_level.name})")
 
-    def get(self, name: str) -> Callable[..., Awaitable[Any]]:
+    def get(self, name: str) -> ToolDefinition:
         return self.tools.get(name)
 
     def list_tools(self) -> list:

@@ -1,8 +1,12 @@
 import asyncio
+import json
 from llm.hybrid_engine import HybridLLM
 from llm.personality import PersonalityEngine
 from memory.session_memory import SessionMemory
 from tools.router import ToolRouter
+
+from system.state import unified_state
+from security.policy import RequiresConfirmationError
 
 class AIOrchestrator:
     def __init__(self):
@@ -13,18 +17,21 @@ class AIOrchestrator:
         self.tool_router = ToolRouter()
         
         self.current_task = None
-        self.state = {
+        self.pending_tool_calls = {}
+        
+        # Inject state metadata.
+        unified_state.update_dict({
             "status": "IDLE",
             "personality": "TACTICAL",
             "active_tasks": []
-        }
+        })
 
     def get_state(self):
-        return self.state
+        return unified_state.get_state()
     
     def set_personality(self, mode: str):
         self.personality.set_mode(mode)
-        self.state["personality"] = mode
+        unified_state.update("personality", mode)
 
     def cancel_current_task(self):
         """Immediately interrupts any active LLM generation."""
@@ -32,9 +39,53 @@ class AIOrchestrator:
             self.current_task.cancel()
             print("🛑 [SPARK] Force-cancelled active generation task.")
 
+    async def resolve_tool_confirmation(self, tool_id: str, approved: bool):
+        if tool_id not in self.pending_tool_calls:
+            print(f"⚠️ [SPARK] Tool confirmation ID {tool_id} not found.")
+            return "Tool confirmation expired or not found."
+            
+        tool_call = self.pending_tool_calls.pop(tool_id)
+        
+        if not approved:
+            print(f"🛑 [SPARK] User cancelled tool execution for {tool_call['tool']}.")
+            unified_state.update("status", "IDLE")
+            return f"Execution of {tool_call['tool']} cancelled by user."
+            
+        print(f"✅ [SPARK] User approved tool execution for {tool_call['tool']}.")
+        
+        try:
+            unified_state.update("status", "THINKING")
+            handler = self.tool_router.registry.get(tool_call["tool"]).handler
+            result = await handler(tool_call["arguments"])
+            
+            reflection_prompt = (
+                f"User approved Action Result ({tool_call['tool']}):\n{result}\n\n"
+                f"Acknowledge this briefly to the user."
+            )
+            
+            from ws.manager import ws_manager
+            memory_context = self.memory.get_context()
+            sys_prompt = self.personality.get_prompt(memory_context, include_tools=False)
+            
+            full_resp = ""
+            async for tk in self.llm.generate(sys_prompt, reflection_prompt):
+                full_resp += tk
+                # Push the explicit answer to WS
+                await ws_manager.broadcast(json.dumps({"type": "AI_TOKEN", "token": tk}), "ai")
+            
+            if full_resp:
+                self.memory.add_ai_message(full_resp.strip())
+                
+        except Exception as e:
+            print(f"⚠️ [SPARK] Exec error: {e}")
+        finally:
+            unified_state.update("status", "IDLE")
+            
+        return "Executed."
+
     async def process_stream(self, message: str):
         """Asynchronous generator yielding tokens progressively for the HUD."""
-        self.state["status"] = "THINKING"
+        unified_state.update("status", "THINKING")
         print(f"🧠 [SPARK] Stream Processing: {message}")
         
         # 0. Check for explicit manual tool execution command (Backdoor)
@@ -44,10 +95,25 @@ class AIOrchestrator:
                 # Do NOT save explicit JSON commands to conversational memory
                 async for token in self.tool_router.execute(tool_call):
                     yield token
+            except RequiresConfirmationError as e:
+                import uuid
+                from ws.manager import ws_manager
+                tool_id = str(uuid.uuid4())
+                self.pending_tool_calls[tool_id] = e.tool_call
+                unified_state.update("status", "AWAITING_CONFIRMATION")
+                print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
+                await ws_manager.broadcast(json.dumps({
+                    "type": "CONFIRM_TOOL",
+                    "id": tool_id,
+                    "tool": tool_call["tool"],
+                    "reason": e.reason
+                }), "system")
+                return
             except asyncio.CancelledError:
                 print(f"⚠️ [SPARK] Tool Execution Cancelled.")
             finally:
-                self.state["status"] = "IDLE"
+                if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
+                    unified_state.update("status", "IDLE")
             return
             
         # 1. Add arriving prompt to memory
@@ -86,7 +152,22 @@ class AIOrchestrator:
                 if tool_call:
                     print(f"🔧 [SPARK] Autonomous Tool Call Detected: {tool_call['tool']}")
                     # Reflection Layer Execution
-                    tool_result = await self.tool_router.execute_raw(tool_call)
+                    try:
+                        tool_result = await self.tool_router.execute_raw(tool_call)
+                    except RequiresConfirmationError as e:
+                        import uuid
+                        from ws.manager import ws_manager
+                        tool_id = str(uuid.uuid4())
+                        self.pending_tool_calls[tool_id] = e.tool_call
+                        unified_state.update("status", "AWAITING_CONFIRMATION")
+                        print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
+                        await ws_manager.broadcast(json.dumps({
+                            "type": "CONFIRM_TOOL",
+                            "id": tool_id,
+                            "tool": tool_call["tool"],
+                            "reason": e.reason
+                        }), "system")
+                        return
                     
                     reflection_prompt = (
                         f"System Tool Result ({tool_call['tool']}):\n{tool_result}\n\n"
@@ -118,11 +199,12 @@ class AIOrchestrator:
             print(f"⚠️ [SPARK] Stream Cancelled mid-generation. Discarding partial memory.")
             pass
         finally:
-            self.state["status"] = "IDLE"
+            if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
+                unified_state.update("status", "IDLE")
 
     async def process_message(self, message: str) -> str:
         """Fallback: Core AI Loop for returning a single full blocking response."""
-        self.state["status"] = "THINKING"
+        unified_state.update("status", "THINKING")
         print(f"🧠 [SPARK] Blocking Processing: {message}")
         
         self.memory.add_user_message(message)
@@ -137,12 +219,10 @@ class AIOrchestrator:
         if full_response:
             self.memory.add_ai_message(full_response.strip())
 
-        # 4. Filter Intent / Execute Tools (Placeholder for Tool Execution Engine)
-        # if is_command(response): execute_tool()
+        if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
+            unified_state.update("status", "IDLE")
 
-        self.state["status"] = "IDLE"
         return full_response
 
-# Example intent check, you can expand this later
 def is_command(text: str) -> bool:
     return '[ACTION]' in text

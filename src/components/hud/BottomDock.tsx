@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Globe, Chrome, Terminal, Power, Lock, Rocket,
   Shield, Music, ChevronUp, ChevronDown, Cpu,
-  Activity, Wifi, Thermometer, Clock
+  Activity, Wifi, Thermometer, Clock, Network
 } from 'lucide-react';
 
 interface QuickButton {
@@ -33,12 +33,12 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
 
   const quickButtons: QuickButton[] = [
     { icon: <Globe size={16} />, label: 'BROWSER', action: () => window.open('about:blank') },
-    { icon: <Terminal size={16} />, label: 'TERMINAL', action: () => {} },
+    { icon: <Terminal size={16} />, label: 'TERMINAL', action: () => { } },
     { icon: <Shield size={16} />, label: 'SECURITY', action: () => onOpenModule('security'), color: 'hud-green' },
-    { icon: <Lock size={16} />, label: 'LOCK', action: () => {}, color: 'hud-amber' },
-    { icon: <Rocket size={16} />, label: 'LAUNCH', action: () => {} },
+    { icon: <Lock size={16} />, label: 'LOCK', action: () => { }, color: 'hud-amber' },
+    { icon: <Rocket size={16} />, label: 'LAUNCH', action: () => { } },
     { icon: <Activity size={16} />, label: 'SCAN', action: () => onOpenModule('analytics') },
-    { icon: <Music size={16} />, label: 'MUSIC', action: () => {} },
+    { icon: <Music size={16} />, label: 'MUSIC', action: () => { } },
     { icon: <Globe size={16} />, label: 'GLOBE', action: () => onOpenModule('globe') },
   ];
 
@@ -47,6 +47,7 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     { icon: <Wifi size={14} />, label: 'DATASTREAM', action: () => onOpenModule('datastream') },
     { icon: <Activity size={14} />, label: 'SATELLITE', action: () => onOpenModule('satellite') },
     { icon: <Terminal size={14} />, label: 'AI LOG', action: () => onOpenModule('reasoning') },
+    { icon: <Network size={14} />, label: 'DEVGRAPH', action: () => onOpenModule('devgraph'), color: 'hud-purple' },
     { icon: <Shield size={14} />, label: 'TACTICAL', action: () => onOpenModule('tactical'), color: 'hud-red' },
   ];
 

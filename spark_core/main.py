@@ -5,10 +5,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
 import uvicorn
 import os
+import time
 
 from ws.manager import ws_manager
 from orchestrator.brain import AIOrchestrator
 from system.monitor import SystemMonitor
+from tools.sandbox import init_sandbox, teardown_sandbox
+from intelligence.registry import project_registry
 
 app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
 
@@ -28,9 +31,27 @@ sys_monitor = SystemMonitor()
 @app.on_event("startup")
 async def startup_event():
     print("🛸 [SPARK] Core Node Initializing...")
+    
+    # Auto-Bootstrap Initial Project Domains
+    workspace_root = os.path.dirname(os.path.dirname(__file__))
+    frontend_root = os.path.join(workspace_root, "src")
+    
+    project_registry.load_project("spark_kernel", workspace_root)
+    if os.path.exists(frontend_root):
+        project_registry.load_project("spark_frontend", frontend_root)
+        
+    project_registry.switch_focus("spark_kernel")
+    
+    # Initialize the sandbox isolated execution environment for the legacy fallback/active focus
+    await init_sandbox()
     # Start background intelligence loop
     asyncio.create_task(sys_monitor.start_monitoring(ws_manager))
     print("✅ [SPARK] Background monitor started.")
+
+@app.on_event("shutdown")
+async def shutdown_event():
+    print("🛸 [SPARK] Core Node Shutting Down...")
+    await teardown_sandbox()
 
 # -----------------
 # WEBSOCKET NAMESPACES
@@ -107,6 +128,38 @@ async def login(req: AuthRequest):
 @app.get("/api/state")
 async def get_state():
     return orchestrator.get_state()
+
+# -----------------
+# REGISTRY ENDPOINTS
+# -----------------
+@app.get("/api/projects")
+async def get_projects():
+    return {
+        "active_projects": list(project_registry.active_projects.keys()),
+        "current_focus": project_registry.current_focus
+    }
+
+@app.post("/api/projects/switch/{project_id}")
+async def switch_project(project_id: str):
+    if project_id not in project_registry.active_projects:
+        return {"error": "Project not loaded"}, 404
+        
+    old_focus = project_registry.current_focus
+    if old_focus and old_focus != project_id and old_focus in project_registry.active_projects:
+        old_ctx = project_registry.active_projects[old_focus]
+        if old_ctx.sandbox.cmd_active:
+            print(f"🛑 [REGISTRY] Killing active sandbox execution on {old_focus}")
+            old_ctx.sandbox.cancel_active()
+            
+    if hasattr(orchestrator, 'cancel_current_task'):
+        orchestrator.cancel_current_task()
+        
+    project_registry.switch_focus(project_id)
+    ctx = project_registry.get_active()
+    if ctx:
+        await ws_manager._on_state_change(ctx.state.get_state(), ctx.state._state_version, time.time())
+        
+    return {"status": "success", "switched_to": project_id}
 
 # -----------------
 # SERVE REACT FRONTEND (STATIC)

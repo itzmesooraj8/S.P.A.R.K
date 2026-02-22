@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
-import { MapPin, Cloud, Sun, CloudRain, Wind, Zap } from 'lucide-react';
+import { MapPin, Cloud, Sun, CloudRain, Wind, Zap, FolderKey } from 'lucide-react';
+import { useDevState } from '@/hooks/useDevState';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -24,10 +25,40 @@ export default function TopBar() {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
   const [now, setNow] = useState(new Date());
 
+  const [projects, setProjects] = useState<string[]>([]);
+  const [focusedProject, setFocusedProject] = useState<string | null>(null);
+
   useEffect(() => {
     const t = setInterval(() => setNow(new Date()), 1000);
-    return () => clearInterval(t);
+
+    // Fetch initial projects
+    const fetchProjects = async () => {
+      try {
+        const res = await fetch('http://localhost:8000/api/projects');
+        if (res.ok) {
+          const data = await res.json();
+          setProjects(data.active_projects || []);
+          setFocusedProject(data.current_focus);
+        }
+      } catch (err) {
+        console.warn('Failed to fetch projects', err);
+      }
+    };
+    fetchProjects();
+    // Poll every 5s for new projects dynamically loaded
+    const p = setInterval(fetchProjects, 5000);
+
+    return () => { clearInterval(t); clearInterval(p); };
   }, []);
+
+  const switchProject = async (id: string) => {
+    try {
+      setFocusedProject(id); // Optimistic UI
+      await fetch(`http://localhost:8000/api/projects/switch/${id}`, { method: 'POST' });
+    } catch (err) {
+      console.error('Failed to switch focus', err);
+    }
+  };
 
   const hh = now.getHours().toString().padStart(2, '0');
   const mm = now.getMinutes().toString().padStart(2, '0');
@@ -77,13 +108,30 @@ export default function TopBar() {
               key={mode}
               onClick={() => setAiMode(mode)}
               className={`font-orbitron text-[9px] px-2 py-0.5 rounded border tracking-wider transition-all duration-200 ${aiMode === mode
-                  ? `${modeColors[mode]} bg-current/10`
-                  : 'text-hud-cyan/40 border-hud-cyan/20 hover:border-hud-cyan/50'
+                ? `${modeColors[mode]} bg-current/10`
+                : 'text-hud-cyan/40 border-hud-cyan/20 hover:border-hud-cyan/50'
                 }`}
             >
               {mode}
             </button>
           ))}
+        </div>
+
+        {/* Project Switcher */}
+        <div className="flex items-center gap-1.5 ml-4 px-2 py-0.5 rounded border border-hud-purple/40 bg-hud-purple/5">
+          <FolderKey size={10} className="text-hud-purple" />
+          <span className="font-orbitron text-[8px] text-hud-purple/70">DOMAIN:</span>
+          <select
+            value={focusedProject || ''}
+            onChange={(e) => switchProject(e.target.value)}
+            className="bg-transparent font-mono-tech text-[9px] text-hud-purple outline-none cursor-pointer"
+            style={{ WebkitAppearance: 'none' }}
+          >
+            <option value="" disabled className="bg-black text-hud-purple">SELECT DOMAIN...</option>
+            {projects.map(p => (
+              <option key={p} value={p} className="bg-black text-hud-purple">{p.toUpperCase()}</option>
+            ))}
+          </select>
         </div>
       </div>
 

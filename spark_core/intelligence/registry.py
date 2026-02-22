@@ -15,7 +15,7 @@ class ProjectContext:
         safe_hash = hashlib.md5(project_id.encode('utf-8')).hexdigest()[:8]
         container_name = f"spark_sandbox_{safe_hash}"
         
-        self.sandbox = DockerEnvironment(container_name=container_name)
+        self.sandbox = DockerEnvironment(container_name=container_name, state_hook=self.state)
         # Point the sandbox directly at the correct volume root
         self.sandbox.workspace_dir = root_path
 

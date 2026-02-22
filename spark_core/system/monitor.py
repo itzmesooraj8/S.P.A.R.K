@@ -1,6 +1,7 @@
 import asyncio
 import psutil
 import time
+from system.state import unified_state
 
 class SystemMonitor:
     def __init__(self, interval: int = 5):
@@ -18,19 +19,18 @@ class SystemMonitor:
             disk = psutil.disk_usage('/').percent
             
             payload = {
-                "type": "METRICS",
                 "cpu": cpu,
                 "ram": ram,
                 "disk": disk,
                 "timestamp": int(time.time()),
             }
             
-            # Broadcast to /ws/system
-            import json
-            await ws_manager.broadcast(json.dumps(payload), "system")
+            # Use unified state dispatcher payload mutation instead of direct serialization
+            unified_state.update("metrics", payload)
 
             # Example Event Rule Trigger (Simulated background intelligence)
             if cpu > 85.0:
+                import json
                 await ws_manager.broadcast(json.dumps({
                     "type": "WARNING", "msg": "CPU Spike Detected."
                 }), "notifications")

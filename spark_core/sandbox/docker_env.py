@@ -8,7 +8,7 @@ import time
 from system.state import unified_state
 
 class DockerEnvironment(ExecutionEnvironment):
-    def __init__(self, container_name: str = "spark_sandbox", image: str = "spark_dev_env", timeout_sec: int = 60, max_output_chars: int = 50000):
+    def __init__(self, container_name: str = "spark_sandbox", image: str = "spark_dev_env", timeout_sec: int = 60, max_output_chars: int = 50000, state_hook=None):
         self.container_name = container_name
         self.image = image
         self.is_running = False
@@ -17,13 +17,26 @@ class DockerEnvironment(ExecutionEnvironment):
         self.workspace_dir = "/workspace"
         self.last_cmd = "System ready."
         self.cmd_active = False
+        self.active_process = None
+        self.state_hook = state_hook
 
     def _sync(self):
-        unified_state.update("sandbox_state", {
+        state_target = self.state_hook if self.state_hook else unified_state
+        state_target.update("sandbox_state", {
             "is_running": self.is_running,
             "last_cmd": self.last_cmd,
             "cmd_active": self.cmd_active
         })
+
+    def cancel_active(self):
+        if self.active_process:
+            try:
+                self.active_process.kill()
+            except Exception:
+                pass
+            self.cmd_active = False
+            self.last_cmd = "[CANCELLED]"
+            self._sync()
 
     async def _run_subprocess(self, *args, timeout_override: int = None) -> ExecutionResult:
         start_time = time.time()
@@ -32,6 +45,7 @@ class DockerEnvironment(ExecutionEnvironment):
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE
         )
+        self.active_process = process
         
         timeout = timeout_override or self.timeout_sec
         truncated = False
@@ -58,6 +72,8 @@ class DockerEnvironment(ExecutionEnvironment):
             err_str = err_str[:self.max_output_chars] + f"\n\n[Warning: Stderr truncated to {self.max_output_chars} chars]"
             truncated = True
             
+        self.active_process = None
+        
         return ExecutionResult(
             exit_code=exit_code,
             stdout=out_str,

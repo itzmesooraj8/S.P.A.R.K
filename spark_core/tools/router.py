@@ -4,6 +4,15 @@ import asyncio
 from typing import Optional, Dict, Any, AsyncGenerator
 
 from tools.registry import ToolRegistry
+from security.policy import SecurityPolicy, ToolDefinition, RiskLevel, RequiresConfirmationError
+from system.state import unified_state
+from tools.sandbox import sandbox_tools
+from tools.intelligence import intelligence_tools
+from tools.testing import testing_tools
+from tools.refactor import refactoring_tools
+from tools.memory import memory_tools
+from tools.heuristics import heuristic_tools
+from tools.context import context_tools
 
 # --- Default Native Tools ---
 
@@ -27,11 +36,26 @@ class ToolRouter:
     """
     def __init__(self):
         self.registry = ToolRegistry()
+        self.policy = SecurityPolicy()
         
         # Self-register native low-risk kernel tools
-        self.registry.register("get_time", get_time)
-        self.registry.register("ping", ping_local)
-        self.registry.register("list_capabilities", list_capabilities)
+        self.registry.register(ToolDefinition(name="get_time", handler=get_time, risk_level=RiskLevel.GREEN))
+        self.registry.register(ToolDefinition(name="ping", handler=ping_local, risk_level=RiskLevel.GREEN))
+        self.registry.register(ToolDefinition(name="list_capabilities", handler=list_capabilities, risk_level=RiskLevel.GREEN))
+        for tool in sandbox_tools:
+            self.registry.register(tool)
+        for tool in intelligence_tools:
+            self.registry.register(tool)
+        for tool in testing_tools:
+            self.registry.register(tool)
+        for tool in refactoring_tools:
+            self.registry.register(tool)
+        for tool in memory_tools:
+            self.registry.register(tool)
+        for tool in heuristic_tools:
+            self.registry.register(tool)
+        for tool in context_tools:
+            self.registry.register(tool)
         
     def detect_tool_call(self, raw_message: str) -> Optional[Dict[str, Any]]:
         """
@@ -50,18 +74,26 @@ class ToolRouter:
             except json.JSONDecodeError:
                 pass
                 
-        # Future: If you want to detect "markdown" formatted ```json blocks from Ollama, you extend here.
         return None
 
     async def execute_raw(self, tool_call: Dict[str, Any]) -> Any:
         """Executes the tool and returns the raw output for LLM reflection."""
         tool_name = tool_call["tool"]
         arguments = tool_call["arguments"]
-        handler = self.registry.get(tool_name)
-        if not handler:
+        tool_def = self.registry.get(tool_name)
+        if not tool_def:
             return f"⚠️ [ERROR] execution failed: Tool '{tool_name}' is not registered."
+            
+        user_caps = unified_state.get_state().get("security_context", {}).get("capabilities", [])
+        auth_res = self.policy.authorize(tool_def, user_caps)
+        
+        if not auth_res.allowed:
+            if auth_res.requires_confirmation:
+                raise RequiresConfirmationError(tool_call, auth_res.reason)
+            return f"⚠️ [BLOCKED] Access denied: {auth_res.reason}"
+
         try:
-            return await handler(arguments)
+            return await tool_def.handler(arguments)
         except Exception as e:
             return f"⚠️ [CRITICAL] Tool '{tool_name}' crashed during execution: {e}"
 
@@ -73,18 +105,31 @@ class ToolRouter:
         tool_name = tool_call["tool"]
         arguments = tool_call["arguments"]
         
-        handler = self.registry.get(tool_name)
-        if not handler:
+        tool_def = self.registry.get(tool_name)
+        if not tool_def:
             error_msg = f"⚠️ [ERROR] execution failed: Tool '{tool_name}' is not registered."
             for char in error_msg:
                 yield char
                 await asyncio.sleep(0.01)
             return
 
+        user_caps = unified_state.get_state().get("security_context", {}).get("capabilities", [])
+        auth_res = self.policy.authorize(tool_def, user_caps)
+        
+        if not auth_res.allowed:
+            if auth_res.requires_confirmation:
+                raise RequiresConfirmationError(tool_call, auth_res.reason)
+            else:
+                error_msg = f"⚠️ [BLOCKED] Access denied: {auth_res.reason}"
+                for char in error_msg:
+                    yield char
+                    await asyncio.sleep(0.01)
+                return
+
         try:
             print(f"⚙️ [TOOL ROUTER] Executing '{tool_name}' with args: {arguments}")
             # Ensure it is purely non-blocking
-            result = await handler(arguments)
+            result = await tool_def.handler(arguments)
             
             # Format result textually 
             formatted_result = f"🔧 [KERNEL ACTION: {tool_name.upper()}]\n{result}"

@@ -15,12 +15,13 @@ import SatelliteModule from './modules/SatelliteModule';
 import ReasoningLogModule from './modules/ReasoningLogModule';
 import TacticalModule from './modules/TacticalModule';
 import GlobeVisualization from './GlobeVisualization';
+import DevGraphModule from './modules/DevGraphModule';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 import { useHudTheme } from '@/contexts/ThemeContext';
 import { Brain } from 'lucide-react';
 
-type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical';
+type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
   security: '🔐 SECURITY MODE',
@@ -31,6 +32,7 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
   satellite: '🛰 SATELLITE TRACKER',
   reasoning: '🧬 AI REASONING LOG',
   tactical: '🕶 TACTICAL OVERLAY',
+  devgraph: '🕸️ DEV OS GRAPH',
 };
 
 export default function HudLayout() {
@@ -114,6 +116,7 @@ export default function HudLayout() {
                   {activeModule === 'satellite' && <SatelliteModule />}
                   {activeModule === 'reasoning' && <ReasoningLogModule />}
                   {activeModule === 'tactical' && <TacticalModule />}
+                  {activeModule === 'devgraph' && <DevGraphModule />}
                 </div>
               </motion.div>
             )}
