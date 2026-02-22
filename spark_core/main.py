@@ -6,6 +6,7 @@ from pydantic import BaseModel
 import uvicorn
 import os
 import time
+import sys
 
 from ws.manager import ws_manager
 from orchestrator.brain import AIOrchestrator
@@ -16,6 +17,9 @@ from intelligence.cross_analyzer import cross_analyzer
 from intelligence.pattern_memory import pattern_store
 from intelligence.optimizer import optimizer
 from intelligence.trust_layer import trust_store
+
+if sys.platform == 'win32':
+    asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
 app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
 
@@ -217,4 +221,4 @@ else:
 
 if __name__ == "__main__":
     print("🛸 [SPARK] Booting Sovereign Core...")
-    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=False)

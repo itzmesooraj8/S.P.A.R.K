@@ -12,11 +12,24 @@ class HybridLLM:
         self.host = ollama_host
         print(f"🧬 [LLM] Engine Booting. Primary: Local ({model}) | Fallback: Cloud")
 
+    async def is_local_available(self) -> bool:
+        try:
+            async with httpx.AsyncClient(timeout=1.0) as client:
+                await client.get(self.host)
+            return True
+        except:
+            return False
+
     async def generate(self, system_prompt: str, user_text: str):
         """Call Local Model via Async HTTP. Uses streaming for speed."""
         import json
         
         # Determine if we should offload to cloud
+        if not await self.is_local_available():
+            print(f"⚠️ [LLM] Local engine offline at {self.host}. Gracefully falling back to Cloud.")
+            yield await self.call_cloud_fallback(system_prompt, user_text)
+            return
+
         # Example: if len(user_text) > 8000:
         #    yield await self.call_cloud_fallback(system_prompt, user_text)
         #    return
@@ -49,9 +62,7 @@ class HybridLLM:
                         yield await self.call_cloud_fallback(system_prompt, user_text)
 
         except Exception as e:
-            import traceback
-            error_details = traceback.format_exc()
-            print(f"⚠️ [LLM] Local engine unavailable. Error: {repr(e)}\nTraceback:\n{error_details}\nFallback to Cloud.")
+            print(f"⚠️ [LLM] Local engine stream error: {repr(e)}. Falling back to Cloud.")
             yield await self.call_cloud_fallback(system_prompt, user_text)
 
     async def call_cloud_fallback(self, system_prompt: str, user_text: str) -> str:
