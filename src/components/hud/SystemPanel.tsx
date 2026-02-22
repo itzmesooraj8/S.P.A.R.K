@@ -1,5 +1,6 @@
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
-import { Cpu, MemoryStick, Zap, Wifi, Battery, Thermometer, Shield, Lock, AlertTriangle } from 'lucide-react';
+import { useDevState } from '@/hooks/useDevState';
+import { Cpu, MemoryStick, Zap, Wifi, Battery, Thermometer, Shield, Lock, AlertTriangle, Terminal } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useState } from 'react';
 
@@ -88,9 +89,11 @@ interface Props {
 }
 
 export default function SystemPanel({ metrics }: Props) {
-  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true });
+  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, sandbox: true });
   const toggleSection = (k: keyof typeof expandedSections) =>
     setExpandedSections(p => ({ ...p, [k]: !p[k] }));
+
+  const { sandbox_state } = useDevState();
 
   const threatColors = { low: '#00ff88', medium: '#ffb800', high: '#ff3b3b' };
   const threatColor = threatColors[metrics.threatLevel];
@@ -252,6 +255,42 @@ export default function SystemPanel({ metrics }: Props) {
           </div>
         )}
       </div>
+
+      {/* Sandbox Telemetry */}
+      <div>
+        <button
+          onClick={() => toggleSection('sandbox')}
+          className="w-full flex items-center justify-between mb-1.5"
+        >
+          <span className="font-orbitron text-[8px] tracking-widest text-hud-cyan/60">◈ EXECUTION SANDBOX</span>
+          <span className="font-mono-tech text-[8px] text-hud-cyan/40">{expandedSections.sandbox ? '▼' : '▶'}</span>
+        </button>
+        {expandedSections.sandbox && (
+          <div className="flex flex-col gap-1.5 p-2 rounded border border-hud-cyan/15 bg-hud-cyan/5">
+            <div className="flex items-center justify-between">
+              <span className="flex items-center gap-1.5 font-orbitron text-[9px] text-hud-cyan/70">
+                <Terminal size={11} className={sandbox_state.is_running ? "text-hud-green" : "text-hud-red"} />
+                CONTAINER
+              </span>
+              <span className={`font-mono-tech text-[9px] ${sandbox_state.is_running ? "text-hud-green neon-text-green" : "text-hud-red"}`}>
+                {sandbox_state.is_running ? 'ONLINE' : 'OFFLINE'}
+              </span>
+            </div>
+            {sandbox_state.is_running && (
+              <div className="mt-1">
+                <div className="font-orbitron text-[8px] text-hud-cyan/50 mb-0.5 flex justify-between">
+                  <span>LAST COMMAND</span>
+                  {sandbox_state.cmd_active && <span className="text-hud-amber animate-pulse">EXECUTING...</span>}
+                </div>
+                <div className={`p-1.5 bg-black/50 border rounded font-mono-tech text-[8px] truncate ${sandbox_state.cmd_active ? 'border-hud-amber/30 text-hud-amber' : 'border-hud-cyan/20 text-hud-cyan/70'}`}>
+                  $ {sandbox_state.last_cmd}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }

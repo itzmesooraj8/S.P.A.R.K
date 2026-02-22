@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Brain, Cpu, Database, Zap, X } from 'lucide-react';
+import { Brain, Cpu, Database, Zap, X, GitCommit } from 'lucide-react';
+import { useDevState } from '@/hooks/useDevState';
 
 const EMOTIONS = [
   { emoji: '🤖', label: 'NEUTRAL', color: '#00f5ff' },
@@ -19,6 +20,7 @@ const PLUGINS = [
 interface Props { onClose: () => void; }
 
 export default function AIPanelSlider({ onClose }: Props) {
+  const devState = useDevState();
   const [uptime, setUptime] = useState(0);
   const [memUsage] = useState(67);
   const [contextScore] = useState(84);
@@ -85,12 +87,22 @@ export default function AIPanelSlider({ onClose }: Props) {
         </div>
 
         {/* KB Status */}
-        <div className="flex items-center justify-between p-2 hud-panel rounded">
-          <div className="flex items-center gap-1.5">
-            <Database size={10} className="text-hud-blue" />
-            <span className="font-orbitron text-[8px] text-hud-cyan/60">KNOWLEDGE BASE</span>
+        <div className="flex flex-col gap-1 p-2 hud-panel rounded">
+          <div className="flex items-center justify-between mb-1">
+            <div className="flex items-center gap-1.5">
+              <Database size={10} className="text-hud-blue" />
+              <span className="font-orbitron text-[8px] text-hud-cyan/60">DEV OS GRAPH</span>
+            </div>
+            <span className="font-mono-tech text-[9px] text-hud-green">{devState.code_graph.nodes?.length || 0} NODES</span>
           </div>
-          <span className="font-mono-tech text-[9px] text-hud-green">2.1M NODES</span>
+          <div className="flex items-center justify-between border-t border-hud-cyan/10 pt-1 mt-1">
+            <span className="font-orbitron text-[8px] text-hud-cyan/50">HEURISTICS ENGINE</span>
+            <span className="font-mono-tech text-[8px] text-hud-cyan/70">v2.5.1</span>
+          </div>
+          <div className="flex items-center justify-between">
+            <span className="font-orbitron text-[8px] text-hud-cyan/50">CONTEXT TESTS</span>
+            <span className="font-mono-tech text-[8px] text-hud-cyan/70">{Object.keys(devState.context_map.test_to_nodes || {}).length} MAPPED</span>
+          </div>
         </div>
 
         {/* Learning mode */}

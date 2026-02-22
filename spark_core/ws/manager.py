@@ -1,5 +1,8 @@
-from typing import List, Dict
+import json
+from typing import List, Dict, Any
 from fastapi import WebSocket
+from system.state import unified_state
+from intelligence.registry import project_registry
 
 class WebSocketManager:
     def __init__(self):
@@ -12,6 +15,20 @@ class WebSocketManager:
             "notifications": [],
             "admin": []
         }
+        # Subscription binds to project_registry active context in switch_focus
+        # Leaving the legacy unified_state bound as a fallback if no project is active, OR we can deprecate it entirely.
+        # But for smooth transition, we'll keep `unified_state` bound as a global fallover, and let the broadcast tag it.
+        unified_state.subscribe_async(self._on_state_change)
+
+    async def _on_state_change(self, state: Dict[str, Any], version: int, timestamp: float):
+        payload = {
+            "type": "STATE_UPDATE",
+            "version": version,
+            "timestamp": timestamp,
+            "project_id": getattr(project_registry, 'current_focus', 'global'),
+            "state": state
+        }
+        await self.broadcast(json.dumps(payload), "system")
 
     async def connect(self, websocket: WebSocket, namespace: str):
         await websocket.accept()
