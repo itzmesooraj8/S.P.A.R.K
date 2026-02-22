@@ -89,9 +89,26 @@ interface Props {
 }
 
 export default function SystemPanel({ metrics }: Props) {
-  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, sandbox: true });
+  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, sandbox: true, cross_intelligence: false });
   const toggleSection = (k: keyof typeof expandedSections) =>
     setExpandedSections(p => ({ ...p, [k]: !p[k] }));
+
+  const [crossAnalysis, setCrossAnalysis] = useState<any>(null);
+  const [analyzing, setAnalyzing] = useState(false);
+
+  const triggerAnalysis = async () => {
+    setAnalyzing(true);
+    try {
+      const res = await fetch('http://localhost:8000/api/projects/analyze');
+      if (res.ok) {
+        setCrossAnalysis(await res.json());
+      }
+    } catch (err) {
+      console.error("Failed cross analysis", err);
+    } finally {
+      setAnalyzing(false);
+    }
+  };
 
   const { sandbox_state } = useDevState();
 
@@ -284,6 +301,47 @@ export default function SystemPanel({ metrics }: Props) {
                 </div>
                 <div className={`p-1.5 bg-black/50 border rounded font-mono-tech text-[8px] truncate ${sandbox_state.cmd_active ? 'border-hud-amber/30 text-hud-amber' : 'border-hud-cyan/20 text-hud-cyan/70'}`}>
                   $ {sandbox_state.last_cmd}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Cross-Project Intelligence */}
+      <div>
+        <button
+          onClick={() => toggleSection('cross_intelligence')}
+          className="w-full flex items-center justify-between mb-1.5"
+        >
+          <span className="font-orbitron text-[8px] tracking-widest text-hud-purple/80">◈ CROSS-PROJECT META COGNITION</span>
+          <span className="font-mono-tech text-[8px] text-hud-purple/40">{expandedSections.cross_intelligence ? '▼' : '▶'}</span>
+        </button>
+        {expandedSections.cross_intelligence && (
+          <div className="flex flex-col gap-1.5 p-2 rounded border border-hud-purple/20 bg-hud-purple/5">
+            <button
+              onClick={triggerAnalysis}
+              disabled={analyzing}
+              className="w-full py-1.5 border border-hud-purple/50 bg-hud-purple/10 text-hud-purple font-orbitron text-[9px] hover:bg-hud-purple/20 transition-all font-bold tracking-widest disabled:opacity-50"
+            >
+              {analyzing ? "ANALYZING SCHEMA BOUNDARIES..." : "TRIGGER META SYNC"}
+            </button>
+
+            {crossAnalysis && (
+              <div className="mt-2 text-[9px] font-mono-tech">
+                <div className="text-hud-cyan/70 mb-1 border-b border-hud-cyan/20 pb-1">
+                  STATUS: <span className="text-hud-green neon-text-green">{crossAnalysis.meta_cognition_status}</span>
+                </div>
+                <div className="text-hud-cyan/50 mb-1">
+                  DOMAINS: {crossAnalysis.analyzed_projects?.join(', ')}
+                </div>
+                <div className="space-y-1">
+                  {crossAnalysis.cross_patterns?.map((p: any, idx: number) => (
+                    <div key={idx} className="p-1 bg-black/40 border-l border-hud-purple/50">
+                      <div className="text-hud-purple font-bold tracking-wider text-[8px]">{p.type}</div>
+                      <div className="text-hud-cyan/60">{p.description}</div>
+                    </div>
+                  ))}
                 </div>
               </div>
             )}

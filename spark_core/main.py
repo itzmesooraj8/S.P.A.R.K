@@ -12,6 +12,7 @@ from orchestrator.brain import AIOrchestrator
 from system.monitor import SystemMonitor
 from tools.sandbox import init_sandbox, teardown_sandbox
 from intelligence.registry import project_registry
+from intelligence.cross_analyzer import cross_analyzer
 
 app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
 
@@ -132,6 +133,11 @@ async def get_state():
 # -----------------
 # REGISTRY ENDPOINTS
 # -----------------
+@app.get("/api/projects/analyze")
+async def analyze_cross_projects():
+    """Manual trigger to process read-only meta cognition across isolated schemas"""
+    return cross_analyzer.analyze_all(project_registry)
+
 @app.get("/api/projects")
 async def get_projects():
     return {

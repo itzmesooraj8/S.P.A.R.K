@@ -19,6 +19,20 @@ class ProjectContext:
         # Point the sandbox directly at the correct volume root
         self.sandbox.workspace_dir = root_path
 
+    def export_snapshot(self) -> Dict[str, Any]:
+        """Provides a safe, bounded, read-only analytical snapshot of this project space."""
+        st = self.state.get_state()
+        return {
+            "project_id": self.project_id,
+            "root_path": self.root_path,
+            "version": st.get("status", "UNKNOWN"),
+            # Placeholder schema bound:
+            "graph_summary": f"Nodes: {len(st.get('code_graph', {}).get('nodes', []))} | Edges: {len(st.get('code_graph', {}).get('edges', []))}",
+            "last_sandbox_cmd": st.get("sandbox_state", {}).get("last_cmd", "None"),
+            # Real schema to be dictated by the architectural specification:
+            "metadata": "Pending specific schema definition for Cross-Analyzer."
+        }
+
 class MultiProjectRegistry:
     _instance = None
 
