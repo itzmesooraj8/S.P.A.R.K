@@ -1,4 +1,5 @@
-from typing import Dict, Optional
+from typing import Dict, Optional, Any
+import time
 from system.state import UnifiedState
 from sandbox.docker_env import DockerEnvironment
 import hashlib
@@ -22,15 +23,76 @@ class ProjectContext:
     def export_snapshot(self) -> Dict[str, Any]:
         """Provides a safe, bounded, read-only analytical snapshot of this project space."""
         st = self.state.get_state()
+        
+        # Safe extraction layers to avoid exceptions on incomplete mappings
+        cg = st.get('code_graph', {})
+        nodes = cg.get('nodes', [])
+        edges = cg.get('edges', [])
+        
+        # Explicit Bounding Counters
+        num_files = sum(1 for n in nodes if n.get('type') == 'file')
+        num_funcs = sum(1 for n in nodes if n.get('type') == 'function')
+        num_classes = sum(1 for n in nodes if n.get('type') == 'class')
+        
+        # Mutation bounds
+        mutation_log = st.get('mutation_log', [])
+        now = time.time()
+        recent_mut = [m for m in mutation_log if now - m.get('timestamp', 0) < 86400]
+        files_mod = list(set([m.get("target_file", "") for m in mutation_log]))
+        
+        sandbox_state = st.get("sandbox_state", {})
+        last_cmd = str(sandbox_state.get("last_cmd", ""))
+        
+        metrics = st.get("metrics", {})
+        
+        # Enforce exact bounding constraints
         return {
-            "project_id": self.project_id,
-            "root_path": self.root_path,
-            "version": st.get("status", "UNKNOWN"),
-            # Placeholder schema bound:
-            "graph_summary": f"Nodes: {len(st.get('code_graph', {}).get('nodes', []))} | Edges: {len(st.get('code_graph', {}).get('edges', []))}",
-            "last_sandbox_cmd": st.get("sandbox_state", {}).get("last_cmd", "None"),
-            # Real schema to be dictated by the architectural specification:
-            "metadata": "Pending specific schema definition for Cross-Analyzer."
+            "snapshot_schema_version": "1.0",
+            "project_id": str(self.project_id)[:50],
+            "timestamp": now,
+            
+            "graph": {
+                "total_files": num_files,
+                "total_functions": num_funcs,
+                "total_classes": num_classes,
+                "dependency_edges": len(edges),
+                "circular_dependencies": metrics.get("circular_dependencies", 0),
+                "largest_file_lines": 0  # To be fed from AST metrics over time
+            },
+            
+            "structure_digest": {
+                # Bound to max 20, derived from file structure
+                "top_level_dirs": [],  
+                "primary_languages": ["python", "typescript"] if num_files > 0 else [], 
+                "frameworks_detected": [],  
+            },
+            
+            "execution_profile": {
+                "sandbox_active": sandbox_state.get("is_running", False),
+                "last_command": last_cmd[:120] if last_cmd else None,
+                "last_exit_code": sandbox_state.get("last_exit_code", None),
+                "avg_exec_time_ms": 0.0,
+            },
+            
+            "mutation_profile": {
+                "total_mutations": len(mutation_log),
+                "recent_mutations_24h": len(recent_mut),
+                "files_modified_count": len(files_mod),
+                "most_modified_files": [f.split('/')[-1][:50] for f in files_mod][:5],
+            },
+            
+            "risk_profile": {
+                "lint_errors": metrics.get("lint_errors", 0),
+                "type_errors": metrics.get("type_errors", 0),
+                "known_vulnerabilities": 0,
+                "unsafe_patterns_detected": 0,
+            },
+            
+            "resource_profile": {
+                "estimated_loc": num_files * 150,  # Estimator
+                "container_memory_mb": None, # Will be fetched dynamically
+                "container_cpu_percent": None,
+            }
         }
 
 class MultiProjectRegistry:

@@ -329,19 +329,47 @@ export default function SystemPanel({ metrics }: Props) {
 
             {crossAnalysis && (
               <div className="mt-2 text-[9px] font-mono-tech">
-                <div className="text-hud-cyan/70 mb-1 border-b border-hud-cyan/20 pb-1">
-                  STATUS: <span className="text-hud-green neon-text-green">{crossAnalysis.meta_cognition_status}</span>
+                <div className="flex justify-between items-center mb-1.5 border-b border-hud-purple/40 pb-1">
+                  <span className="text-hud-cyan/70">SYS HEALTH SCORE:</span>
+                  <span className="font-orbitron text-hud-green neon-text-green text-[10px] font-bold">
+                    {crossAnalysis.system_health_score}/100
+                  </span>
                 </div>
-                <div className="text-hud-cyan/50 mb-1">
-                  DOMAINS: {crossAnalysis.analyzed_projects?.join(', ')}
+
+                <div className="text-hud-purple/80 mb-0.5 tracking-wider text-[8px] font-orbitron">◈ COMPARATIVE METRICS</div>
+                <div className="grid grid-cols-2 gap-1 mb-2">
+                  <div className="p-1 bg-black/40 border-l-2 border-slate-500">
+                    <span className="text-slate-400 block text-[7px]">LARGEST</span>
+                    <span className="text-hud-cyan truncate block">{crossAnalysis.comparative_metrics?.largest_project}</span>
+                  </div>
+                  <div className="p-1 bg-black/40 border-l-2 border-hud-amber">
+                    <span className="text-hud-amber/70 block text-[7px]">MOST COMPLEX</span>
+                    <span className="text-hud-amber truncate block">{crossAnalysis.comparative_metrics?.most_complex_project}</span>
+                  </div>
+                  <div className="p-1 bg-black/40 border-l-2 border-hud-red">
+                    <span className="text-hud-red/70 block text-[7px]">HIGHEST RISK</span>
+                    <span className="text-hud-red truncate block">{crossAnalysis.comparative_metrics?.highest_risk_project}</span>
+                  </div>
+                  <div className="p-1 bg-black/40 border-l-2 border-hud-green">
+                    <span className="text-hud-green/70 block text-[7px]">MOST ACTIVE</span>
+                    <span className="text-hud-green truncate block">{crossAnalysis.comparative_metrics?.most_active_project}</span>
+                  </div>
                 </div>
+
+                <div className="text-hud-purple/80 mb-0.5 tracking-wider text-[8px] font-orbitron">◈ CROSS-DOMAIN PATTERNS</div>
                 <div className="space-y-1">
-                  {crossAnalysis.cross_patterns?.map((p: any, idx: number) => (
-                    <div key={idx} className="p-1 bg-black/40 border-l border-hud-purple/50">
-                      <div className="text-hud-purple font-bold tracking-wider text-[8px]">{p.type}</div>
-                      <div className="text-hud-cyan/60">{p.description}</div>
-                    </div>
-                  ))}
+                  {crossAnalysis.cross_patterns?.map((p: any, idx: number) => {
+                    const sevColor = p.severity === 'high' ? 'text-hud-red border-hud-red' : p.severity === 'medium' ? 'text-hud-amber border-hud-amber' : 'text-hud-cyan border-hud-cyan';
+                    return (
+                      <div key={idx} className={`p-1 bg-black/40 border-l-2 ${sevColor}`}>
+                        <div className="font-bold tracking-wider text-[8px]">{p.pattern_type.replace(/_/g, ' ').toUpperCase()}</div>
+                        <div className="text-[7px] opacity-70 mt-0.5">DOMAINS: {p.projects.join(', ')}</div>
+                      </div>
+                    );
+                  })}
+                  {(!crossAnalysis.cross_patterns || crossAnalysis.cross_patterns.length === 0) && (
+                    <div className="text-hud-cyan/40 text-[8px]">NO PATTERNS DETECTED.</div>
+                  )}
                 </div>
               </div>
             )}
