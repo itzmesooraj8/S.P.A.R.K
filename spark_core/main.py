@@ -13,6 +13,8 @@ from system.monitor import SystemMonitor
 from tools.sandbox import init_sandbox, teardown_sandbox
 from intelligence.registry import project_registry
 from intelligence.cross_analyzer import cross_analyzer
+from intelligence.pattern_memory import pattern_store
+from intelligence.optimizer import optimizer
 
 app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
 
@@ -137,6 +139,19 @@ async def get_state():
 async def analyze_cross_projects():
     """Manual trigger to process read-only meta cognition across isolated schemas"""
     return cross_analyzer.analyze_all(project_registry)
+
+@app.get("/api/projects/optimize/{project_id}")
+async def get_optimization_plan(project_id: str):
+    """Phase 3A Advisory endpoint for strategic system alignment recommendations"""
+    ctx = project_registry.active_projects.get(project_id)
+    if not ctx:
+        return {"error": "Project not active or unregistered"}, 404
+        
+    snap = ctx.export_snapshot()
+    trends = pattern_store.compute_trends(project_id)
+    
+    plan = optimizer.analyze_project(project_id, snap, trends)
+    return plan
 
 @app.get("/api/projects")
 async def get_projects():

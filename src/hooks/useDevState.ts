@@ -43,7 +43,14 @@ export interface DevState {
     code_graph: CodeGraph;
     context_map: ContextMap;
     mutation_log: MutationLogEntry[];
-    sandbox_state: { is_running: boolean; last_cmd: string; cmd_active: boolean; };
+    sandbox_state: {
+        is_running: boolean;
+        last_cmd: string;
+        cmd_active: boolean;
+    };
+    project_focus?: string;
+    history?: any; // Added based on update logic
+    [key: string]: any;
 }
 
 export function useDevState(): DevState {
@@ -52,7 +59,13 @@ export function useDevState(): DevState {
         code_graph: { nodes: [], edges: [] },
         context_map: { node_to_tests: {}, test_to_nodes: {} },
         mutation_log: [],
-        sandbox_state: { is_running: false, last_cmd: "Offline", cmd_active: false }
+        sandbox_state: {
+            is_running: false,
+            last_cmd: '',
+            cmd_active: false
+        },
+        project_focus: undefined,
+        history: undefined // Initialized history
     });
 
     useEffect(() => {
@@ -77,7 +90,9 @@ export function useDevState(): DevState {
                                 code_graph: data.state.code_graph || prev.code_graph,
                                 context_map: data.state.context_map || prev.context_map,
                                 mutation_log: data.state.mutation_log || prev.mutation_log,
-                                sandbox_state: data.state.sandbox_state || prev.sandbox_state
+                                history: data.state.history || prev.history,
+                                sandbox_state: data.state.sandbox_state || prev.sandbox_state,
+                                project_focus: data.state.project_focus || prev.project_focus
                             };
                         });
                     }

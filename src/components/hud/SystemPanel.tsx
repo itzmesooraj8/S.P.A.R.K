@@ -89,7 +89,7 @@ interface Props {
 }
 
 export default function SystemPanel({ metrics }: Props) {
-  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, sandbox: true, cross_intelligence: false });
+  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, sandbox: true, cross_intelligence: false, optimization: false });
   const toggleSection = (k: keyof typeof expandedSections) =>
     setExpandedSections(p => ({ ...p, [k]: !p[k] }));
 
@@ -110,7 +110,34 @@ export default function SystemPanel({ metrics }: Props) {
     }
   };
 
-  const { sandbox_state } = useDevState();
+  const { sandbox_state, project_focus } = useDevState();
+
+  const [optimizationPlan, setOptimizationPlan] = useState<any>(null);
+  const [analyzingOpt, setAnalyzingOpt] = useState(false);
+
+  const triggerOptimization = async () => {
+    if (!project_focus) return;
+    setAnalyzingOpt(true);
+    try {
+      const res = await fetch(`http://localhost:8000/api/projects/optimize/${project_focus}`);
+      if (res.ok) {
+        setOptimizationPlan(await res.json());
+      }
+    } catch (err) {
+      console.error("Failed optimization fetch", err);
+    } finally {
+      setAnalyzingOpt(false);
+    }
+  };
+
+  const handleDecision = (id: string, accept: boolean) => {
+    // Stub log interaction for Phase 3A metrics
+    console.log(`[Phase 3A] User ${accept ? 'ACCEPTED' : 'REJECTED'} recommendation: ${id}`);
+    setOptimizationPlan((prev: any) => ({
+      ...prev,
+      recommendations: prev.recommendations.filter((r: any) => r.id !== id)
+    }));
+  };
 
   const threatColors = { low: '#00ff88', medium: '#ffb800', high: '#ff3b3b' };
   const threatColor = threatColors[metrics.threatLevel];
@@ -392,6 +419,59 @@ export default function SystemPanel({ metrics }: Props) {
                       </div>
                     </div>
                   ))}
+                </div>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* Advisory Optimization Engine */}
+      <div>
+        <button
+          onClick={() => toggleSection('optimization')}
+          className="w-full flex items-center justify-between mb-1.5"
+        >
+          <span className="font-orbitron text-[8px] tracking-widest text-hud-amber/80">◈ STRATEGIC FORESIGHT</span>
+          <span className="font-mono-tech text-[8px] text-hud-amber/40">{expandedSections.optimization ? '▼' : '▶'}</span>
+        </button>
+        {expandedSections.optimization && (
+          <div className="flex flex-col gap-1.5 p-2 rounded border border-hud-amber/20 bg-hud-amber/5">
+            <button
+              onClick={triggerOptimization}
+              disabled={analyzingOpt || !project_focus}
+              className="w-full py-1.5 border border-hud-amber/50 bg-hud-amber/10 text-hud-amber font-orbitron text-[9px] hover:bg-hud-amber/20 transition-all font-bold tracking-widest disabled:opacity-50"
+            >
+              {analyzingOpt ? "ANALYZING HEURISTICS..." : "GENERATE ADVISORY PLAN"}
+            </button>
+
+            {optimizationPlan && (
+              <div className="mt-2 text-[9px] font-mono-tech">
+                <div className="flex justify-between items-center mb-1.5 border-b border-hud-amber/20 pb-1 text-hud-amber/70">
+                  <span>TARGET: {optimizationPlan.project_id?.toUpperCase()}</span>
+                  <span className="font-orbitron font-bold">RECS: {optimizationPlan.recommendation_count}</span>
+                </div>
+
+                <div className="space-y-1.5">
+                  {optimizationPlan.recommendations?.map((r: any) => {
+                    const sevColor = r.severity === 'high' ? 'text-hud-red border-hud-red' : r.severity === 'medium' ? 'text-hud-amber border-hud-amber' : 'text-hud-cyan border-hud-cyan';
+                    return (
+                      <div key={r.id} className={`p-1.5 bg-black/60 border-l-[3px] ${sevColor} flex flex-col gap-1`}>
+                        <div className="flex justify-between items-start">
+                          <span className="font-bold tracking-wider text-[8px]">{r.type.toUpperCase()}</span>
+                          <span className="text-[7px] bg-white/10 px-1 rounded opacity-70">CONF: {Math.round(r.confidence * 100)}%</span>
+                        </div>
+                        <div className="text-slate-300 text-[8px] leading-tight">{r.message}</div>
+                        <div className="flex gap-1 mt-1 shrink-0">
+                          <button onClick={() => handleDecision(r.id, true)} className="flex-1 border border-hud-green/30 bg-hud-green/10 text-hud-green hover:bg-hud-green/20 text-[7px] py-1 transition-all">APPROVE</button>
+                          <button onClick={() => handleDecision(r.id, false)} className="flex-1 border border-slate-500/30 bg-slate-500/10 text-slate-400 hover:bg-slate-500/30 text-[7px] py-1 transition-all">IGNORE</button>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {(!optimizationPlan.recommendations || optimizationPlan.recommendations.length === 0) && (
+                    <div className="text-hud-amber/40 text-[8px] p-2 text-center bg-black/40 border border-hud-amber/10">SYSTEM STABLE. NO ADVISORY ACTIONS REQUIRED.</div>
+                  )}
                 </div>
               </div>
             )}
