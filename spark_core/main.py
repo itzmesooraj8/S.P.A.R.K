@@ -7,6 +7,7 @@ import uvicorn
 import os
 import time
 import sys
+from contextlib import asynccontextmanager
 
 from ws.manager import ws_manager
 from orchestrator.brain import AIOrchestrator
@@ -21,23 +22,12 @@ from intelligence.trust_layer import trust_store
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
-app = FastAPI(title="SPARK AI Core v2", version="2.0.0")
-
-# CORS for local dev HUD
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
-
 # Initialize Core Services
 orchestrator = AIOrchestrator()
 sys_monitor = SystemMonitor()
 
-@app.on_event("startup")
-async def startup_event():
+@asynccontextmanager
+async def lifespan(app: FastAPI):
     print("🛸 [SPARK] Core Node Initializing...")
     
     # Auto-Bootstrap Initial Project Domains
@@ -55,11 +45,22 @@ async def startup_event():
     # Start background intelligence loop
     asyncio.create_task(sys_monitor.start_monitoring(ws_manager))
     print("✅ [SPARK] Background monitor started.")
-
-@app.on_event("shutdown")
-async def shutdown_event():
+    
+    yield
+    
     print("🛸 [SPARK] Core Node Shutting Down...")
     await teardown_sandbox()
+
+app = FastAPI(title="SPARK AI Core v2", version="2.0.0", lifespan=lifespan)
+
+# CORS for local dev HUD
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["*"],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 # -----------------
 # WEBSOCKET NAMESPACES

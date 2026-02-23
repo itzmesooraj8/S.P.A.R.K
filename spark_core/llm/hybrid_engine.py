@@ -7,7 +7,7 @@ class HybridLLM:
     Hybrid LLM engine to call Local Ollama as primary.
     If it fails or input is too large, fallback to Cloud (Gemini/Claude/OpenAI).
     """
-    def __init__(self, model: str = "llama3:8b", ollama_host: str = "http://localhost:11434"):
+    def __init__(self, model: str = "deepseek-r1:latest", ollama_host: str = "http://127.0.0.1:11434"):
         self.model = model
         self.host = ollama_host
         print(f"🧬 [LLM] Engine Booting. Primary: Local ({model}) | Fallback: Cloud")

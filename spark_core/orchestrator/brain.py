@@ -12,7 +12,7 @@ class AIOrchestrator:
     def __init__(self):
         print("🧠 [SPARK] Initializing Brain...")
         self.personality = PersonalityEngine(mode="TACTICAL")
-        self.llm = HybridLLM(model="llama3:8b") # or "mistral"
+        self.llm = HybridLLM(model="deepseek-r1:latest") # or "mistral"
         self.memory = SessionMemory(max_turns=5)
         self.tool_router = ToolRouter()
         

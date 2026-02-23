@@ -4,6 +4,10 @@ import time
 import os
 import hashlib
 import json
+try:
+    import GPUtil
+except ImportError:
+    GPUtil = None
 
 from system.state import unified_state
 from intelligence.registry import project_registry
@@ -89,13 +93,54 @@ class SystemMonitor:
     async def start_monitoring(self, ws_manager_instance):
         self.running = True
         
+        last_net_io = psutil.net_io_counters() if hasattr(psutil, 'net_io_counters') else None
+        last_net_time = time.time()
+        
         while self.running:
             # Global CPU/RAM
             cpu = psutil.cpu_percent(interval=None)
+            ram = psutil.virtual_memory().percent
+            disk = psutil.disk_usage('/').percent
+            
+            # Battery
+            battery = psutil.sensors_battery() if hasattr(psutil, 'sensors_battery') else None
+            battery_pct = battery.percent if battery else 100
+            charging = battery.power_plugged if battery else True
+            
+            # Network throughput mapped to 0-100% scale (rough approximation)
+            network_pct = 0
+            if last_net_io:
+                current_time = time.time()
+                current_net_io = psutil.net_io_counters()
+                dt = current_time - last_net_time
+                if dt > 0:
+                    bytes_recv = current_net_io.bytes_recv - last_net_io.bytes_recv
+                    bytes_sent = current_net_io.bytes_sent - last_net_io.bytes_sent
+                    total_mbps = (bytes_recv + bytes_sent) * 8 / (1024 * 1024 * dt)
+                    network_pct = min(100.0, total_mbps * 2) # Arbitrary scaling for HUD visualization
+                last_net_io = current_net_io
+                last_net_time = current_time
+            
+            # GPU
+            gpu_pct = 0
+            if GPUtil:
+                try:
+                    gpus = GPUtil.getGPUs()
+                    if gpus:
+                        gpu_pct = gpus[0].load * 100
+                except Exception:
+                    pass
+            else:
+                gpu_pct = disk # fallback visualization if GPUtil not found
+
             payload = {
                 "cpu": cpu,
-                "ram": psutil.virtual_memory().percent,
-                "disk": psutil.disk_usage('/').percent,
+                "ram": ram,
+                "disk": disk,
+                "gpu": gpu_pct,
+                "network": network_pct,
+                "battery": battery_pct,
+                "charging": charging,
                 "timestamp": int(time.time()),
             }
             unified_state.update("metrics", payload)

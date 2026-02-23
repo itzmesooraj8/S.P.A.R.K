@@ -51,23 +51,28 @@ export function useSystemMetrics(): SystemMetrics {
         try {
           const data = JSON.parse(event.data);
 
-          if (data.type === "METRICS") {
+          if (data.type === "STATE_UPDATE" && data.state && data.state.metrics) {
+            const metricsPayload = data.state.metrics;
             const now = Date.now();
 
             setMetrics(prev => {
-              // 1. Process CPU
-              const cpuValue = data.cpu ?? prev.cpu;
+              // Process CPU
+              const cpuValue = metricsPayload.cpu ?? prev.cpu;
               const newCpuHistory = [...prev.cpuHistory, { value: Math.round(cpuValue), time: now }].slice(-MAX_HISTORY);
 
-              // 2. Process RAM
-              const ramValue = data.ram ?? prev.ram;
+              // Process RAM
+              const ramValue = metricsPayload.ram ?? prev.ram;
               const newRamHistory = [...prev.ramHistory, { value: Math.round(ramValue), time: now }].slice(-MAX_HISTORY);
 
-              // 3. Optional map Disk -> Network/GPU temporary if needed
-              const diskValue = data.disk ?? prev.gpu;
-              const newGpuHistory = [...prev.gpuHistory, { value: Math.round(diskValue), time: now }].slice(-MAX_HISTORY);
+              // Process GPU
+              const gpuValue = metricsPayload.gpu ?? prev.gpu;
+              const newGpuHistory = [...prev.gpuHistory, { value: Math.round(gpuValue), time: now }].slice(-MAX_HISTORY);
 
-              // 4. Calculate Threat Level based on real incoming CPU
+              // Process Network
+              const networkValue = metricsPayload.network ?? prev.network;
+              const newNetworkHistory = [...prev.networkHistory, { value: Math.round(networkValue), time: now }].slice(-MAX_HISTORY);
+
+              // Threat Level heuristic
               const threatLevel: 'low' | 'medium' | 'high' = cpuValue > 85 ? 'high' : cpuValue > 70 ? 'medium' : 'low';
 
               return {
@@ -76,8 +81,12 @@ export function useSystemMetrics(): SystemMetrics {
                 cpuHistory: newCpuHistory,
                 ram: ramValue,
                 ramHistory: newRamHistory,
-                gpu: diskValue, // Mapping disk to gpu for now
+                gpu: gpuValue,
                 gpuHistory: newGpuHistory,
+                network: networkValue,
+                networkHistory: newNetworkHistory,
+                battery: metricsPayload.battery ?? prev.battery,
+                charging: metricsPayload.charging ?? prev.charging,
                 threatLevel: threatLevel,
                 uptime: now - startTime.current,
               };
