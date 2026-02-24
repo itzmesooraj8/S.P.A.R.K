@@ -25,28 +25,21 @@ class SystemMonitor:
         
         self.project_hashes = {}
         self.last_heavy_scan = {}
+        self.last_fast_scan = {}
         self.heavy_scan_cooldown = {} # failures backoff
 
-    def compute_project_hash(self, root_dir: str) -> str:
-        mtimes = []
-        for dirpath, _, filenames in os.walk(root_dir):
-            if "node_modules" in dirpath or ".git" in dirpath or "site-packages" in dirpath or "__pycache__" in dirpath:
-                continue
-            for f in filenames:
-                if f.endswith(".py"):
-                    try:
-                        mtimes.append(str(os.stat(os.path.join(dirpath, f)).st_mtime))
-                    except Exception:
-                        pass
-        return hashlib.md5("".join(mtimes).encode()).hexdigest()
-
-    async def run_fast_scan(self, pid: str, ctx):
-        print(f"⚡ [AUDIT] Fast Scan triggered for {pid}")
-        scanner = WorkspaceScanner(ctx.sandbox, CodeGraph())
-        graph_data = await scanner.scan_workspace()
+    async def run_fast_scan(self, pid: str, ctx) -> bool:
+        if not hasattr(ctx, "scanner"):
+            # Initialize persistent scanner to maintain incremental AST cache
+            ctx.scanner = WorkspaceScanner(ctx.sandbox, CodeGraph())
+            
+        graph_data, changed = await ctx.scanner.scan_workspace()
         
-        if "error" not in graph_data:
+        if changed and "error" not in graph_data:
             ctx.state.update("code_graph", graph_data)
+            
+        return changed
+
 
     async def run_heavy_scan(self, pid: str, ctx):
         print(f"🛡️ [AUDIT] Heavy Scan triggered for {pid}")
@@ -147,18 +140,15 @@ class SystemMonitor:
             
             # Hybrid Continuous Audit
             for pid, ctx in list(project_registry.active_projects.items()):
-                current_hash = self.compute_project_hash(ctx.root_path)
-                last_hash = self.project_hashes.get(pid)
+                # Throttle frequent polling
+                if time.time() - self.last_fast_scan.get(pid, 0) < 10:
+                    continue
+                    
+                self.last_fast_scan[pid] = time.time()
+                changed = await self.run_fast_scan(pid, ctx)
                 
-                if current_hash != last_hash:
-                    # File change detected!
-                    self.project_hashes[pid] = current_hash
-                    
-                    await self.run_fast_scan(pid, ctx)
-                    
+                if changed:
                     if self.heavy_scan_needed(pid, ctx):
-                        # Ensure only one heavy scan runs without blocking everything, but for safety await it
-                        # with a pseudo-timeout
                         try:
                             await asyncio.wait_for(self.run_heavy_scan(pid, ctx), timeout=60.0)
                         except asyncio.TimeoutError:

@@ -30,8 +30,9 @@ class ProjectContext:
         container_name = f"spark_sandbox_{safe_hash}"
         
         self.sandbox = DockerEnvironment(container_name=container_name, state_hook=self.state)
-        # Point the sandbox directly at the correct volume root
-        self.sandbox.workspace_dir = root_path
+        # Point the sandbox volume mount to the correct host root
+        self.sandbox.host_workspace_dir = root_path
+        self.sandbox.workspace_dir = "/workspace"
 
     def export_snapshot(self) -> Dict[str, Any]:
         """Provides a safe, bounded, read-only analytical snapshot of this project space."""

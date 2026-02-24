@@ -30,15 +30,10 @@ sys_monitor = SystemMonitor()
 async def lifespan(app: FastAPI):
     print("🛸 [SPARK] Core Node Initializing...")
     
-    # Auto-Bootstrap Initial Project Domains
+    # Auto-Bootstrap Single Root Workspace
     workspace_root = os.path.dirname(os.path.dirname(__file__))
-    frontend_root = os.path.join(workspace_root, "src")
-    
-    project_registry.load_project("spark_kernel", workspace_root)
-    if os.path.exists(frontend_root):
-        project_registry.load_project("spark_frontend", frontend_root)
-        
-    project_registry.switch_focus("spark_kernel")
+    project_registry.load_project("workspace", workspace_root)
+    project_registry.switch_focus("workspace")
     
     # Initialize the sandbox isolated execution environment for the legacy fallback/active focus
     await init_sandbox()

@@ -15,6 +15,7 @@ class DockerEnvironment(ExecutionEnvironment):
         self.timeout_sec = timeout_sec
         self.max_output_chars = max_output_chars
         self.workspace_dir = "/workspace"
+        self.host_workspace_dir = None
         self.last_cmd = "System ready."
         self.cmd_active = False
         self.active_process = None
@@ -92,9 +93,13 @@ class DockerEnvironment(ExecutionEnvironment):
         
         # Start a persistent container that sleeps forever so we can exec into it
         print(f"🐳 [DOCKER] Starting sandbox container '{self.container_name}'...")
-        res = await self._run_subprocess(
-            "docker", "run", "-d", "--name", self.container_name, "-w", self.workspace_dir, self.image, "sleep", "infinity"
-        )
+        
+        docker_args = ["docker", "run", "-d", "--name", self.container_name]
+        if self.host_workspace_dir:
+            docker_args.extend(["-v", f"{self.host_workspace_dir}:{self.workspace_dir}"])
+        docker_args.extend(["-w", self.workspace_dir, self.image, "sleep", "infinity"])
+        
+        res = await self._run_subprocess(*docker_args)
         
         if res.success:
             self.is_running = True

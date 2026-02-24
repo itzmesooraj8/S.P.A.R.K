@@ -36,13 +36,47 @@ class PatternMemoryStore:
             loc = snap.get("resource_profile", {}).get("estimated_loc", 1)
             mutation_density = float(mp.get("total_mutations", 0)) / max(1, loc)
             
-            risk_score = float(
+            # Historical Static Risk Baseline (used as floor/starting bounds)
+            baseline_risk = float(
                 lint_errors * 0.5 + 
                 rp.get("type_errors", 0) * 0.8 + 
                 (vulns * 2.0) + 
                 (circular_deps * 1.2) + 
                 (mutation_density * 0.5)
             )
+            
+            # Extract Delta Profile
+            delta = gp.get("delta", {"nodes_added":0, "nodes_removed":0, "edges_added":0, "edges_removed":0})
+            
+            # Structural Pressure Risk Delta Eq
+            # We assign higher weight to removals and structural connection rewires (edges) 
+            # than simple new node additions.
+            delta_nodes_added = delta.get("nodes_added", 0)
+            delta_nodes_removed = delta.get("nodes_removed", 0)
+            delta_edges_added = delta.get("edges_added", 0)
+            delta_edges_removed = delta.get("edges_removed", 0)
+            
+            # In Phase 3, we would multiply this by exact Centrality Hub-weights,
+            # but for 2.5 we rely on gross structural edges as a proxy for Hub modification.
+            structural_pressure = (
+                delta_nodes_added * 0.3 +
+                delta_edges_added * 0.5 +
+                delta_nodes_removed * 0.7 + 
+                delta_edges_removed * 1.2
+            )
+            
+            risk_delta = structural_pressure * 0.5 # Volatility dampening factor
+            
+            # Apply Continuity Model
+            last_risk = self.history[pid][-1]["risk_score"] if pid in self.history and self.history[pid] else baseline_risk
+            
+            if structural_pressure == 0 and len(self.history.get(pid, [])) > 0:
+                # Stability Decay Model: Slow cooldown when architecture stabilizes
+                new_risk = max(baseline_risk, last_risk - 0.5)
+            else:
+                new_risk = min(100.0, last_risk + risk_delta)
+                
+            risk_score = round(new_risk, 2)
             
             frame = {
                 "timestamp": current_time,
@@ -84,20 +118,32 @@ class PatternMemoryStore:
         last = frames[-1]
         n = len(frames)
         
-        risk_slope = (last["risk_score"] - first["risk_score"]) / n
+        # Weighted moving momentum for 7-day drift model
+        if n >= 4:
+            today_risk = frames[-1]["risk_score"]
+            yesterday_risk = frames[-2]["risk_score"]
+            day2_risk = frames[-3]["risk_score"]
+            day3_risk = frames[-4]["risk_score"]
+            momentum = (today_risk - yesterday_risk)*0.5 + (yesterday_risk - day2_risk)*0.3 + (day2_risk - day3_risk)*0.2
+            risk_slope = momentum
+        else:
+            risk_slope = (last["risk_score"] - first["risk_score"]) / n
+            
         mutation_variance = max(f["mutation_density"] for f in frames) - min(f["mutation_density"] for f in frames)
         circ_slope = (last["circular_dependencies"] - first["circular_dependencies"]) / n
         
-        # 7-day projection modeling (assuming 'n' represents ~daily or per-run frames over an active window)
-        # We will normalize risk_slope to approximate per-day if we assume ticks are per hour, 
-        # but realistically we just multiply slope by an arbitrary forward window (e.g., 7 ticks).
-        projected_risk_7d = max(0.0, last["risk_score"] + (risk_slope * 7 * 24))
+        # Projected risk based on momentum 
+        projected_risk_7d = max(0.0, last["risk_score"] + (risk_slope * 7))
         
-        projected_trend = "Stable System"
-        if risk_slope > 0.5:
+        critical_threshold = 50.0
+        if projected_risk_7d > critical_threshold:
+            projected_trend = "Architectural Instability"
+        elif risk_slope > 0.5:
             projected_trend = "Escalating Risk"
         elif risk_slope < -0.5:
             projected_trend = "Improving Stability"
+        else:
+            projected_trend = "Stable System"
         
         return {
             "risk_trend": "DEGRADING" if risk_slope > 0.5 else "IMPROVING" if risk_slope < -0.5 else "STABLE",

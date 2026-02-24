@@ -21,12 +21,22 @@ class WebSocketManager:
         unified_state.subscribe_async(self._on_state_change)
 
     async def _on_state_change(self, state: Dict[str, Any], version: int, timestamp: float):
+        # Prevent MemoryError by stripping out the massive raw graph nodes/edges
+        state_copy = state.copy()
+        if "code_graph" in state_copy:
+            cg = state_copy["code_graph"]
+            state_copy["code_graph"] = {
+                "nodes_count": len(cg.get("nodes", [])),
+                "edges_count": len(cg.get("edges", [])),
+                "summary_only": True
+            }
+            
         payload = {
             "type": "STATE_UPDATE",
             "version": version,
             "timestamp": timestamp,
             "project_id": getattr(project_registry, 'current_focus', 'global'),
-            "state": state
+            "state": state_copy
         }
         await self.broadcast(json.dumps(payload), "system")
 

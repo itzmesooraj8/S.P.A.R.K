@@ -133,16 +133,21 @@ class WorkspaceScanner:
     def __init__(self, sandbox: DockerEnvironment, graph: CodeGraph):
         self.sandbox = sandbox
         self.graph = graph
+        
+        from intelligence.file_cache import FileHashCache
+        from intelligence.ast_cache import ASTCache
+        self.file_cache = FileHashCache()
+        self.ast_cache = ASTCache()
 
-    async def scan_workspace(self) -> dict:
+    async def scan_workspace(self) -> tuple[dict, bool]:
         print("🧠 [SCANNER] Initiating host-fast workspace analysis...")
         
-        self.graph.clear()
+        self.graph.reset_delta()
         
         root_dir = self.sandbox.workspace_dir
         if not root_dir or not os.path.exists(root_dir):
             print(f"⚠️ [SCANNER] Workspace dir not found: {root_dir}")
-            return {"error": "Workspace directory not found on host."}
+            return {"error": "Workspace directory not found on host."}, False
             
         py_files = []
         for dirpath, _, filenames in os.walk(root_dir):
@@ -152,9 +157,30 @@ class WorkspaceScanner:
                 if f.endswith(".py"):
                     py_files.append(os.path.join(dirpath, f))
                     
-        print(f"🧠 [SCANNER] Found {len(py_files)} Python files to analyze on host.")
-        
+        # Find changed
+        current_py_files = set(py_files)
+        changed_files = []
         for file_path in py_files:
+            if self.file_cache.has_changed(file_path):
+                changed_files.append(file_path)
+                
+        # Find removed files
+        removed_files = [f for f in list(self.file_cache.hashes.keys()) if f not in current_py_files]
+        for f in removed_files:
+            self.file_cache.remove(f)
+            self.ast_cache.remove(f)
+            self.graph.remove_file_data(f)
+            
+        if not changed_files and not removed_files:
+            return self.graph.to_dict(), False
+            
+        num_changed = len(changed_files)
+        num_removed = len(removed_files)
+        if num_changed > 0 or num_removed > 0:
+            print(f"🧠 [SCANNER] Incremental Scan: {num_changed} changed, {num_removed} removed out of {len(py_files)} total Python files.")
+        
+        for file_path in changed_files:
+            self.graph.remove_file_data(file_path)
             try:
                 with open(file_path, "r", encoding="utf-8") as f:
                     code_content = f.read()
@@ -167,6 +193,7 @@ class WorkspaceScanner:
             
             try:
                 tree = ast.parse(code_content, filename=file_path)
+                self.ast_cache.store(file_path, tree)
                 builder = PythonGraphBuilder(file_path=file_path, module_name=module_name, graph=self.graph)
                 builder.visit(tree)
             except Exception as e:
@@ -179,12 +206,15 @@ class WorkspaceScanner:
         }
         cycles = detect_cycles(graph_dict)
         
-        # We also need to update this project's state.
-        # But wait, self.sandbox.state_hook exists! (It's a UnifiedState)
         st = self.sandbox.state_hook.get_state()
         metrics = st.get("metrics", {})
         metrics["circular_dependencies"] = cycles
         self.sandbox.state_hook.update("metrics", metrics)
         
+        delta = self.graph.get_delta()
+        
         print(f"✅ [SCANNER] Workspace indexed. Nodes: {len(self.graph.nodes)}, Edges: {len(self.graph.edges)}. Cycles: {cycles}")
-        return self.graph.to_dict()
+        res = self.graph.to_dict()
+        res["delta"] = delta
+        
+        return res, True
