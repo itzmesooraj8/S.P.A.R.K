@@ -138,16 +138,20 @@ class WorkspaceScanner:
         from intelligence.ast_cache import ASTCache
         self.file_cache = FileHashCache()
         self.ast_cache = ASTCache()
+        self._missing_workspace_warned = False
 
     async def scan_workspace(self) -> tuple[dict, bool]:
-        print("🧠 [SCANNER] Initiating host-fast workspace analysis...")
-        
         self.graph.reset_delta()
         
         root_dir = self.sandbox.workspace_dir
         if not root_dir or not os.path.exists(root_dir):
-            print(f"⚠️ [SCANNER] Workspace dir not found: {root_dir}")
+            if not self._missing_workspace_warned:
+                print(f"⚠️ [SCANNER] Workspace dir not found: {root_dir}")
+                self._missing_workspace_warned = True
+            await asyncio.sleep(10) # Cooldown before returning
             return {"error": "Workspace directory not found on host."}, False
+            
+        self._missing_workspace_warned = False # Reset if found
             
         py_files = []
         for dirpath, _, filenames in os.walk(root_dir):
@@ -176,8 +180,7 @@ class WorkspaceScanner:
             
         num_changed = len(changed_files)
         num_removed = len(removed_files)
-        if num_changed > 0 or num_removed > 0:
-            print(f"🧠 [SCANNER] Incremental Scan: {num_changed} changed, {num_removed} removed out of {len(py_files)} total Python files.")
+        print(f"🧠 [SCANNER] Changes detected — scanning {num_changed} changed, {num_removed} removed out of {len(py_files)} Python files.")
         
         for file_path in changed_files:
             self.graph.remove_file_data(file_path)

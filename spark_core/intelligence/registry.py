@@ -1,6 +1,7 @@
 from typing import Dict, Optional, Any
 import time
 import os
+from pathlib import Path
 from system.state import UnifiedState
 from sandbox.docker_env import DockerEnvironment
 import hashlib
@@ -32,7 +33,11 @@ class ProjectContext:
         self.sandbox = DockerEnvironment(container_name=container_name, state_hook=self.state)
         # Point the sandbox volume mount to the correct host root
         self.sandbox.host_workspace_dir = root_path
-        self.sandbox.workspace_dir = "/workspace"
+        # workspace_dir: inside container it's /workspace; on host use root_path.
+        # SPARK_WORKSPACE_DIR env var overrides, then falls back to /workspace if running in
+        # a container, otherwise uses root_path directly (Windows / host mode).
+        _container_ws = "/workspace" if Path("/workspace").exists() else None
+        self.sandbox.workspace_dir = os.getenv("SPARK_WORKSPACE_DIR", _container_ws or root_path)
 
     def export_snapshot(self) -> Dict[str, Any]:
         """Provides a safe, bounded, read-only analytical snapshot of this project space."""

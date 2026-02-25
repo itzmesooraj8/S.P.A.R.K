@@ -1,13 +1,17 @@
 import asyncio
+import os
 import httpx
 from typing import Optional
+
+# Model can be overridden via env var (loaded from .env by run_server.py)
+_DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3:8b")
 
 class HybridLLM:
     """
     Hybrid LLM engine to call Local Ollama as primary.
     If it fails or input is too large, fallback to Cloud (Gemini/Claude/OpenAI).
     """
-    def __init__(self, model: str = "deepseek-r1:latest", ollama_host: str = "http://127.0.0.1:11434"):
+    def __init__(self, model: str = _DEFAULT_MODEL, ollama_host: str = "http://127.0.0.1:11434"):
         self.model = model
         self.host = ollama_host
         print(f"🧬 [LLM] Engine Booting. Primary: Local ({model}) | Fallback: Cloud")
@@ -44,9 +48,9 @@ class HybridLLM:
         }
 
         try:
-            async with httpx.AsyncClient(timeout=60.0) as client:
+            async with httpx.AsyncClient(timeout=5.0) as client:
                 print(f"🧠 [LLM] Calling local Ollama stream: {self.model} ...")
-                async with client.stream("POST", f"{self.host}/api/chat", json=payload) as response:
+                async with client.stream("POST", f"{self.host}/api/chat", json=payload, timeout=httpx.Timeout(connect=5.0, read=120.0, write=10.0, pool=5.0)) as response:
                     if response.status_code == 200:
                         async for line in response.aiter_lines():
                             if line:

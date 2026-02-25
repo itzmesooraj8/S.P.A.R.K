@@ -7,6 +7,7 @@ import uvicorn
 import os
 import time
 import sys
+import json
 from contextlib import asynccontextmanager
 
 from ws.manager import ws_manager
@@ -35,6 +36,20 @@ async def lifespan(app: FastAPI):
     project_registry.load_project("workspace", workspace_root)
     project_registry.switch_focus("workspace")
     
+    # Log the exact workspace path that will be used for scanning:
+    # SPARK_WORKSPACE_DIR env var > /workspace (if container) > project root
+    from pathlib import Path as _Path
+    _container_ws = "/workspace" if _Path("/workspace").exists() else None
+    effective_workspace = os.getenv("SPARK_WORKSPACE_DIR", _container_ws or workspace_root)
+    print(f"📂 [SPARK] Workspace root   : {workspace_root}")
+    print(f"📂 [SPARK] Effective scanner path: {effective_workspace}")
+    if os.getenv("SPARK_WORKSPACE_DIR"):
+        print(f"📂 [SPARK] Source: SPARK_WORKSPACE_DIR env var")
+    elif _container_ws:
+        print(f"📂 [SPARK] Source: /workspace container mount")
+    else:
+        print(f"📂 [SPARK] Source: project root (host mode)")
+    
     # Initialize the sandbox isolated execution environment for the legacy fallback/active focus
     await init_sandbox()
     # Start background intelligence loop
@@ -57,12 +72,16 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+from system.event_bus import event_bus
+
 # -----------------
 # WEBSOCKET NAMESPACES
 # -----------------
 @app.websocket("/ws/ai")
 async def websocket_ai(websocket: WebSocket):
     await ws_manager.connect(websocket, "ai")
+    session_id = str(id(websocket))
+    ws_manager.register_session(session_id, websocket)
     try:
         while True:
             raw_data = await websocket.receive_text()
@@ -71,36 +90,14 @@ async def websocket_ai(websocket: WebSocket):
             try:
                 msg = json.loads(raw_data)
                 if msg.get("type") == "CANCEL":
-                    orchestrator.cancel_current_task()
+                    event_bus.publish("cancel_task", {})
                     continue
             except json.JSONDecodeError:
-                # If it's pure text, treat as user message
                 pass
             
-            # Normal stream execution
-            async def _run_stream():
-                async for token in orchestrator.process_stream(raw_data):
-                    await websocket.send_json({
-                        "type": "TOKEN",
-                        "content": token
-                    })
-            
-            # Concurrency lock: Auto-kill previous stream if new user input overrides
-            if orchestrator.current_task and not orchestrator.current_task.done():
-                orchestrator.cancel_current_task()
-                
-            task = asyncio.create_task(_run_stream())
-            orchestrator.current_task = task
-            
-            try:
-                await task
-            except asyncio.CancelledError:
-                pass
-            
-            # Finalize Stream
-            await websocket.send_json({
-                "type": "DONE"
-            })
+            # Transport only: No intelligence inside WebSocket handler
+            # Only publish "user_input"
+            event_bus.publish("user_input", {"data": raw_data, "websocket": websocket, "session_id": session_id})
             
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "ai")
@@ -113,6 +110,37 @@ async def websocket_system(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "system")
+
+# EventBus subscribers to handle outward flow (Forward response_token back)
+@event_bus.subscribe("response_token")
+async def handle_response_token(payload):
+    token = payload.get("token")
+    session_id = payload.get("session_id")
+    if token is not None:
+        data = {"type": "TOKEN", "content": token}
+        if session_id:
+            # Route to the specific client that owns this session
+            await ws_manager.send_to_session(session_id, data)
+        else:
+            # Fallback: broadcast to all AI subscribers (e.g. tool reflection path)
+            await ws_manager.broadcast_json(data, "ai")
+
+@event_bus.subscribe("response_done")
+async def handle_response_done(payload):
+    session_id = payload.get("session_id")
+    data = {"type": "DONE"}
+    if session_id:
+        await ws_manager.send_to_session(session_id, data)
+    else:
+        await ws_manager.broadcast_json(data, "ai")
+
+@event_bus.subscribe("confirm_tool")
+async def handle_confirm_tool(payload):
+    await ws_manager.broadcast_json({
+        "type": "CONFIRM_TOOL",
+        **payload
+    }, "system")
+
 
 # -----------------
 # API ENDPOINTS
@@ -132,6 +160,55 @@ async def login(req: AuthRequest):
 @app.get("/api/state")
 async def get_state():
     return orchestrator.get_state()
+
+# -----------------
+# HEALTH ENDPOINTS
+# -----------------
+@app.get("/api/health")
+async def health_check():
+    """Basic liveness probe."""
+    return {"status": "ok", "version": "2.0.0"}
+
+@app.get("/api/health/runtime")
+async def health_runtime():
+    """Read-only runtime diagnostic: sessions, queues, eventbus, scanner path."""
+    from pathlib import Path as _Path
+    from system.event_bus import event_bus
+
+    # EventBus stats
+    subscriber_counts = {
+        evt: len(handlers)
+        for evt, handlers in event_bus.subscribers.items()
+    }
+    active_tasks = len(event_bus.task_registry)
+
+    # Workspace info
+    from intelligence.registry import project_registry as _reg
+    workspace_root = os.path.dirname(os.path.dirname(__file__))
+    _container_ws = "/workspace" if _Path("/workspace").exists() else None
+    effective_workspace = os.getenv("SPARK_WORKSPACE_DIR", _container_ws or workspace_root)
+    workspace_source = (
+        "env:SPARK_WORKSPACE_DIR" if os.getenv("SPARK_WORKSPACE_DIR")
+        else ("/workspace container" if _container_ws else "host:project_root")
+    )
+    workspace_exists = os.path.isdir(effective_workspace)
+
+    return {
+        "event_bus": {
+            "subscribers": subscriber_counts,
+            "active_tasks": active_tasks,
+        },
+        "websocket": ws_manager.get_runtime_stats(),
+        "workspace": {
+            "effective_path": effective_workspace,
+            "source": workspace_source,
+            "exists": workspace_exists,
+        },
+        "projects": {
+            "active": list(_reg.active_projects.keys()),
+            "focus": _reg.current_focus,
+        },
+    }
 
 # -----------------
 # REGISTRY ENDPOINTS

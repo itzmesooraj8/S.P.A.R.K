@@ -33,6 +33,8 @@ export default function TopBar() {
 
     // Fetch initial projects
     const fetchProjects = async () => {
+      // Skip polling while the tab is in the background
+      if (document.visibilityState === 'hidden') return;
       try {
         const res = await fetch('http://localhost:8000/api/projects');
         if (res.ok) {
@@ -45,10 +47,14 @@ export default function TopBar() {
       }
     };
     fetchProjects();
-    // Poll every 5s for new projects dynamically loaded
-    const p = setInterval(fetchProjects, 5000);
+    // Poll every 8s; skip silently when tab is hidden (visibilityState guard above)
+    const p = setInterval(fetchProjects, 8000);
 
-    return () => { clearInterval(t); clearInterval(p); };
+    // Re-fetch immediately when the tab becomes visible again
+    const onVisible = () => { if (document.visibilityState === 'visible') fetchProjects(); };
+    document.addEventListener('visibilitychange', onVisible);
+
+    return () => { clearInterval(t); clearInterval(p); document.removeEventListener('visibilitychange', onVisible); };
   }, []);
 
   const switchProject = async (id: string) => {

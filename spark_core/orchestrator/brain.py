@@ -7,12 +7,13 @@ from tools.router import ToolRouter
 
 from system.state import unified_state
 from security.policy import RequiresConfirmationError
+from system.event_bus import event_bus
 
 class AIOrchestrator:
     def __init__(self):
         print("🧠 [SPARK] Initializing Brain...")
         self.personality = PersonalityEngine(mode="TACTICAL")
-        self.llm = HybridLLM(model="deepseek-r1:latest") # or "mistral"
+        self.llm = HybridLLM() # model resolved from OLLAMA_MODEL env var (default: llama3:8b)
         self.memory = SessionMemory(max_turns=5)
         self.tool_router = ToolRouter()
         
@@ -25,6 +26,9 @@ class AIOrchestrator:
             "personality": "TACTICAL",
             "active_tasks": []
         })
+        
+        event_bus.subscribe("user_input")(self.handle_input)
+        event_bus.subscribe("cancel_task")(self.handle_cancel)
 
     def get_state(self):
         return unified_state.get_state()
@@ -39,12 +43,29 @@ class AIOrchestrator:
             self.current_task.cancel()
             print("🛑 [SPARK] Force-cancelled active generation task.")
 
+    async def handle_cancel(self, payload):
+        self.cancel_current_task()
+
+    async def handle_input(self, payload):
+        data = payload.get("data")
+        session_id = payload.get("session_id")
+        if self.current_task and not self.current_task.done():
+            self.cancel_current_task()
+        self.current_task = asyncio.create_task(self.agent_loop(data, session_id))
+
     async def resolve_tool_confirmation(self, tool_id: str, approved: bool):
         if tool_id not in self.pending_tool_calls:
             print(f"⚠️ [SPARK] Tool confirmation ID {tool_id} not found.")
             return "Tool confirmation expired or not found."
             
-        tool_call = self.pending_tool_calls.pop(tool_id)
+        entry = self.pending_tool_calls.pop(tool_id)
+        # Support both old (plain call dict) and new (dict with session_id) formats
+        if isinstance(entry, dict) and "_session_id" in entry:
+            session_id = entry.pop("_session_id")
+            tool_call = entry
+        else:
+            session_id = None
+            tool_call = entry
         
         if not approved:
             print(f"🛑 [SPARK] User cancelled tool execution for {tool_call['tool']}.")
@@ -56,22 +77,24 @@ class AIOrchestrator:
         try:
             unified_state.update("status", "THINKING")
             handler = self.tool_router.registry.get(tool_call["tool"]).handler
+            
+            event_bus.publish("tool_execute", {"tool": tool_call["tool"]})
             result = await handler(tool_call["arguments"])
+            event_bus.publish("tool_result", {"tool": tool_call["tool"], "result": result})
             
             reflection_prompt = (
                 f"User approved Action Result ({tool_call['tool']}):\n{result}\n\n"
                 f"Acknowledge this briefly to the user."
             )
             
-            from ws.manager import ws_manager
             memory_context = self.memory.get_context()
             sys_prompt = self.personality.get_prompt(memory_context, include_tools=False)
             
             full_resp = ""
+            event_bus.publish("brain_decision", {"action": "reflect_on_tool_result"})
             async for tk in self.llm.generate(sys_prompt, reflection_prompt):
                 full_resp += tk
-                # Push the explicit answer to WS
-                await ws_manager.broadcast(json.dumps({"type": "AI_TOKEN", "token": tk}), "ai")
+                event_bus.publish("response_token", {"token": tk, "session_id": session_id})
             
             if full_resp:
                 self.memory.add_ai_message(full_resp.strip())
@@ -79,12 +102,14 @@ class AIOrchestrator:
         except Exception as e:
             print(f"⚠️ [SPARK] Exec error: {e}")
         finally:
+            event_bus.publish("response_done", {"session_id": session_id})
             unified_state.update("status", "IDLE")
             
         return "Executed."
 
-    async def process_stream(self, message: str):
-        """Asynchronous generator yielding tokens progressively for the HUD."""
+    async def agent_loop(self, message: str, session_id: str = None):
+        """Agent loop as a background task. Publishes events."""
+        event_bus.publish("brain_decision", {"action": "start_processing", "message": message, "session_id": session_id})
         unified_state.update("status", "THINKING")
         print(f"🧠 [SPARK] Stream Processing: {message}")
         
@@ -92,28 +117,30 @@ class AIOrchestrator:
         tool_call = self.tool_router.detect_tool_call(message)
         if tool_call:
             try:
+                event_bus.publish("brain_decision", {"action": "detect_explicit_tool", "tool": tool_call["tool"], "session_id": session_id})
+                event_bus.publish("tool_execute", {"tool": tool_call["tool"], "session_id": session_id})
                 # Do NOT save explicit JSON commands to conversational memory
                 async for token in self.tool_router.execute(tool_call):
-                    yield token
+                    event_bus.publish("response_token", {"token": token, "session_id": session_id})
             except RequiresConfirmationError as e:
                 import uuid
-                from ws.manager import ws_manager
                 tool_id = str(uuid.uuid4())
-                self.pending_tool_calls[tool_id] = e.tool_call
+                self.pending_tool_calls[tool_id] = {**e.tool_call, "_session_id": session_id}
                 unified_state.update("status", "AWAITING_CONFIRMATION")
                 print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
-                await ws_manager.broadcast(json.dumps({
-                    "type": "CONFIRM_TOOL",
+                event_bus.publish("confirm_tool", {
                     "id": tool_id,
                     "tool": tool_call["tool"],
                     "reason": e.reason
-                }), "system")
+                })
                 return
             except asyncio.CancelledError:
                 print(f"⚠️ [SPARK] Tool Execution Cancelled.")
             finally:
+                event_bus.publish("tool_result", {"tool": tool_call["tool"], "session_id": session_id})
                 if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
                     unified_state.update("status", "IDLE")
+                event_bus.publish("response_done", {"session_id": session_id})
             return
             
         # 1. Add arriving prompt to memory
@@ -137,13 +164,15 @@ class AIOrchestrator:
                         first_token_seen = True
                         if full_response.lstrip().startswith("{"):
                             buffer_mode = True
+                            event_bus.publish("brain_decision", {"action": "parse_json_buffer"})
                         else:
                             # Flush whatever natural string we accumulated and resume normal streaming
+                            event_bus.publish("brain_decision", {"action": "stream_natural_text", "session_id": session_id})
                             for char in full_response:
-                                yield char
+                                event_bus.publish("response_token", {"token": char, "session_id": session_id})
                 elif not buffer_mode:
                     # Normal Stream
-                    yield token
+                    event_bus.publish("response_token", {"token": token, "session_id": session_id})
                     
             # 4. Stream completed. Evaluate Buffers.
             if buffer_mode:
@@ -151,22 +180,23 @@ class AIOrchestrator:
                 
                 if tool_call:
                     print(f"🔧 [SPARK] Autonomous Tool Call Detected: {tool_call['tool']}")
+                    event_bus.publish("brain_decision", {"action": "autonomous_tool_decided", "tool": tool_call["tool"], "session_id": session_id})
+                    event_bus.publish("tool_execute", {"tool": tool_call["tool"], "session_id": session_id})
                     # Reflection Layer Execution
                     try:
                         tool_result = await self.tool_router.execute_raw(tool_call)
+                        event_bus.publish("tool_result", {"tool": tool_call["tool"], "result": tool_result, "session_id": session_id})
                     except RequiresConfirmationError as e:
                         import uuid
-                        from ws.manager import ws_manager
                         tool_id = str(uuid.uuid4())
-                        self.pending_tool_calls[tool_id] = e.tool_call
+                        self.pending_tool_calls[tool_id] = {**e.tool_call, "_session_id": session_id}
                         unified_state.update("status", "AWAITING_CONFIRMATION")
                         print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
-                        await ws_manager.broadcast(json.dumps({
-                            "type": "CONFIRM_TOOL",
+                        event_bus.publish("confirm_tool", {
                             "id": tool_id,
                             "tool": tool_call["tool"],
                             "reason": e.reason
-                        }), "system")
+                        })
                         return
                     
                     reflection_prompt = (
@@ -176,18 +206,20 @@ class AIOrchestrator:
                     
                     # Reload Prompt WITHOUT tool instructions to prevent infinite JSON recursion
                     system_prompt_ref = self.personality.get_prompt(memory_context, include_tools=False)
+                    event_bus.publish("brain_decision", {"action": "reflect_on_tool_result", "session_id": session_id})
                     
                     reflection_response = ""
                     async for ref_token in self.llm.generate(system_prompt_ref, reflection_prompt):
                         reflection_response += ref_token
-                        yield ref_token
+                        event_bus.publish("response_token", {"token": ref_token, "session_id": session_id})
                         
                     if reflection_response:
                         self.memory.add_ai_message(reflection_response.strip())
                 else:
                     # It started with '{' but wasn't a valid tool call JSON. Flush buffer intact.
+                    event_bus.publish("brain_decision", {"action": "invalid_tool_json_fallback", "session_id": session_id})
                     for char in full_response:
-                        yield char
+                        event_bus.publish("response_token", {"token": char, "session_id": session_id})
                     if full_response:
                         self.memory.add_ai_message(full_response.strip())
             else:
@@ -199,6 +231,7 @@ class AIOrchestrator:
             print(f"⚠️ [SPARK] Stream Cancelled mid-generation. Discarding partial memory.")
             pass
         finally:
+            event_bus.publish("response_done", {"session_id": session_id})
             if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
                 unified_state.update("status", "IDLE")
 

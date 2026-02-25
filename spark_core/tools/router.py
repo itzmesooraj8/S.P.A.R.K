@@ -92,10 +92,35 @@ class ToolRouter:
                 raise RequiresConfirmationError(tool_call, auth_res.reason)
             return f"⚠️ [BLOCKED] Access denied: {auth_res.reason}"
 
+        return await self._safe_execute_tool(tool_def, arguments)
+
+    async def _safe_execute_tool(self, tool_def, arguments) -> dict:
+        """Phase 4: Tool Isolation and Timeout Wrapper"""
+        import traceback
         try:
-            return await tool_def.handler(arguments)
+            # 30 second timeout for tools
+            result = await asyncio.wait_for(tool_def.handler(**arguments) if isinstance(arguments, dict) else tool_def.handler(arguments), timeout=30.0)
+            return {
+                "success": True,
+                "output": str(result),
+                "error": None
+            }
+        except asyncio.TimeoutError:
+            print(f"⚠️ [TOOL INTERNAL] Timeout in {tool_def.name}")
+            return {
+                "success": False,
+                "output": "",
+                "error": "Tool execution timed out."
+            }
         except Exception as e:
-            return f"⚠️ [CRITICAL] Tool '{tool_name}' crashed during execution: {e}"
+            # Internal logging ONLY, never leak stack trace to user string
+            print(f"⚠️ [TOOL INTERNAL] Crash in {tool_def.name}: {e}")
+            traceback.print_exc()
+            return {
+                "success": False,
+                "output": "",
+                "error": str(e)
+            }
 
     async def execute(self, tool_call: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """
@@ -126,22 +151,17 @@ class ToolRouter:
                     await asyncio.sleep(0.01)
                 return
 
-        try:
-            print(f"⚙️ [TOOL ROUTER] Executing '{tool_name}' with args: {arguments}")
-            # Ensure it is purely non-blocking
-            result = await tool_def.handler(arguments)
+        print(f"⚙️ [TOOL ROUTER] Executing '{tool_name}' with args: {arguments}")
+        # Ensure it is purely non-blocking via safe wrapper
+        res_dict = await self._safe_execute_tool(tool_def, arguments)
+        
+        if res_dict["success"]:
+            formatted_result = f"🔧 [KERNEL ACTION: {tool_name.upper()}]\n{res_dict['output']}"
+        else:
+            formatted_result = f"⚠️ [KERNEL ACTION EXCEPTION: {tool_name.upper()}]\n{res_dict['error']}"
             
-            # Format result textually 
-            formatted_result = f"🔧 [KERNEL ACTION: {tool_name.upper()}]\n{result}"
-            
-            # Stream out to the WebSocket progressively
-            for char in formatted_result:
-                yield char
-                # Add natural typing cadence for tool execution confirmation
-                await asyncio.sleep(0.01)
-                
-        except Exception as e:
-            error_msg = f"⚠️ [CRITICAL] Tool '{tool_name}' crashed during execution: {e}"
-            for char in error_msg:
-                yield char
-                await asyncio.sleep(0.01)
+        # Stream out to the WebSocket progressively
+        for char in formatted_result:
+            yield char
+            # Add natural typing cadence for tool execution confirmation
+            await asyncio.sleep(0.01)

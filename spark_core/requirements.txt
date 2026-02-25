@@ -5,3 +5,4 @@ httpx
 psutil
 PyJWT
 pydantic
+python-dotenv
