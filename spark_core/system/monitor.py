@@ -43,6 +43,14 @@ class SystemMonitor:
 
     async def run_heavy_scan(self, pid: str, ctx):
         print(f"🛡️ [AUDIT] Heavy Scan triggered for {pid}")
+        if not ctx.sandbox.is_running:
+            print(f"🐳 [DOCKER] Setting up sandbox for {pid}...")
+            success = await ctx.sandbox.setup()
+            if not success:
+                print(f"⚠️ [AUDIT] Failed to setup sandbox for {pid}. Heavy scan aborted.")
+                self.heavy_scan_cooldown[pid] = self.heavy_scan_cooldown.get(pid, 0) + 1
+                return False
+
         try:
             lint = await run_flake8(ctx.sandbox)
             types = await run_mypy(ctx.sandbox)

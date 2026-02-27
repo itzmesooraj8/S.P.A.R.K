@@ -1,6 +1,9 @@
 {
   "name": "vite_react_shadcn_ts",
   "private": true,
+  "workspaces": [
+    "external/worldmonitor"
+  ],
   "version": "0.0.0",
   "type": "module",
   "scripts": {

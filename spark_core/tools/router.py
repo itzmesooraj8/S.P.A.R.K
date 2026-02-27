@@ -95,32 +95,44 @@ class ToolRouter:
         return await self._safe_execute_tool(tool_def, arguments)
 
     async def _safe_execute_tool(self, tool_def, arguments) -> dict:
-        """Phase 4: Tool Isolation and Timeout Wrapper"""
+        """Phase 4: Tool Isolation and Timeout Wrapper with Retries"""
         import traceback
-        try:
-            # 30 second timeout for tools
-            result = await asyncio.wait_for(tool_def.handler(**arguments) if isinstance(arguments, dict) else tool_def.handler(arguments), timeout=30.0)
-            return {
-                "success": True,
-                "output": str(result),
-                "error": None
-            }
-        except asyncio.TimeoutError:
-            print(f"⚠️ [TOOL INTERNAL] Timeout in {tool_def.name}")
-            return {
-                "success": False,
-                "output": "",
-                "error": "Tool execution timed out."
-            }
-        except Exception as e:
-            # Internal logging ONLY, never leak stack trace to user string
-            print(f"⚠️ [TOOL INTERNAL] Crash in {tool_def.name}: {e}")
-            traceback.print_exc()
-            return {
-                "success": False,
-                "output": "",
-                "error": str(e)
-            }
+        
+        max_attempts = getattr(tool_def, 'retries', 0) + 1
+        timeout = getattr(tool_def, 'timeout_sec', 30.0)
+        
+        for attempt in range(max_attempts):
+            try:
+                result = await asyncio.wait_for(
+                    tool_def.handler(**arguments) if isinstance(arguments, dict) else tool_def.handler(arguments), 
+                    timeout=timeout
+                )
+                return {
+                    "success": True,
+                    "output": str(result),
+                    "error": None
+                }
+            except asyncio.TimeoutError:
+                print(f"⚠️ [TOOL INTERNAL] Timeout in {tool_def.name} (Attempt {attempt + 1}/{max_attempts})")
+                if attempt == max_attempts - 1:
+                    return {
+                        "success": False,
+                        "output": "",
+                        "error": f"Tool execution timed out after {timeout}s."
+                    }
+            except Exception as e:
+                # Internal logging ONLY, never leak stack trace to user string
+                print(f"⚠️ [TOOL INTERNAL] Crash in {tool_def.name} (Attempt {attempt + 1}/{max_attempts}): {e}")
+                traceback.print_exc()
+                if attempt == max_attempts - 1:
+                    return {
+                        "success": False,
+                        "output": "",
+                        "error": str(e)
+                    }
+            
+            # Small backoff before retry
+            await asyncio.sleep(1.0)
 
     async def execute(self, tool_call: Dict[str, Any]) -> AsyncGenerator[str, None]:
         """

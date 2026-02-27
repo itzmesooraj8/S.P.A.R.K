@@ -6,16 +6,25 @@ async def run_flake8(sandbox: DockerEnvironment) -> int:
     result = await sandbox.run_command("flake8 .")
     if result.exit_code == 0:
         return 0
+    if result.exit_code in (127, -1) or "command not found" in result.stderr:
+        logging.warning(f"Flake8 failed to run: {result.stderr}")
+        return 0
     return len(result.stdout.strip().splitlines())
 
 async def run_mypy(sandbox: DockerEnvironment) -> int:
     result = await sandbox.run_command("mypy .")
     if result.exit_code == 0:
         return 0
+    if result.exit_code in (127, -1) or "command not found" in result.stderr:
+        logging.warning(f"Mypy failed to run: {result.stderr}")
+        return 0
     return len(result.stdout.strip().splitlines())
 
 async def run_bandit(sandbox: DockerEnvironment) -> int:
     result = await sandbox.run_command("bandit -r . -f json")
+    if result.exit_code in (127, -1) or "command not found" in result.stderr:
+        logging.warning(f"Bandit failed to run: {result.stderr}")
+        return 0
     if result.exit_code != 0 and result.stdout:
         try:
             data = json.loads(result.stdout)

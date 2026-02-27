@@ -14,6 +14,8 @@ class ToolDefinition:
     handler: Callable[..., Awaitable[Any]]
     risk_level: RiskLevel = RiskLevel.GREEN
     required_capabilities: List[str] = field(default_factory=list)
+    timeout_sec: float = 30.0
+    retries: int = 0
 
 class AuthorizationResult:
     def __init__(self, allowed: bool, requires_confirmation: bool = False, reason: str = ""):

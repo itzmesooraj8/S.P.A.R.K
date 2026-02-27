@@ -40,9 +40,20 @@ export default function HudLayout() {
   const voice = useVoiceEngine();
   const { aiMode, isBooted, isShuttingDown } = useHudTheme();
   const [activeModule, setActiveModule] = useState<ModuleKey | null>(null);
+  const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
 
-  const openModule = (m: string) => setActiveModule(m as ModuleKey);
+  const openModule = (m: string) => {
+    setActiveModule(m as ModuleKey);
+    setIsMaximized(false);
+  };
+
+  const closeModule = () => {
+    setActiveModule(null);
+    setIsMaximized(false);   // always reset when closing
+  };
+
+  const toggleMaximize = () => setIsMaximized(v => !v);
 
   return (
     <div className="relative w-full h-screen flex flex-col overflow-hidden"
@@ -100,14 +111,28 @@ export default function HudLayout() {
                 initial={{ opacity: 0, y: 20 }}
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
-                className="absolute inset-x-[232px] bottom-14 top-14 z-30 hud-panel-glow rounded overflow-hidden"
+                className={isMaximized
+                  ? "fixed inset-0 z-50 hud-panel-glow rounded overflow-hidden bg-black/95 backdrop-blur-xl"
+                  : "absolute inset-x-[232px] bottom-14 top-14 z-30 hud-panel-glow rounded overflow-hidden"}
               >
-                <div className="flex items-center justify-between px-3 py-2 border-b border-hud-cyan/20">
+                <div className="flex items-center justify-between px-3 py-2 border-b border-hud-cyan/20 bg-hud-black/50">
                   <span className="font-orbitron text-[10px] neon-text">{MODULE_TITLES[activeModule]}</span>
-                  <button onClick={() => setActiveModule(null)}
-                    className="font-orbitron text-[10px] text-hud-cyan/50 hover:text-hud-cyan px-2">✕ CLOSE</button>
+                  <div className="flex items-center gap-2">
+                    <button
+                      onClick={toggleMaximize}
+                      className="font-orbitron text-[10px] text-hud-cyan/60 hover:text-hud-cyan transition-colors px-2 py-0.5 border border-hud-cyan/20 hover:border-hud-cyan/60 rounded"
+                    >
+                      {isMaximized ? '▼ MINIMISE' : '▲ MAXIMISE'}
+                    </button>
+                    <button
+                      onClick={closeModule}
+                      className="font-orbitron text-[10px] text-hud-cyan/60 hover:text-hud-red transition-colors px-2 py-0.5 border border-hud-cyan/20 hover:border-hud-red/60 rounded"
+                    >
+                      ✕ CLOSE
+                    </button>
+                  </div>
                 </div>
-                <div className="h-[calc(100%-36px)] overflow-hidden">
+                <div className="h-[calc(100%-36px)] overflow-hidden relative">
                   {activeModule === 'security' && <SecurityModule />}
                   {activeModule === 'globe' && <GlobeVisualization />}
                   {activeModule === 'analytics' && <AnalyticsModule metrics={metrics} />}

@@ -66,7 +66,10 @@ export default function TopBar() {
     }
   };
 
-  const hh = now.getHours().toString().padStart(2, '0');
+  const hh = now.getHours();
+  const ampm = hh >= 12 ? 'PM' : 'AM';
+  const hh12 = hh % 12 || 12;
+  const hhStr = hh12.toString().padStart(2, '0');
   const mm = now.getMinutes().toString().padStart(2, '0');
   const ss = now.getSeconds().toString().padStart(2, '0');
   const dateStr = `${now.getDate().toString().padStart(2, '0')}.${MONTHS[now.getMonth()]}.${now.getFullYear()}`;
@@ -144,11 +147,12 @@ export default function TopBar() {
       {/* CENTER: Clock */}
       <div className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 flex flex-col items-center">
         <div className="flex items-center gap-1 font-orbitron text-xl font-bold">
-          <FlipDigits value={hh} />
+          <FlipDigits value={hhStr} />
           <span className="neon-text animate-blink">:</span>
           <FlipDigits value={mm} />
           <span className="neon-text animate-blink">:</span>
           <FlipDigits value={ss} />
+          <span className="ml-2 text-xs text-hud-cyan/70">{ampm}</span>
         </div>
         <div className="font-rajdhani text-[10px] text-hud-cyan/60 tracking-widest mt-0.5">{dateStr}</div>
       </div>
