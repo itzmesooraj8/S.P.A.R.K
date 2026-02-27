@@ -52,6 +52,8 @@ async def lifespan(app: FastAPI):
         print(f"📂 [SPARK] Source: project root (host mode)")
     
     # Initialize the sandbox isolated execution environment for the legacy fallback/active focus
+    from tools.sandbox import sandbox
+    sandbox.host_workspace_dir = effective_workspace
     await init_sandbox()
     # Start background intelligence loop
     asyncio.create_task(sys_monitor.start_monitoring(ws_manager))

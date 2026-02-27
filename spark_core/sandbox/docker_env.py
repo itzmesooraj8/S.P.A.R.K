@@ -14,10 +14,9 @@ class DockerEnvironment(ExecutionEnvironment):
         self.is_running = False
         self.timeout_sec = timeout_sec
         self.max_output_chars = max_output_chars
-        from pathlib import Path
-        default_workspace = "/workspace" if Path("/workspace").exists() else str(Path.cwd())
         
-        self.workspace_dir = os.getenv("SPARK_WORKSPACE_DIR", default_workspace)
+        # Inside the Linux container, the workspace is always /workspace
+        self.workspace_dir = "/workspace"
         self.host_workspace_dir = None
         self.last_cmd = "System ready."
         self.cmd_active = False

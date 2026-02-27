@@ -1,6 +1,7 @@
 import ast
 import os
 import time
+import asyncio
 from typing import Optional, List, Set, Dict
 
 from sandbox.docker_env import DockerEnvironment
@@ -143,7 +144,7 @@ class WorkspaceScanner:
     async def scan_workspace(self) -> tuple[dict, bool]:
         self.graph.reset_delta()
         
-        root_dir = self.sandbox.workspace_dir
+        root_dir = self.sandbox.host_workspace_dir or self.sandbox.workspace_dir
         if not root_dir or not os.path.exists(root_dir):
             if not self._missing_workspace_warned:
                 print(f"⚠️ [SCANNER] Workspace dir not found: {root_dir}")

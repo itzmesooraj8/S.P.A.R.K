@@ -97,6 +97,26 @@ class ToolRouter:
     async def _safe_execute_tool(self, tool_def, arguments) -> dict:
         """Phase 4: Tool Isolation and Timeout Wrapper with Retries"""
         import traceback
+        import inspect
+        
+        async def _invoke_tool_handler(handler, arguments):
+            arguments = arguments or {}
+            try:
+                sig = inspect.signature(handler)
+                params = list(sig.parameters.values())
+            except (ValueError, TypeError):
+                params = []
+
+            if len(params) == 1 and params[0].name == "args":
+                result = handler(arguments)
+            elif isinstance(arguments, dict):
+                result = handler(**arguments)
+            else:
+                result = handler(arguments)
+
+            if inspect.isawaitable(result):
+                result = await result
+            return result
         
         max_attempts = getattr(tool_def, 'retries', 0) + 1
         timeout = getattr(tool_def, 'timeout_sec', 30.0)
@@ -104,7 +124,7 @@ class ToolRouter:
         for attempt in range(max_attempts):
             try:
                 result = await asyncio.wait_for(
-                    tool_def.handler(**arguments) if isinstance(arguments, dict) else tool_def.handler(arguments), 
+                    _invoke_tool_handler(tool_def.handler, arguments), 
                     timeout=timeout
                 )
                 return {
