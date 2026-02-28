@@ -8,7 +8,8 @@
  *   - Panel toggle buttons
  */
 import { useEffect, useState } from 'react';
-import { Globe, Cpu, TrendingUp, Heart, PanelLeftClose, PanelRightClose, Radio, Share2, Bell } from 'lucide-react';
+import { useNavigate } from 'react-router-dom';
+import { Globe, Cpu, TrendingUp, Heart, PanelLeftClose, PanelRightClose, Radio, Share2, Bell, LayoutDashboard } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useMonitorStore, type MonitorMode } from '@/store/useMonitorStore';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
@@ -35,6 +36,7 @@ export const TopBar = () => {
   const markAsSeen       = useMonitorStore((s) => s.markAsSeen);
   const newEventIds      = useMonitorStore((s) => s.newEventIds);
   const { getShareUrl }  = useUrlState();
+  const navigate          = useNavigate();
 
   const [copied, setCopied] = useState(false);
   const handleShare = () => {
@@ -86,6 +88,16 @@ export const TopBar = () => {
       />
 
       <div className="flex items-center h-12 px-3 gap-2.5">
+
+        {/* ── Back to HUD ───────────────────────────────────────── */}
+        <button
+          onClick={() => navigate('/')}
+          className="flex items-center justify-center w-7 h-7 rounded shrink-0 transition-all duration-200 hover:bg-white/10"
+          style={{ color: `${activeMode.color}80` }}
+          title="Back to S.P.A.R.K HUD"
+        >
+          <LayoutDashboard size={15} />
+        </button>
 
         {/* ── Left panel toggle ──────────────────────────────────── */}
         <button

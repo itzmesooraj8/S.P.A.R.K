@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import ParticleBackground from './ParticleBackground';
 import TopBar from './TopBar';
@@ -41,8 +42,13 @@ export default function HudLayout() {
   const [activeModule, setActiveModule] = useState<ModuleKey | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const navigate = useNavigate();
 
   const openModule = (m: string) => {
+    if (m === 'globe') {
+      navigate('/globe-monitor');
+      return;
+    }
     setActiveModule(m as ModuleKey);
     setIsMaximized(false);
   };
