@@ -523,6 +523,307 @@ async def get_country_intel(request: Request):
 
 
 # ===========================================================================
+# SIGNAL FUSION  — causal cross-source correlation engine
+# ===========================================================================
+
+import math
+from typing import Any
+
+def _haversine_km(lat1: float, lon1: float, lat2: float, lon2: float) -> float:
+    """Return great-circle distance in km between two lat/lon points."""
+    R = 6371.0
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlam = math.radians(lon2 - lon1)
+    a = math.sin(dphi / 2) ** 2 + math.cos(phi1) * math.cos(phi2) * math.sin(dlam / 2) ** 2
+    return R * 2 * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
+def _severity_rank(s: str) -> int:
+    return {"critical": 4, "high": 3, "medium": 2, "low": 1}.get(s, 0)
+
+
+async def _gather_fusion_data() -> dict[str, list]:
+    """Concurrently fetch all data sources needed for fusion."""
+    import asyncio
+
+    async def _eq():
+        try:
+            d = await fetch_cached(
+                "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
+                ttl=300,
+            )
+            out = []
+            for f in d.get("features", []):
+                p = f.get("properties", {})
+                g = f.get("geometry", {}).get("coordinates", [0, 0, 0])
+                mag = p.get("mag", 0) or 0
+                out.append({
+                    "id": f.get("id", ""),
+                    "type": "earthquake",
+                    "title": p.get("place", "Unknown"),
+                    "severity": "critical" if mag >= 7 else "high" if mag >= 6 else "medium" if mag >= 5 else "low",
+                    "lat": g[1], "lon": g[0],
+                    "ts": p.get("time", 0),
+                    "meta": {"magnitude": mag, "depth_km": g[2] if len(g) > 2 else 0},
+                })
+            return out
+        except Exception:
+            return []
+
+    async def _eonet():
+        try:
+            d = await fetch_cached(
+                "https://eonet.gsfc.nasa.gov/api/v3/events",
+                params={"status": "open", "days": 3, "limit": 60},
+                ttl=300,
+            )
+            out = []
+            CAT_SEV = {"Wildfires": "high", "Severe Storms": "high", "Volcanoes": "critical",
+                       "Sea and Lake Ice": "medium", "Floods": "high", "Landslides": "medium",
+                       "Drought": "medium", "Snow": "low", "Dust and Haze": "low"}
+            for ev in d.get("events", []):
+                cats = [c.get("title", "") for c in ev.get("categories", [])]
+                cat = cats[0] if cats else "Natural"
+                coords_list = []
+                for g in ev.get("geometry", []):
+                    c = g.get("coordinates", [])
+                    if isinstance(c, list) and len(c) >= 2:
+                        if isinstance(c[0], list):
+                            for pt in c:
+                                if len(pt) >= 2:
+                                    coords_list.append((pt[1], pt[0]))
+                        else:
+                            coords_list.append((c[1], c[0]))
+                if coords_list:
+                    lat = sum(c[0] for c in coords_list) / len(coords_list)
+                    lon = sum(c[1] for c in coords_list) / len(coords_list)
+                    out.append({
+                        "id": ev.get("id", ""),
+                        "type": cat.lower().replace(" ", "_"),
+                        "title": ev.get("title", cat),
+                        "severity": CAT_SEV.get(cat, "medium"),
+                        "lat": lat, "lon": lon,
+                        "ts": 0,
+                        "meta": {"category": cat},
+                    })
+            return out
+        except Exception:
+            return []
+
+    async def _gdelt_conflict():
+        try:
+            d = await fetch_cached(
+                "https://api.gdeltproject.org/api/v2/doc/doc",
+                params={
+                    "query": "conflict war explosion attack protest",
+                    "mode": "artgeo",
+                    "format": "json",
+                    "maxrecords": "50",
+                    "timespan": "24h",
+                    "sort": "ToneDesc",
+                },
+                ttl=300,
+            )
+            out = []
+            for a in d.get("articles", [])[:50]:
+                lat = a.get("actiongeo_lat")
+                lon = a.get("actiongeo_long")
+                if lat and lon:
+                    try:
+                        lat, lon = float(lat), float(lon)
+                    except (ValueError, TypeError):
+                        continue
+                    tone = float(a.get("tone", 0) or 0)
+                    out.append({
+                        "id": a.get("url", "")[:64],
+                        "type": "conflict",
+                        "title": a.get("title", "")[:120],
+                        "severity": "critical" if tone < -10 else "high" if tone < -5 else "medium",
+                        "lat": lat, "lon": lon,
+                        "ts": 0,
+                        "meta": {"tone": tone, "domain": a.get("domain", ""), "url": a.get("url", "")},
+                    })
+            return out
+        except Exception:
+            return []
+
+    eqs, eonet, conflicts = await asyncio.gather(_eq(), _eonet(), _gdelt_conflict())
+    return {"earthquake": eqs, "natural": eonet, "conflict": conflicts}
+
+
+def _build_fusion_items(sources: dict[str, list]) -> list[dict[str, Any]]:
+    """
+    Cross-correlate events across sources within a 600 km spatial window.
+    Returns up to 6 FusionItem dicts sorted by confidence descending.
+    """
+    all_events: list[dict] = []
+    for evts in sources.values():
+        all_events.extend(evts)
+
+    if not all_events:
+        return []
+
+    # Cluster: build adjacency list of events within 600 km
+    n = len(all_events)
+    CLUSTER_KM = 600
+    clusters: list[list[int]] = []
+    visited = [False] * n
+
+    for i in range(n):
+        if visited[i]:
+            continue
+        cluster = [i]
+        visited[i] = True
+        for j in range(i + 1, n):
+            if not visited[j]:
+                dist = _haversine_km(
+                    all_events[i]["lat"], all_events[i]["lon"],
+                    all_events[j]["lat"], all_events[j]["lon"],
+                )
+                if dist <= CLUSTER_KM:
+                    cluster.append(j)
+                    visited[j] = True
+        if len(cluster) >= 2:
+            clusters.append(cluster)
+
+    # Sort clusters by max severity rank * size
+    def _cluster_score(cl: list[int]) -> float:
+        ranks = [_severity_rank(all_events[i]["severity"]) for i in cl]
+        types = {all_events[i]["type"] for i in cl}
+        cross_bonus = 1.5 if len(types) > 1 else 1.0
+        return max(ranks) * len(cl) * cross_bonus
+
+    clusters.sort(key=_cluster_score, reverse=True)
+
+    fusion_items: list[dict[str, Any]] = []
+    CAUSE_EFFECT_PAIRS = {
+        ("earthquake", "wildfire"):    ("ground rupture destabilizes terrain", "increased fire ignition risk"),
+        ("earthquake", "conflict"):    ("infrastructure collapse", "civil unrest and resource conflict"),
+        ("earthquake", "natural"):     ("seismic shaking", "secondary natural hazard triggered"),
+        ("wildfire", "conflict"):      ("resource scarcity from fire damage", "population displacement tension"),
+        ("wildfires", "conflict"):     ("resource scarcity from fire damage", "population displacement tension"),
+        ("severe_storms", "conflict"): ("storm disrupts governance zones", "power vacuum exploitation risk"),
+        ("conflict", "earthquake"):    ("conflict limits emergency response", "compounded disaster impact"),
+        ("floods", "conflict"):        ("flood displaces civilian populations", "humanitarian access blocked"),
+        ("volcanoes", "earthquake"):   ("volcanic stress transfer", "seismic cluster activation"),
+    }
+
+    for cl_idx, cl in enumerate(clusters[:6]):
+        evts = [all_events[i] for i in cl]
+        types = list({e["type"] for e in evts})
+        # pick the two most severe events as cause/effect
+        evts_sorted = sorted(evts, key=lambda e: _severity_rank(e["severity"]), reverse=True)
+        cause_evt = evts_sorted[0]
+        effect_evt = evts_sorted[1] if len(evts_sorted) > 1 else evts_sorted[0]
+
+        # look up cause/effect description pair
+        pair_key = (cause_evt["type"], effect_evt["type"])
+        rev_key = (effect_evt["type"], cause_evt["type"])
+        cause_desc, effect_desc = CAUSE_EFFECT_PAIRS.get(
+            pair_key,
+            CAUSE_EFFECT_PAIRS.get(
+                rev_key,
+                (f"{cause_evt['type'].replace('_',' ')} event", f"cascading impact on {effect_evt['type'].replace('_',' ')}"),
+            ),
+        )
+
+        # confidence: more types + higher severity = higher confidence
+        type_diversity = min(len(types) / 3.0, 1.0)
+        max_sev_rank = max(_severity_rank(e["severity"]) for e in evts) / 4.0
+        size_factor = min(len(evts) / 8.0, 1.0)
+        confidence = round(0.4 * type_diversity + 0.35 * max_sev_rank + 0.25 * size_factor, 2)
+        confidence = min(confidence, 0.97)
+
+        # centroid
+        clat = sum(e["lat"] for e in evts) / len(evts)
+        clon = sum(e["lon"] for e in evts) / len(evts)
+
+        # determine overall severity
+        max_rank = max(_severity_rank(e["severity"]) for e in evts)
+        severity = {4: "critical", 3: "high", 2: "medium", 1: "low"}.get(max_rank, "low")
+
+        # entity extraction (locations from titles)
+        entities: list[str] = []
+        seen_ents: set[str] = set()
+        for e in evts[:5]:
+            words = e["title"].split()
+            for w in words:
+                if len(w) > 3 and w[0].isupper() and w not in seen_ents:
+                    seen_ents.add(w)
+                    entities.append(w)
+                    if len(entities) >= 5:
+                        break
+            if len(entities) >= 5:
+                break
+
+        # data gaps
+        all_types = {"earthquake", "conflict", "wildfire", "natural"}
+        present_types = {e["type"] for e in evts}
+        missing = all_types - present_types - {"natural"}  # broad catch
+        data_gaps = [f"No {t} data in corridor" for t in list(missing)[:2]]
+        if not data_gaps:
+            data_gaps = ["Real-time satellite imagery pending"]
+
+        # title generation
+        type_label = " + ".join(t.replace("_", " ").title() for t in types[:2])
+        region_hint = cause_evt["title"][:40].rstrip(",. ") if cause_evt["title"] else f"{clat:.1f}°, {clon:.1f}°"
+        title = f"{type_label} Convergence — {region_hint}"
+
+        # summary
+        summary = (
+            f"{len(evts)} correlated signal{'s' if len(evts) > 1 else ''} across "
+            f"{len(types)} data stream{'s' if len(types) > 1 else ''} within a "
+            f"{CLUSTER_KM} km corridor. Cross-source confidence: {int(confidence*100)}%. "
+            f"Primary vector: {cause_evt['title'][:60]}."
+        )
+
+        fusion_items.append({
+            "id": f"fusion-{cl_idx}-{int(time.time())}",
+            "severity": severity,
+            "confidence": confidence,
+            "title": title,
+            "summary": summary,
+            "causeEvent": cause_desc,
+            "effectEvent": effect_desc,
+            "entities": entities,
+            "dataGaps": data_gaps,
+            "region": region_hint,
+            "lat": clat,
+            "lon": clon,
+            "eventCount": len(evts),
+            "sourceTypes": types,
+            "timestamp": int(time.time() * 1000),
+        })
+
+    return fusion_items
+
+
+@router.api_route("/api/globe/v1/getFusionSummary", methods=["POST", "GET", "OPTIONS"])
+async def get_fusion_summary(request: Request):
+    """
+    Signal Fusion endpoint — cross-correlates earthquakes, natural disasters,
+    and conflict signals within a 600 km spatial window to surface causal
+    event clusters with confidence scores and cause→effect chains.
+    """
+    if request.method == "OPTIONS":
+        return _options_response()
+    try:
+        sources = await _gather_fusion_data()
+        items = _build_fusion_items(sources)
+        return JSONResponse({
+            "items": items,
+            "generatedAt": int(time.time() * 1000),
+            "sourceCounts": {k: len(v) for k, v in sources.items()},
+        })
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"[Fusion] Error: {e}")
+        return JSONResponse({"items": [], "generatedAt": int(time.time() * 1000), "sourceCounts": {}})
+
+
+# ===========================================================================
 # CATCH-ALL — safe stub for unmapped endpoints
 # ===========================================================================
 

@@ -3,12 +3,13 @@
  * Shows LIVE real-time events (GDELT conflict, USGS earthquakes, NASA EONET,
  * OpenSky military flights). Falls back to curated demo data while loading.
  */
-import { useMemo } from 'react';
+import { useMemo, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  AlertTriangle, Zap, Shield, Globe, Cpu, TrendingUp, Heart, Flame, Wind,
+  AlertTriangle, Zap, Shield, Globe, Cpu, TrendingUp, Heart, Flame, Wind, FolderPlus,
 } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
+import { useActivityTracker } from '@/hooks/useActivityTracker';
 import type { RealEvent, Severity } from '@/store/useMonitorStore';
 import { getEventsForMode, type MonitorEvent } from '@/data/mockData';
 import { BasePanel } from './BasePanel';
@@ -100,17 +101,23 @@ function mergeEvents(
 }
 
 export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColor?: string }) => {
-  const mode = useMonitorStore((s) => s.mode);
-  const flyTo = useMonitorStore((s) => s.flyTo);
-  const selectEvent = useMonitorStore((s) => s.selectEvent);
+  const mode            = useMonitorStore((s) => s.mode);
+  const flyTo           = useMonitorStore((s) => s.flyTo);
+  const selectEvent     = useMonitorStore((s) => s.selectEvent);
   const selectedEventId = useMonitorStore((s) => s.selectedEventId);
-  const realWorldEvents = useMonitorStore((s) => s.realWorldEvents);
-  const realCyberEvents = useMonitorStore((s) => s.realCyberEvents);
+  const realWorldEvents  = useMonitorStore((s) => s.realWorldEvents);
+  const realCyberEvents  = useMonitorStore((s) => s.realCyberEvents);
   const realFinanceEvents = useMonitorStore((s) => s.realFinanceEvents);
   const realClimateEvents = useMonitorStore((s) => s.realClimateEvents);
-  const realEvents = useMonitorStore((s) => s.realEvents);
-  const dataLoading = useMonitorStore((s) => s.dataLoading);
-  const lastFetch = useMonitorStore((s) => s.lastFetch);
+  const realEvents      = useMonitorStore((s) => s.realEvents);
+  const dataLoading     = useMonitorStore((s) => s.dataLoading);
+  const lastFetch       = useMonitorStore((s) => s.lastFetch);
+  const addCase         = useMonitorStore((s) => s.addCase);
+  const cases           = useMonitorStore((s) => s.cases);
+  const openCaseDrawer  = useMonitorStore((s) => s.toggleCaseDrawer);
+  const caseDrawerOpen  = useMonitorStore((s) => s.caseDrawerOpen);
+
+  const { isNew, observe, newCount } = useActivityTracker();
 
   const isLive = lastFetch > 0;
 
@@ -141,11 +148,36 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
     if (lat !== 0 || lng !== 0) flyTo(lng, lat, 6);
   };
 
+  const handleInvestigate = (e: React.MouseEvent, event: RealEvent | MonitorEvent) => {
+    e.stopPropagation();
+    addCase({
+      id: event.id,
+      title: event.title,
+      severity: ((event as any).severity || 'medium') as Severity,
+      category: (event as any).category || 'conflict',
+    });
+    if (!caseDrawerOpen) openCaseDrawer();
+  };
+
   return (
     <BasePanel
       title={mode === 'happy' ? 'Good News Feed' : 'Threat Matrix'}
       icon={<ModeIcon size={12} style={{ color: accentColor }} />}
-      badge={isLive ? <span className="text-[9px] font-mono animate-pulse" style={{ color: '#34d399' }}>⬤ LIVE</span> : undefined}
+      badge={
+        <div className="flex items-center gap-1.5">
+          {newCount > 0 && (
+            <span
+              className="text-[8px] font-mono font-bold px-1.5 py-0.5 rounded animate-pulse"
+              style={{ background: `${accentColor}18`, color: accentColor, border: `1px solid ${accentColor}40` }}
+            >
+              +{newCount} NEW
+            </span>
+          )}
+          {isLive && (
+            <span className="text-[9px] font-mono" style={{ color: '#34d399' }}>⬤ LIVE</span>
+          )}
+        </div>
+      }
       accentColor={accentColor}
     >
       <ScrollArea className="max-h-[380px]">
@@ -166,20 +198,22 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
                       const Icon = categoryIcons[cat] || Globe;
                       const isSelected = selectedEventId === event.id;
                       const loc = (event as any).location || '';
+                      const eventIsNew = isNew(event.id);
+                      const alreadyCased = cases.some((c) => c.eventId === event.id);
 
                       return (
                         <motion.button
                           key={event.id}
+                          ref={(el) => observe(el, event.id)}
                           initial={{ opacity: 0, x: -20 }}
                           animate={{ opacity: 1, x: 0 }}
                           exit={{ opacity: 0, x: -20 }}
                           transition={{ delay: i * 0.03, type: 'spring', stiffness: 300, damping: 25 }}
                           onClick={() => handleClick(event)}
-                          className={`event-row w-full text-left transition-all duration-200 ${
+                          className={`event-row w-full text-left transition-all duration-200 group ${
                             isSelected ? 'selected' : ''
                           }`}
                         >
-                          {/* Pulsing severity dot */}
                           {/* Left severity stripe */}
                           <div
                             className={`self-stretch w-0.5 rounded-full flex-shrink-0 ${
@@ -193,15 +227,35 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
                           <Icon size={11} className={`mt-0.5 flex-shrink-0 ${severityClasses[sev]}`} />
                           {/* Event info */}
                           <div className="flex-1 min-w-0">
-                            <span className="text-[11px] font-medium text-foreground/90 leading-snug line-clamp-2">
-                              {event.title}
-                            </span>
+                            <div className="flex items-center gap-1.5">
+                              <span className="text-[11px] font-medium text-foreground/90 leading-snug line-clamp-1">
+                                {event.title}
+                              </span>
+                              {/* NEW badge */}
+                              {eventIsNew && (
+                                <span
+                                  className="text-[7px] font-mono font-bold px-1 py-px rounded shrink-0 animate-pulse"
+                                  style={{ background: `${accentColor}20`, color: accentColor, border: `1px solid ${accentColor}50` }}
+                                >
+                                  NEW
+                                </span>
+                              )}
+                            </div>
                             {loc && (
                               <div className="text-[10px] text-muted-foreground/60 font-mono truncate mt-0.5">
                                 {loc}
                               </div>
                             )}
                           </div>
+                          {/* Investigate button */}
+                          <button
+                            onClick={(e) => handleInvestigate(e, event)}
+                            className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded"
+                            style={{ color: alreadyCased ? '#34d399' : 'rgba(255,255,255,0.4)' }}
+                            title={alreadyCased ? 'Already in cases' : 'Open investigation case'}
+                          >
+                            <FolderPlus size={10} />
+                          </button>
                           {/* Severity chip */}
                           <span
                             className={`text-[9px] font-mono font-bold uppercase tracking-wider shrink-0 px-1 py-0.5 rounded ${severityClasses[sev]}`}

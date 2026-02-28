@@ -1,17 +1,30 @@
 /**
  * WorldMonitor — S.P.A.R.K World Monitor V2 main layout.
- * Full-bleed HUD with floating glassmorphic panels over the OpenStreetMap globe.
+ * Full-bleed HUD with floating glassmorphic panels over the CartoDB black globe.
+ *
+ * New features vs V1:
+ *   - URL state sync (shareable links)
+ *   - Time-window filtering (1h/6h/24h/48h/7d) in TopBar
+ *   - Activity tracking (NEW badges, seen detection)
+ *   - Signal Fusion panel (causal correlations)
+ *   - Custom Monitor panel (keyword-based alerts with colors)
+ *   - Snapshot + Playback (IndexedDB timeline)
+ *   - Case Drawer (investigation workflow, persistent cases + notes)
+ *   - Zoom-adaptive clustering + layer visibility on map
  *
  * Layout:
- *   Left column  (w-76):  ThreatMatrix + LiveNewsPanel
- *   Right column (w-72):  InstabilityIndex + GdeltIntelPanel
- *   Bottom-left  (w-72):  ClimateAnomalyPanel
- *   Bottom-center:        AICore
- *   Screen edges:         4× HUD corner brackets + scan-line overlay + status bar
+ *   Left column  (19rem):  ThreatMatrix + LiveNewsPanel + CustomMonitorPanel
+ *   Right column (18rem):  InstabilityIndex + GdeltIntelPanel + FusionPanel
+ *   Bottom-left  (18rem):  ClimateAnomalyPanel
+ *   Bottom-right (16rem):  SnapshotPlayback (floating pill)
+ *   Bottom-center:         AICore
+ *   Right edge:            CaseDrawer (slide-in)
+ *   Screen edges:          4× HUD corner brackets + scan-line overlay + status bar
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMonitorStore } from '@/store/useMonitorStore';
+import { useUrlState } from '@/hooks/useUrlState';
 import { MapContainer } from '@/components/monitor/MapContainer';
 import { TopBar } from '@/components/monitor/TopBar';
 import { ThreatMatrix } from '@/components/monitor/ThreatMatrix';
@@ -19,6 +32,10 @@ import { InstabilityIndex } from '@/components/monitor/InstabilityIndex';
 import { GdeltIntelPanel } from '@/components/monitor/GdeltIntelPanel';
 import { LiveNewsPanel } from '@/components/monitor/LiveNewsPanel';
 import { ClimateAnomalyPanel } from '@/components/monitor/ClimateAnomalyPanel';
+import { FusionPanel } from '@/components/monitor/FusionPanel';
+import { CustomMonitorPanel } from '@/components/monitor/CustomMonitorPanel';
+import { SnapshotPlayback } from '@/components/monitor/SnapshotPlayback';
+import { CaseDrawer } from '@/components/monitor/CaseDrawer';
 import { AICore } from '@/components/monitor/AICore';
 
 /* Per-mode accent colors (shared with TopBar) */
@@ -39,14 +56,18 @@ const WorldMonitor = () => {
 
   const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
 
-  // ── Poll real-time data every 30 s ───────────────────────────────
+  // ── URL state sync ───────────────────────────────────────────────────────
+  // Reads initial URL hash into store + keeps URL in sync with store changes
+  useUrlState();
+
+  // ── Poll real-time data every 30 s ───────────────────────────────────────
   useEffect(() => {
     fetchRealTimeData();
     const interval = setInterval(fetchRealTimeData, 30_000);
     return () => clearInterval(interval);
   }, [fetchRealTimeData]);
 
-  // ── Subtle parallax on mouse move ────────────────────────────────
+  // ── Subtle parallax on mouse move ────────────────────────────────────────
   const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
   const rafRef = useRef<number>(0);
   const handleMouseMove = useCallback((e: React.MouseEvent) => {
@@ -65,7 +86,7 @@ const WorldMonitor = () => {
       style={{ background: '#010812' }}
       onMouseMove={handleMouseMove}
     >
-      {/* ── Base layer: OpenStreetMap 3D Globe ──────────────────── */}
+      {/* ── Base layer: CartoDB black globe ─────────────────────── */}
       <MapContainer />
 
       {/* ── Scan-line overlay ────────────────────────────────────── */}
@@ -92,7 +113,7 @@ const WorldMonitor = () => {
         style={{ borderColor: accentColor, opacity: 0.35 }}
       />
 
-      {/* ── Top Bar ──────────────────────────────────────────────── */}
+      {/* ── Top Bar (with TimeFilterBar + share button) ───────────── */}
       <TopBar />
 
       {/* ── Floating HUD panels with subtle parallax ─────────────── */}
@@ -118,6 +139,7 @@ const WorldMonitor = () => {
               >
                 <ThreatMatrix accentColor={accentColor} />
                 <LiveNewsPanel accentColor={accentColor} />
+                <CustomMonitorPanel accentColor={accentColor} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -139,6 +161,7 @@ const WorldMonitor = () => {
               >
                 <InstabilityIndex accentColor={accentColor} />
                 <GdeltIntelPanel accentColor={accentColor} />
+                <FusionPanel accentColor={MODE_COLORS.tech} />
               </motion.div>
             )}
           </AnimatePresence>
@@ -162,6 +185,12 @@ const WorldMonitor = () => {
 
       {/* ── BOTTOM-CENTER: AI Core ────────────────────────────────── */}
       <AICore />
+
+      {/* ── BOTTOM-RIGHT: Snapshot Playback ──────────────────────── */}
+      <SnapshotPlayback accentColor={accentColor} />
+
+      {/* ── RIGHT EDGE: Case Drawer (investigation mode) ──────────── */}
+      <CaseDrawer accentColor={accentColor} />
 
       {/* ── STATUS BAR ───────────────────────────────────────────── */}
       <div className="hud-status-bar">

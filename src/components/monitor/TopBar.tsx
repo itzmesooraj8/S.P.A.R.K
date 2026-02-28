@@ -8,10 +8,13 @@
  *   - Panel toggle buttons
  */
 import { useEffect, useState } from 'react';
-import { Globe, Cpu, TrendingUp, Heart, PanelLeftClose, PanelRightClose, Radio } from 'lucide-react';
+import { Globe, Cpu, TrendingUp, Heart, PanelLeftClose, PanelRightClose, Radio, Share2, Bell } from 'lucide-react';
 import { motion } from 'framer-motion';
 import { useMonitorStore, type MonitorMode } from '@/store/useMonitorStore';
+import { useActivityTracker } from '@/hooks/useActivityTracker';
+import { useUrlState } from '@/hooks/useUrlState';
 import { MarketTicker } from './MarketTicker';
+import { TimeFilterBar } from './TimeFilterBar';
 
 const MODES: { id: MonitorMode; label: string; icon: typeof Globe; color: string; dimColor: string }[] = [
   { id: 'world',   label: 'WORLD',   icon: Globe,       color: '#00f5ff', dimColor: 'rgba(0,245,255,0.12)' },
@@ -21,11 +24,22 @@ const MODES: { id: MonitorMode; label: string; icon: typeof Globe; color: string
 ];
 
 export const TopBar = () => {
-  const mode = useMonitorStore((s) => s.mode);
-  const setMode = useMonitorStore((s) => s.setMode);
-  const toggleLeftPanel = useMonitorStore((s) => s.toggleLeftPanel);
+  const mode             = useMonitorStore((s) => s.mode);
+  const setMode          = useMonitorStore((s) => s.setMode);
+  const toggleLeftPanel  = useMonitorStore((s) => s.toggleLeftPanel);
   const toggleRightPanel = useMonitorStore((s) => s.toggleRightPanel);
-  const dataLoading = useMonitorStore((s) => s.dataLoading);
+  const dataLoading      = useMonitorStore((s) => s.dataLoading);
+  const { newCount }     = useActivityTracker();
+  const { getShareUrl }  = useUrlState();
+
+  const [copied, setCopied] = useState(false);
+  const handleShare = () => {
+    const url = getShareUrl();
+    navigator.clipboard.writeText(url).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  };
 
   const [utcTime, setUtcTime] = useState('');
   const [utcDate, setUtcDate] = useState('');
@@ -168,8 +182,31 @@ export const TopBar = () => {
           </span>
         </div>
 
+        {/* ── NEW events badge ──────────────────────────────────── */}
+        {newCount > 0 && (
+          <motion.div
+            initial={{ scale: 0 }}
+            animate={{ scale: 1 }}
+            className="hidden md:flex items-center gap-1 px-1.5 py-0.5 rounded shrink-0"
+            style={{
+              background: `${activeMode.color}15`,
+              border: `1px solid ${activeMode.color}40`,
+            }}
+          >
+            <Bell size={9} style={{ color: activeMode.color }} />
+            <span className="text-[8px] font-mono font-bold" style={{ color: activeMode.color }}>
+              {newCount} NEW
+            </span>
+          </motion.div>
+        )}
+
+        {/* ── Time filter ───────────────────────────────────────── */}
+        <div className="hidden lg:block shrink-0">
+          <TimeFilterBar accentColor={activeMode.color} />
+        </div>
+
         {/* ── Market ticker (flex fill) ──────────────────────────── */}
-        <div className="flex-1 overflow-hidden mx-1 hidden md:block min-w-0">
+        <div className="flex-1 overflow-hidden mx-1 hidden xl:block min-w-0">
           <MarketTicker accentColor={activeMode.color} />
         </div>
 
@@ -188,6 +225,16 @@ export const TopBar = () => {
             {utcDate} · UTC
           </span>
         </div>
+
+        {/* ── Share URL button ──────────────────────────────────── */}
+        <button
+          onClick={handleShare}
+          className="hidden lg:flex items-center justify-center w-7 h-7 rounded shrink-0 transition-all duration-200 hover:bg-white/10"
+          style={{ color: copied ? '#34d399' : `${activeMode.color}80` }}
+          title={copied ? 'URL copied!' : 'Copy shareable URL'}
+        >
+          <Share2 size={13} />
+        </button>
 
         {/* ── Right panel toggle ─────────────────────────────────── */}
         <button
