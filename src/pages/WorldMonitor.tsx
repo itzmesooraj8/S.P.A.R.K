@@ -1,68 +1,186 @@
-import { useEffect, useState } from 'react';
-import WorldMonitorFrame from '@/components/WorldMonitorFrame';
+/**
+ * WorldMonitor — S.P.A.R.K World Monitor V2 main layout.
+ * Full-bleed HUD with floating glassmorphic panels over the OpenStreetMap globe.
+ *
+ * Layout:
+ *   Left column  (w-76):  ThreatMatrix + LiveNewsPanel
+ *   Right column (w-72):  InstabilityIndex + GdeltIntelPanel
+ *   Bottom-left  (w-72):  ClimateAnomalyPanel
+ *   Bottom-center:        AICore
+ *   Screen edges:         4× HUD corner brackets + scan-line overlay + status bar
+ */
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useMonitorStore } from '@/store/useMonitorStore';
+import { MapContainer } from '@/components/monitor/MapContainer';
+import { TopBar } from '@/components/monitor/TopBar';
+import { ThreatMatrix } from '@/components/monitor/ThreatMatrix';
+import { InstabilityIndex } from '@/components/monitor/InstabilityIndex';
+import { GdeltIntelPanel } from '@/components/monitor/GdeltIntelPanel';
+import { LiveNewsPanel } from '@/components/monitor/LiveNewsPanel';
+import { ClimateAnomalyPanel } from '@/components/monitor/ClimateAnomalyPanel';
+import { AICore } from '@/components/monitor/AICore';
+
+/* Per-mode accent colors (shared with TopBar) */
+const MODE_COLORS: Record<string, string> = {
+  world:   '#00f5ff',
+  tech:    '#a78bfa',
+  finance: '#fbbf24',
+  happy:   '#34d399',
+};
 
 const WorldMonitor = () => {
-  const [time, setTime] = useState(() => new Date());
+  const leftPanelOpen  = useMonitorStore((s) => s.leftPanelOpen);
+  const rightPanelOpen = useMonitorStore((s) => s.rightPanelOpen);
+  const mode           = useMonitorStore((s) => s.mode);
+  const fetchRealTimeData = useMonitorStore((s) => s.fetchRealTimeData);
+  const dataLoading    = useMonitorStore((s) => s.dataLoading);
+  const lastFetch      = useMonitorStore((s) => s.lastFetch);
 
+  const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
+
+  // ── Poll real-time data every 30 s ───────────────────────────────
   useEffect(() => {
-    const t = setInterval(() => setTime(new Date()), 1000);
-    return () => clearInterval(t);
-  }, []);
+    fetchRealTimeData();
+    const interval = setInterval(fetchRealTimeData, 30_000);
+    return () => clearInterval(interval);
+  }, [fetchRealTimeData]);
 
-  const timeStr = time.toLocaleTimeString('en-US', { hour12: false });
-  const dateStr = time.toLocaleDateString('en-US', { weekday: 'short', day: '2-digit', month: 'short', year: 'numeric' });
+  // ── Subtle parallax on mouse move ────────────────────────────────
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+  const rafRef = useRef<number>(0);
+  const handleMouseMove = useCallback((e: React.MouseEvent) => {
+    cancelAnimationFrame(rafRef.current);
+    rafRef.current = requestAnimationFrame(() => {
+      setMousePos({
+        x: (e.clientX / window.innerWidth - 0.5) * 2,
+        y: (e.clientY / window.innerHeight - 0.5) * 2,
+      });
+    });
+  }, []);
 
   return (
     <div
-      className="flex flex-col w-full h-full overflow-hidden"
-      style={{ background: '#000814' }}
+      className="h-screen w-screen overflow-hidden"
+      style={{ background: '#010812' }}
+      onMouseMove={handleMouseMove}
     >
-      {/* ── SLIM TOP BAR ─────────────────────────────────────────────── */}
-      <header className="shrink-0 z-10 border-b border-hud-cyan/20 bg-black/80 backdrop-blur-sm">
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-hud-cyan/50 to-transparent" />
-        <div className="flex items-center justify-between px-3 py-1.5 gap-3">
-          {/* Title */}
-          <div className="flex items-center gap-2">
-            <span className="inline-block w-1.5 h-1.5 rounded-full bg-hud-cyan animate-pulse shadow-[0_0_5px_hsl(var(--hud-cyan))]" />
-            <span className="font-orbitron text-[10px] neon-text tracking-[0.18em] uppercase">S.P.A.R.K · World Monitor</span>
-            <span className="hidden sm:block h-3 w-px bg-hud-cyan/20" />
-            <span className="hidden sm:block font-mono text-[8px] text-hud-cyan/35 tracking-widest">GLOBAL INTELLIGENCE · LIVE</span>
-          </div>
-          {/* Status pills */}
-          <div className="flex items-center gap-3">
-            <Pill dot="green" label="FEED" value="LIVE" />
-            <Pill dot="cyan"  label="RELAY" value="NOMINAL" />
-            <span className="hidden md:block font-mono text-[7px] text-hud-cyan/20 tracking-widest">OSINT // UNCLASSIFIED</span>
-          </div>
-          {/* Clock */}
-          <div className="flex flex-col items-end shrink-0">
-            <span className="font-orbitron text-[12px] neon-text tabular-nums leading-none">{timeStr}</span>
-            <span className="font-mono text-[7px] text-hud-cyan/35 tracking-widest uppercase">{dateStr}</span>
-          </div>
-        </div>
-        <div className="h-px w-full bg-gradient-to-r from-transparent via-hud-cyan/15 to-transparent" />
-      </header>
+      {/* ── Base layer: OpenStreetMap 3D Globe ──────────────────── */}
+      <MapContainer />
 
-      {/* ── WORLD MONITOR (full iframe — WM has its own World/Tech/Finance/Happy tabs) */}
-      <main className="flex-1 relative overflow-hidden">
-        <WorldMonitorFrame />
-      </main>
+      {/* ── Scan-line overlay ────────────────────────────────────── */}
+      <div className="scan-overlay" />
+
+      {/* ── Atmosphere gradient ──────────────────────────────────── */}
+      <div className="absolute inset-0 atmosphere-glow pointer-events-none" />
+
+      {/* ── Screen-level HUD corner brackets ─────────────────────── */}
+      <span
+        className="hud-screen-corner hud-corner-tl"
+        style={{ borderColor: accentColor, opacity: 0.5 }}
+      />
+      <span
+        className="hud-screen-corner hud-corner-tr"
+        style={{ borderColor: accentColor, opacity: 0.5 }}
+      />
+      <span
+        className="hud-screen-corner hud-corner-bl"
+        style={{ borderColor: accentColor, opacity: 0.35 }}
+      />
+      <span
+        className="hud-screen-corner hud-corner-br"
+        style={{ borderColor: accentColor, opacity: 0.35 }}
+      />
+
+      {/* ── Top Bar ──────────────────────────────────────────────── */}
+      <TopBar />
+
+      {/* ── Floating HUD panels with subtle parallax ─────────────── */}
+      <div className="fixed inset-0 pointer-events-none pt-14 pb-5 px-3 z-40">
+        <div
+          className="relative h-full flex gap-3"
+          style={{
+            transform: `translate(${mousePos.x * 3}px, ${mousePos.y * 2}px)`,
+            transition: 'transform 0.12s ease-out',
+          }}
+        >
+          {/* ── LEFT COLUMN ─────────────────────────────────────── */}
+          <AnimatePresence mode="wait">
+            {leftPanelOpen && (
+              <motion.div
+                key={`left-${mode}`}
+                initial={{ opacity: 0, x: -32, scale: 0.97 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: -24, scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+                className="pointer-events-auto w-76 hidden md:flex flex-col gap-2 overflow-y-auto scrollbar-hud pb-2"
+                style={{ maxHeight: 'calc(100vh - 9rem)', width: '19rem' }}
+              >
+                <ThreatMatrix accentColor={accentColor} />
+                <LiveNewsPanel accentColor={accentColor} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+
+          {/* ── CENTER SPACER ────────────────────────────────────── */}
+          <div className="flex-1" />
+
+          {/* ── RIGHT COLUMN ─────────────────────────────────────── */}
+          <AnimatePresence mode="wait">
+            {rightPanelOpen && (
+              <motion.div
+                key="right-panel"
+                initial={{ opacity: 0, x: 32, scale: 0.97 }}
+                animate={{ opacity: 1, x: 0, scale: 1 }}
+                exit={{ opacity: 0, x: 24, scale: 0.97 }}
+                transition={{ type: 'spring', stiffness: 260, damping: 26 }}
+                className="pointer-events-auto hidden md:flex flex-col gap-2 overflow-y-auto scrollbar-hud pb-2"
+                style={{ maxHeight: 'calc(100vh - 9rem)', width: '18rem' }}
+              >
+                <InstabilityIndex accentColor={accentColor} />
+                <GdeltIntelPanel accentColor={accentColor} />
+              </motion.div>
+            )}
+          </AnimatePresence>
+        </div>
+      </div>
+
+      {/* ── BOTTOM-LEFT: Climate Anomalies ────────────────────────── */}
+      <AnimatePresence>
+        <motion.div
+          key="climate-panel"
+          initial={{ opacity: 0, y: 24, scale: 0.96 }}
+          animate={{ opacity: 1, y: 0, scale: 1 }}
+          exit={{ opacity: 0, y: 16, scale: 0.96 }}
+          transition={{ type: 'spring', stiffness: 240, damping: 26, delay: 0.25 }}
+          className="fixed bottom-6 left-3 pointer-events-auto z-40 hidden md:block"
+          style={{ width: '18rem' }}
+        >
+          <ClimateAnomalyPanel accentColor={accentColor} />
+        </motion.div>
+      </AnimatePresence>
+
+      {/* ── BOTTOM-CENTER: AI Core ────────────────────────────────── */}
+      <AICore />
+
+      {/* ── STATUS BAR ───────────────────────────────────────────── */}
+      <div className="hud-status-bar">
+        <span
+          className="status-dot shrink-0"
+          style={{ background: dataLoading ? '#fbbf24' : accentColor }}
+        />
+        <span style={{ color: dataLoading ? '#fbbf24' : accentColor, opacity: 0.7 }}>
+          {dataLoading ? 'SYNCING DATA…' : 'ALL FEEDS NOMINAL'}
+        </span>
+        <span className="ml-auto opacity-50">© CARTO · © OpenStreetMap contributors</span>
+        {lastFetch > 0 && (
+          <span className="opacity-40">
+            LAST SYNC {new Date(lastFetch).toISOString().slice(11, 19)} UTC
+          </span>
+        )}
+      </div>
     </div>
   );
 };
-
-function Pill({ dot, label, value }: { dot: 'cyan' | 'green'; label: string; value: string }) {
-  const dotCls = dot === 'green'
-    ? 'bg-hud-green shadow-[0_0_4px_hsl(var(--hud-green))]'
-    : 'bg-hud-cyan shadow-[0_0_4px_hsl(var(--hud-cyan))]';
-  const valCls = dot === 'green' ? 'neon-text-green' : 'text-hud-cyan';
-  return (
-    <div className="flex items-center gap-1">
-      <span className={`inline-block w-1.5 h-1.5 rounded-full ${dotCls}`} />
-      <span className="font-mono text-[7px] text-hud-cyan/30 tracking-widest">{label}</span>
-      <span className={`font-orbitron text-[7px] tracking-widest ${valCls}`}>{value}</span>
-    </div>
-  );
-}
 
 export default WorldMonitor;

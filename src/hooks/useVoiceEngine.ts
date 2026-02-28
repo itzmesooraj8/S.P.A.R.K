@@ -1,4 +1,5 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
+import { AiWsMessage } from '../types/contracts';
 
 export type AiStatus = 'idle' | 'listening' | 'thinking' | 'responding';
 
@@ -12,6 +13,7 @@ export interface CommandEntry {
 export function useVoiceEngine() {
   const [status, setStatus] = useState<AiStatus>('idle');
   const [isListening, setIsListening] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
   const [commandHistory, setCommandHistory] = useState<CommandEntry[]>([
@@ -43,15 +45,20 @@ export function useVoiceEngine() {
       const ws = new WebSocket('ws://localhost:8000/ws/ai');
       wsRef.current = ws;
 
+      ws.onopen = () => {
+        setIsOnline(true);
+        console.log("[useVoiceEngine] AI socket connected.");
+      };
+
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const data: AiWsMessage = JSON.parse(event.data);
 
-          if (data.type === 'TOKEN') {
+          if (data.type === 'response_token') {
             // Progressively build the live streaming response
             setStatus('responding');
-            setAiResponse((prev) => prev + data.content);
-          } else if (data.type === 'DONE') {
+            setAiResponse((prev) => prev + (data.token || ""));
+          } else if (data.type === 'response_done') {
             // Signal streaming completion
             setStatus('idle');
 
@@ -73,6 +80,11 @@ export function useVoiceEngine() {
 
               return ''; // Clear the streaming buffer
             });
+          } else if (data.type === 'tool_execute') {
+             addEntry('ai', `[TOOL] Executing ${data.tool || 'unknown'}...`);
+          } else if (data.type === 'error') {
+             addEntry('ai', `[ERROR] ${data.content || 'Unknown error'}`);
+             setStatus('idle');
           }
         } catch (err) {
           console.error('[useVoiceEngine] Error parsing WS message:', err);
@@ -81,6 +93,7 @@ export function useVoiceEngine() {
 
       ws.onclose = () => {
         console.warn("[useVoiceEngine] AI socket closed. Reconnecting...");
+        setIsOnline(false);
         reconnectTimeout = setTimeout(connectWS, 3000);
       };
 
@@ -227,7 +240,7 @@ export function useVoiceEngine() {
   }, [stopAmplitudeTracking]);
 
   return {
-    status, isListening, transcript,
+    status, isListening, isOnline, transcript,
     aiResponse, commandHistory, amplitude,
     toggleMic, processInput, cancelGeneration
   };

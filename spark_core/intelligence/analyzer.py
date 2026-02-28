@@ -1,48 +1,78 @@
 import json
 import logging
-from sandbox.docker_env import DockerEnvironment
+from typing import Dict, Any
+# from sandbox.docker_env import DockerEnvironment # Avoid circular import if possible, or use Any
 
-async def run_flake8(sandbox: DockerEnvironment) -> int:
-    result = await sandbox.run_command("flake8 .")
+async def run_flake8(sandbox: Any) -> Dict[str, Any]:
+    """Runs flake8 and returns {count: int, status: str, error: str}"""
+    cmd = "flake8 ."
+    result = await sandbox.run_command(cmd)
+    
     if result.exit_code == 0:
-        return 0
+        return {"count": 0, "status": "success", "exit_code": 0}
+        
     if result.exit_code in (127, -1) or "command not found" in result.stderr:
-        logging.warning(f"Flake8 failed to run: {result.stderr}")
-        return 0
-    return len(result.stdout.strip().splitlines())
+        return {"count": 0, "status": "missing", "error": "Tool not installed", "exit_code": result.exit_code}
+        
+    # Flake8 returns non-zero if issues found
+    count = len(result.stdout.strip().splitlines())
+    return {"count": count, "status": "success", "exit_code": result.exit_code}
 
-async def run_mypy(sandbox: DockerEnvironment) -> int:
-    result = await sandbox.run_command("mypy .")
+async def run_mypy(sandbox: Any) -> Dict[str, Any]:
+    """Runs mypy and returns {count: int, status: str, error: str}"""
+    cmd = "mypy ."
+    result = await sandbox.run_command(cmd)
+    
     if result.exit_code == 0:
-        return 0
+        return {"count": 0, "status": "success", "exit_code": 0}
+        
     if result.exit_code in (127, -1) or "command not found" in result.stderr:
-        logging.warning(f"Mypy failed to run: {result.stderr}")
-        return 0
-    return len(result.stdout.strip().splitlines())
+        return {"count": 0, "status": "missing", "error": "Tool not installed", "exit_code": result.exit_code}
+        
+    # Mypy returns non-zero if issues found
+    # Filter for actual error lines (simplified)
+    lines = [l for l in result.stdout.strip().splitlines() if "error:" in l]
+    return {"count": len(lines), "status": "success", "exit_code": result.exit_code}
 
-async def run_bandit(sandbox: DockerEnvironment) -> int:
-    result = await sandbox.run_command("bandit -r . -f json")
+async def run_bandit(sandbox: Any) -> Dict[str, Any]:
+    """Runs bandit and returns {count: int, status: str, error: str}"""
+    cmd = "bandit -r . -f json"
+    result = await sandbox.run_command(cmd)
+    
     if result.exit_code in (127, -1) or "command not found" in result.stderr:
-        logging.warning(f"Bandit failed to run: {result.stderr}")
-        return 0
-    if result.exit_code != 0 and result.stdout:
+         return {"count": 0, "status": "missing", "error": "Tool not installed", "exit_code": result.exit_code}
+         
+    if result.stdout:
         try:
             data = json.loads(result.stdout)
-            return len(data.get("results", []))
+            # Sum of distinct issues
+            count = len(data.get("results", []))
+            return {"count": count, "status": "success", "exit_code": result.exit_code}
         except Exception as e:
-            logging.error(f"Failed to parse bandit output: {e}")
-            return 1 # Fallback to 1 if we know it failed but can't parse
-    return 0
+            return {"count": 0, "status": "error", "error": f"Parse error: {str(e)}", "exit_code": result.exit_code}
+            
+    return {"count": 0, "status": "unknown", "error": "No output", "exit_code": result.exit_code}
 
-async def run_complexity(sandbox: DockerEnvironment) -> float:
-    result = await sandbox.run_command("radon cc . -s -a")
+async def run_complexity(sandbox: Any) -> Dict[str, Any]:
+    cmd = "radon cc . -s -a"
+    result = await sandbox.run_command(cmd)
+    
+    score = 0.0
     if result.exit_code == 0 and result.stdout:
-        # Tries to parse the average complexity from the output
         for line in result.stdout.splitlines():
             if "Average complexity:" in line:
                 try:
                     parts = line.split()
-                    return float(parts[-2]) # Expected format: "Average complexity: X.XX (A)"
+                    # Expected format: "Average complexity: A (X.XX)" or similar
+                    # Actually radon output: "Average complexity: A (1.5)"
+                    # Let's just grab the float
+                    import re
+                    match = re.search(r"\(([\d\.]+)\)", line)
+                    if match:
+                        score = float(match.group(1))
                 except Exception:
-                    break
-    return 0.0
+                    pass
+    
+    status = "success" if result.exit_code == 0 else "error"
+    return {"score": score, "status": status, "exit_code": result.exit_code}
+

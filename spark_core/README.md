@@ -1,62 +1,78 @@
-# SPARK AI Core v2 (Sovereign Core)
+# SPARK Core (Backend Services)
 
-This is the newly architected, production-ready backend for SPARK, built on FastAPI.
-It handles real-time WebSockets, serving the front-end, System Monitoring, and Hybrid LLM routing.
+This directory contains the Python-based backend for the S.P.A.R.K. system. It serves as the central nervous system, handling incoming requests, managing WebSockets, orchestrating LLM interactions, and running secure code analysis tools.
 
-## 🚀 Setup Instructions
+## 🧠 Core Architecture
 
-### 1. Requirements
+The backend is built with **FastAPI** and follows a modular architecture:
 
-Ensure you have your environment set properly. From this directory `spark_core/`:
-```bash
-pip install -r requirements.txt
-```
+- **main.py**: Entry point. Sets up the FastAPI app, CORS, and routes.
+- **ws/**: WebSocket connection managers for efficient real-time communication.
+    - system: Pushes hardware metrics (CPU/RAM/Net) and security alerts.
+    - i: Handles chat streams, tool execution feedback, and audio data.
+- **llm/**: Abstraction layer for Large Language Models. Supports local Ollama instances and cloud API fallbacks.
+- **	ools/**: Registry of capabilities the AI can invoke (FileSystem, WebSearch, CodeAnalysis).
+- **sandbox/**: Docker management for safely executing untrusted or generated code.
+- **memory/**: Vector database integrations (ChromaDB) for long-term project memory.
 
-### 2. Ollama Setup (Local AI)
+## 🔧 backend Configuration
 
-SPARK v2 uses `llama3:8b` (or `mistral:7b` if you prefer).
-1. Download [Ollama for Windows](https://ollama.com/download/windows).
-2. Open terminal and run:
-   ```bash
-   ollama run llama3:8b
-   ```
-   *Wait for it to download and verify it runs.*
-3. Keep the Ollama tray app running in the background. It exposes `http://localhost:11434` which `hybrid_engine.py` targets.
+Configuration is managed via config/secrets.yaml (located in the project root) and environment variables.
 
-### 3. Build React Frontend (HUD)
+### Key Configuration Options
 
-To serve the React UI directly from FastAPI, build the UI first. Navigate to the root `S.P.A.R.K` directory:
-```bash
-npm install
-npm run build
-```
-This generates a `dist/` folder which `spark_core/main.py` serves statically.
+| Setting | description | Default |
+|---------|-------------|---------|
+| LLM_PROVIDER | AI Model Provider | ollama |
+| LLM_MODEL | Specific Model Name | llama3:8b |
+| SANDBOX_MODE | Code Execution Environment | docker |
+| VOICE_ENABLED | Enable STT/TTS modules | 	rue |
 
-### 4. Boot SPARK Core
+## 📦 Dependencies
 
-From this `spark_core/` folder, run:
-```bash
-uvicorn main:app --host 0.0.0.0 --port 8000
-```
-or 
-```bash
-python -m uvicorn main:app --host 0.0.0.0 --port 8000
-```
+Major dependencies include:
+- astapi & uvicorn: Web server and API framework.
+- websockets: Real-time communication.
+- docker: Python Docker SDK for container management.
+- psutil: System hardware monitoring.
+- langchain / chromadb: (Optional) For advanced memory features.
 
-*NOTE: You must start it from inside `spark_core` so imports resolve correctly.*
+## 🚀 Development
 
-### 5. Accessing HUD
+### Running the Core Directly
 
-- **Laptop:** Open `http://localhost:8000`
-- **Phone:** Connect to your laptop's Local IP, e.g., `http://192.168.1.XX:8000`
+If you need to debug the backend in isolation:
 
-## 🧠 Connecting the React HUD to WebSockets
+1.  Navigate to the project root.
+2.  Activate your virtual environment.
+3.  Run the server wrapper:
 
-In your React codebase (e.g., `src/sockets/socketManager.ts`), connect like this:
-```typescript
-const aiSocket = new WebSocket("ws://localhost:8000/ws/ai");
-const systemSocket = new WebSocket("ws://localhost:8000/ws/system");
+    `powershell
+    python run_server.py
+    `
 
-aiSocket.onmessage = (event) => console.log("AI says:", event.data);
-systemSocket.onmessage = (event) => console.log("System Metric:", JSON.parse(event.data));
-```
+    *Alternatively, from within spark_core/:*
+    `powershell
+    python -m uvicorn main:app --reload --host 0.0.0.0 --port 8000
+    `
+
+### Testing
+
+Run the test suite to verify core functionality:
+
+`powershell
+pytest test_health.py test_ws.py
+`
+
+## 🔐 Security
+
+The core system is designed with security in mind:
+- **Sandboxing**: Heavy tooling and generated code run in ephemeral Docker containers to prevent host system modification.
+- **Validation**: All WebSocket messages are validated against strict schemas.
+- **Environment Isolation**: The .env and secrets.yaml files are excluded from version control.
+
+## 📜 API Documentation
+
+Once running, interactive documentation is available at:
+- Swagger UI: http://localhost:8000/docs
+- ReDoc: http://localhost:8000/redoc

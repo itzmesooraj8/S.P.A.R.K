@@ -1,7 +1,9 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Eye, Fingerprint, Lock, AlertTriangle } from 'lucide-react';
+import { Shield, Eye, Fingerprint, Lock, AlertTriangle, CheckCircle, XCircle, Search } from 'lucide-react';
+import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 
 export default function SecurityModule() {
+  const { auditMeta, threatLevel } = useSystemMetrics();
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLine, setScanLine] = useState(0);
   const [fingerProgress, setFingerProgress] = useState(0);
@@ -31,6 +33,73 @@ export default function SecurityModule() {
       <div className="flex items-center gap-2 pb-2 border-b border-hud-cyan/20">
         <Shield size={14} className="text-hud-cyan" />
         <span className="font-orbitron text-xs tracking-widest neon-text">SECURITY MODULE</span>
+      </div>
+
+      {/* Code Audit Status (Real) */}
+      <div className="hud-panel rounded p-3 mb-4">
+        <div className="flex items-center justify-between mb-2">
+           <div className="flex items-center gap-2">
+             <Search size={11} className="text-hud-cyan" />
+             <span className="font-orbitron text-[9px] text-hud-cyan/80">WORKSPACE AUDIT</span>
+           </div>
+           {auditMeta?.timestamp && (
+             <span className="text-[9px] text-hud-cyan/40">
+               {new Date(auditMeta.timestamp * 1000).toLocaleTimeString()}
+             </span>
+           )}
+        </div>
+        
+        {!auditMeta ? (
+          <div className="text-center font-mono-tech text-[10px] text-hud-cyan/40 py-2">
+             Waiting for audit telemetry...
+          </div>
+        ) : (
+          <div className="grid grid-cols-2 gap-2">
+             {/* Flake8 */}
+             <div className="flex items-center justify-between bg-black/40 rounded p-1.5 border border-hud-cyan/10">
+               <span className="text-[9px] text-hud-cyan/70">LINT (Flake8)</span>
+               {auditMeta.flake8?.status === 'success' ? (
+                 <span className={`text-[9px] ${auditMeta.flake8.count > 0 ? 'text-hud-amber' : 'text-hud-green'}`}>
+                   {auditMeta.flake8.count} ISSUES
+                 </span>
+               ) : (
+                 <span className="text-[9px] text-hud-red">FAILED</span>
+               )}
+             </div>
+
+             {/* Mypy */}
+             <div className="flex items-center justify-between bg-black/40 rounded p-1.5 border border-hud-cyan/10">
+               <span className="text-[9px] text-hud-cyan/70">TYPES (Mypy)</span>
+               {auditMeta.mypy?.status === 'success' ? (
+                 <span className={`text-[9px] ${auditMeta.mypy.count > 0 ? 'text-hud-amber' : 'text-hud-green'}`}>
+                   {auditMeta.mypy.count} ERRORS
+                 </span>
+               ) : (
+                 <span className="text-[9px] text-hud-red">FAILED</span>
+               )}
+             </div>
+
+             {/* Bandit */}
+             <div className="flex items-center justify-between bg-black/40 rounded p-1.5 border border-hud-cyan/10">
+               <span className="text-[9px] text-hud-cyan/70">SEC (Bandit)</span>
+               {auditMeta.bandit?.status === 'success' ? (
+                 <span className={`text-[9px] ${auditMeta.bandit.count > 0 ? 'text-hud-red animate-pulse' : 'text-hud-green'}`}>
+                   {auditMeta.bandit.count} VULNS
+                 </span>
+               ) : (
+                 <span className="text-[9px] text-hud-red">FAILED</span>
+               )}
+             </div>
+             
+             {/* Complexity */}
+             <div className="flex items-center justify-between bg-black/40 rounded p-1.5 border border-hud-cyan/10">
+               <span className="text-[9px] text-hud-cyan/70">COMPLEXITY</span>
+               <span className="text-[9px] text-hud-cyan">
+                 {typeof auditMeta.radon?.score === 'number' ? auditMeta.radon.score.toFixed(2) : 'N/A'}
+               </span>
+             </div>
+          </div>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-4">

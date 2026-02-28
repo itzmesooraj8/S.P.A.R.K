@@ -76,10 +76,16 @@ class AIOrchestrator:
         
         try:
             unified_state.update("status", "THINKING")
-            handler = self.tool_router.registry.get(tool_call["tool"]).handler
+            tool_def = self.tool_router.registry.get(tool_call["tool"])
             
             event_bus.publish("tool_execute", {"tool": tool_call["tool"]})
-            result = await handler(tool_call["arguments"])
+            res_dict = await self.tool_router._safe_execute_tool(tool_def, tool_call["arguments"])
+            
+            if res_dict["success"]:
+                result = res_dict["output"]
+            else:
+                result = f"Error: {res_dict['error']}"
+                
             event_bus.publish("tool_result", {"tool": tool_call["tool"], "result": result})
             
             reflection_prompt = (

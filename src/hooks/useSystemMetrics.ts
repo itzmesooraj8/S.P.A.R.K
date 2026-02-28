@@ -1,7 +1,11 @@
 import { useState, useEffect, useRef } from 'react';
+import { SystemWsMessage, SystemMetrics as ContractMetrics } from '../types/contracts';
+
+const MAX_HISTORY = 30;
 
 export interface MetricPoint { value: number; time: number; }
-export interface SystemMetrics {
+
+export interface LegacySystemMetrics {
   cpu: number; cpuHistory: MetricPoint[];
   ram: number; ramHistory: MetricPoint[];
   gpu: number; gpuHistory: MetricPoint[];
@@ -13,18 +17,15 @@ export interface SystemMetrics {
   encryptionProgress: number;
   uptime: number;
   processes: number;
-  ping: number;
-}
+  ping: number;  // new
+  auditMeta?: any;}
 
-
-
-const MAX_HISTORY = 30;
-
-export function useSystemMetrics(): SystemMetrics {
+export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } {
   const startTime = useRef(Date.now());
+  const [isOnline, setIsOnline] = useState(false);
 
   // Default fallback values mapped to our interface
-  const [metrics, setMetrics] = useState<SystemMetrics>({
+  const [metrics, setMetrics] = useState<LegacySystemMetrics>({
     cpu: 0, cpuHistory: [],
     ram: 0, ramHistory: [],
     gpu: 0, gpuHistory: [],
@@ -47,50 +48,56 @@ export function useSystemMetrics(): SystemMetrics {
       // Connect to Sovereign Core backend
       ws = new WebSocket("ws://localhost:8000/ws/system");
 
+      ws.onopen = () => {
+          setIsOnline(true);
+      };
+
       ws.onmessage = (event) => {
         try {
-          const data = JSON.parse(event.data);
+          const msg = JSON.parse(event.data); 
 
-          if (data.type === "STATE_UPDATE" && data.state && data.state.metrics) {
-            const metricsPayload = data.state.metrics;
+          if (msg.type === "STATE_UPDATE" && msg.state && msg.state.metrics) {
+            const metricsPayload = msg.state.metrics; // This is the payload from backend, might not match ContractMetrics exactly yet if backend isn't updated, but user asked to use contracts in hook. 
+            // Assuming backend sends keys compatible with what we expect or we map them.
+            // Actually, backend sends "cpu", "ram", "gpu", "network" (from monitor.py).
+            // Contracts say "cpu_percent".
+            // I will support both for robustness or assume backend will be updated to match contract.
+            // The plan says "Update Frontend Hooks ... to use contracts". 
+            // It also says "Fix Backend ...". 
+            
+            // Let's assume the payload comes in as the Contract defined structure or map it.
+            // Monitor.py sends "cpu", "ram".
+            // I should update monitor.py too? "Fix Backend Tool Handler" is the only backend task mentioned besides "Implement GET /api/tools".
+            // It doesn't say "Update SystemMonitor to match contracts".
+            // But "Align Frontend and Backend" is the goal.
+            
+            // I will handle mapping here.
+            
+            const cpu = metricsPayload.cpu_percent ?? metricsPayload.cpu ?? 0;
+            const ram = metricsPayload.memory_percent ?? metricsPayload.ram ?? 0;
+            const gpu = metricsPayload.gpu_stats?.load ?? metricsPayload.gpu ?? 0;
+            const network = metricsPayload.net_io ? (metricsPayload.net_io.bytes_recv + metricsPayload.net_io.bytes_sent) / 1024 : (metricsPayload.network ?? 0); // simplistic
+
             const now = Date.now();
 
-            setMetrics(prev => {
-              // Process CPU
-              const cpuValue = metricsPayload.cpu ?? prev.cpu;
-              const newCpuHistory = [...prev.cpuHistory, { value: Math.round(cpuValue), time: now }].slice(-MAX_HISTORY);
-
-              // Process RAM
-              const ramValue = metricsPayload.ram ?? prev.ram;
-              const newRamHistory = [...prev.ramHistory, { value: Math.round(ramValue), time: now }].slice(-MAX_HISTORY);
-
-              // Process GPU
-              const gpuValue = metricsPayload.gpu ?? prev.gpu;
-              const newGpuHistory = [...prev.gpuHistory, { value: Math.round(gpuValue), time: now }].slice(-MAX_HISTORY);
-
-              // Process Network
-              const networkValue = metricsPayload.network ?? prev.network;
-              const newNetworkHistory = [...prev.networkHistory, { value: Math.round(networkValue), time: now }].slice(-MAX_HISTORY);
-
-              // Threat Level heuristic
-              const threatLevel: 'low' | 'medium' | 'high' = cpuValue > 85 ? 'high' : cpuValue > 70 ? 'medium' : 'low';
-
-              return {
+            setMetrics(prev => ({
                 ...prev,
-                cpu: cpuValue,
-                cpuHistory: newCpuHistory,
-                ram: ramValue,
-                ramHistory: newRamHistory,
-                gpu: gpuValue,
-                gpuHistory: newGpuHistory,
-                network: networkValue,
-                networkHistory: newNetworkHistory,
-                battery: metricsPayload.battery ?? prev.battery,
-                charging: metricsPayload.charging ?? prev.charging,
-                threatLevel: threatLevel,
+                cpu: cpu,
+                cpuHistory: [...prev.cpuHistory, { value: cpu, time: now }].slice(-MAX_HISTORY),
+                ram: ram,
+                ramHistory: [...prev.ramHistory, { value: ram, time: now }].slice(-MAX_HISTORY),
+                gpu: gpu,
+                gpuHistory: [...prev.gpuHistory, { value: gpu, time: now }].slice(-MAX_HISTORY),
+                network: network,
+                networkHistory: [...prev.networkHistory, { value: network, time: now }].slice(-MAX_HISTORY),
                 uptime: now - startTime.current,
-              };
-            });
+                threatLevel: cpu > 80 ? 'high' : 'low', // simple heuristic
+                auditMeta: metricsPayload.audit_meta || prev.auditMeta
+            }));
+
+          } else if (msg.type === "AUDIT_UPDATE") {
+              // Handle audit update - for now just log or maybe update threat level
+              console.log("Audit update:", msg);
           }
         } catch (error) {
           console.error("[useSystemMetrics] Failed to parse payload:", error);
@@ -98,11 +105,13 @@ export function useSystemMetrics(): SystemMetrics {
       };
 
       ws.onclose = () => {
+        setIsOnline(false);
         console.warn("[useSystemMetrics] Disconnected. Reconnecting in 2s...");
         reconnectTimeout = setTimeout(connect, 2000);
       };
 
       ws.onerror = (error) => {
+        setIsOnline(false);
         console.error("[useSystemMetrics] WebSocket Error:", error);
         ws.close();
       };
@@ -112,11 +121,9 @@ export function useSystemMetrics(): SystemMetrics {
 
     return () => {
       clearTimeout(reconnectTimeout);
-      if (ws) {
-        ws.close();
-      }
+      if (ws) ws.close();
     };
   }, []);
 
-  return metrics;
+  return { ...metrics, isOnline };
 }

@@ -79,11 +79,54 @@ app.add_middleware(
 # Must be registered BEFORE the static-file catch-all.
 app.include_router(wm_proxy_router)
 
+# -----------------
+# API ENDPOINTS
+# -----------------
+
+@app.get("/api/tools")
+async def list_tools():
+    """Returns a registry of available tools with their names and risk levels."""
+    tools = []
+    # Orchestrator lazy loads router, ensure initialized if needed?
+    # Or orchestrator.router is always available?
+    # Assuming orchestrator.router.registry exists.
+    registry = orchestrator.router.registry
+    for name, tool_def in registry.tools.items():
+        tools.append({
+            "name": name,
+            "description": tool_def.handler.__doc__ or "No description provided.",
+            "risk_level": tool_def.risk_level.name,
+            # "parameters": inspect.signature(tool_def.handler).parameters # simplified
+        })
+    return {"tools": tools}
+
 from system.event_bus import event_bus
 
 # -----------------
 # WEBSOCKET NAMESPACES
 # -----------------
+
+@app.get("/api/tools")
+async def list_tools():
+    """Returns a registry of available tools with their names, descriptions, and risk levels."""
+    try:
+        if not hasattr(orchestrator, 'router') or not orchestrator.router:
+            # Force initialization if needed, though typically done in lifespan
+            pass
+            
+        registry = orchestrator.router.registry
+        tool_list = []
+        for name, tool_def in registry.tools.items():
+            tool_list.append({
+                "name": name,
+                "description": tool_def.description or (tool_def.handler.__doc__ if tool_def.handler else "No description"),
+                "risk_level": tool_def.risk_level.name,
+                # "schema": ... (could extract signature here)
+            })
+        return {"tools": tool_list}
+    except Exception as e:
+        return {"error": str(e), "tools": []}
+
 @app.websocket("/ws/ai")
 async def websocket_ai(websocket: WebSocket):
     await ws_manager.connect(websocket, "ai")

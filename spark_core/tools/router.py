@@ -16,15 +16,18 @@ from tools.context import context_tools
 
 # --- Default Native Tools ---
 
-async def get_time(args: Dict[str, Any]) -> str:
+async def get_time(args: Dict[str, Any] = None) -> str:
+    """Returns the current server time."""
     from datetime import datetime
     now = datetime.now()
     return f"Current System Time: {now.strftime('%Y-%m-%d %H:%M:%S')}"
 
-async def ping_local(args: Dict[str, Any]) -> str:
+async def ping_local(args: Dict[str, Any] = None) -> str:
+    """Checks if the local SPARK core is responsive."""
     return "SPARK Local Host is ONLINE and operational. Latency minimal."
 
-async def list_capabilities(args: Dict[str, Any]) -> str:
+async def list_capabilities(args: Dict[str, Any] = None) -> str:
+    """Lists current system capabilities."""
     return "I can currently access the system time, check my local health status, and stream responses dynamically."
 
 # --------------------------
@@ -101,22 +104,31 @@ class ToolRouter:
         
         async def _invoke_tool_handler(handler, arguments):
             arguments = arguments or {}
+            # Robust calling convention:
+            # 1. Try passing as **kwargs
+            # 2. Try passing as single 'args' dict
+            # 3. Try passing with no args (if empty)
+            
             try:
-                sig = inspect.signature(handler)
-                params = list(sig.parameters.values())
-            except (ValueError, TypeError):
-                params = []
-
-            if len(params) == 1 and params[0].name == "args":
-                result = handler(arguments)
-            elif isinstance(arguments, dict):
-                result = handler(**arguments)
-            else:
-                result = handler(arguments)
-
-            if inspect.isawaitable(result):
-                result = await result
-            return result
+                if isinstance(arguments, dict) and arguments:
+                     # If we have distinct keys, try kwargs first
+                    try:
+                        result = handler(**arguments)
+                    except TypeError:
+                         # Fallback to single dict arg
+                        result = handler(arguments)
+                else:
+                    # Empty arguments
+                    try:
+                        result = handler(arguments) # Pass empty dict
+                    except TypeError:
+                        result = handler() # Pass nothing
+                    
+                if inspect.isawaitable(result):
+                    result = await result
+                return result
+            except Exception as e:
+                return f"⚠️ [ERROR] Tool execution failed: {str(e)}"
         
         max_attempts = getattr(tool_def, 'retries', 0) + 1
         timeout = getattr(tool_def, 'timeout_sec', 30.0)

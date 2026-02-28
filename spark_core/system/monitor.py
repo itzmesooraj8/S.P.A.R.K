@@ -41,38 +41,65 @@ class SystemMonitor:
         return changed
 
 
+
     async def run_heavy_scan(self, pid: str, ctx):
         print(f"🛡️ [AUDIT] Heavy Scan triggered for {pid}")
         if not ctx.sandbox.is_running:
             print(f"🐳 [DOCKER] Setting up sandbox for {pid}...")
             success = await ctx.sandbox.setup()
             if not success:
-                print(f"⚠️ [AUDIT] Failed to setup sandbox for {pid}. Heavy scan aborted.")
-                self.heavy_scan_cooldown[pid] = self.heavy_scan_cooldown.get(pid, 0) + 1
-                return False
+               print(f"⚠️ [AUDIT] Failed to setup sandbox for {pid}.")
+               # Report audit failure in metrics
+               st = ctx.state.get_state()
+               metrics = st.get("metrics", {})
+               metrics["audit_status"] = "sandbox_failed"
+               ctx.state.update("metrics", metrics)
+               self.heavy_scan_cooldown[pid] = self.heavy_scan_cooldown.get(pid, 0) + 1
+               return False
 
         try:
-            lint = await run_flake8(ctx.sandbox)
-            types = await run_mypy(ctx.sandbox)
-            vulns = await run_bandit(ctx.sandbox)
-            cx = await run_complexity(ctx.sandbox)
+            # Result is now dict {count, status, exit_code}
+            lint_res = await run_flake8(ctx.sandbox)
+            types_res = await run_mypy(ctx.sandbox)
+            vuln_res = await run_bandit(ctx.sandbox)
+            cx_res = await run_complexity(ctx.sandbox)
             
             st = ctx.state.get_state()
             metrics = st.get("metrics", {})
-            metrics["lint_errors"] = lint
-            metrics["type_errors"] = types
-            metrics["known_vulnerabilities"] = vulns
-            metrics["complexity_score"] = cx
+            
+            # Legacy compatibility fields (counts)
+            metrics["lint_errors"] = lint_res.get("count", -1)
+            metrics["type_errors"] = types_res.get("count", -1)
+            metrics["known_vulnerabilities"] = vuln_res.get("count", -1)
+            metrics["complexity_score"] = cx_res.get("score", 0.0)
+            
+            # New Detailed Metadata
+            metrics["audit_meta"] = {
+                "flake8": lint_res,
+                "mypy": types_res,
+                "bandit": vuln_res,
+                "radon": cx_res,
+                "timestamp": time.time(),
+                "status": "success" if (lint_res["status"] == "success" and types_res["status"] == "success") else "partial_failure"
+            }
+            
             ctx.state.update("metrics", metrics)
             
             self.last_heavy_scan[pid] = time.time()
             self.heavy_scan_cooldown[pid] = 0
-            print(f"✅ [AUDIT] Heavy Scan complete for {pid} (Lint: {lint}, Types: {types})")
+            
+            print(f"✅ [AUDIT] Completed (Lint: {lint_res.get('count')}, Types: {types_res.get('count')})")
             return True
         except Exception as e:
             print(f"⚠️ [AUDIT] Heavy scan failed for {pid}: {e}")
+            st = ctx.state.get_state()
+            metrics = st.get("metrics", {})
+            metrics["audit_status"] = "crashed"
+            metrics["audit_error"] = str(e)
+            ctx.state.update("metrics", metrics)
             self.heavy_scan_cooldown[pid] = self.heavy_scan_cooldown.get(pid, 0) + 1
             return False
+
 
     def heavy_scan_needed(self, pid: str, ctx) -> bool:
         # Cooldown check
