@@ -19,7 +19,7 @@ from intelligence.cross_analyzer import cross_analyzer
 from intelligence.pattern_memory import pattern_store
 from intelligence.optimizer import optimizer
 from intelligence.trust_layer import trust_store
-from worldmonitor_proxy import router as wm_proxy_router
+from globe_api import router as globe_api_router
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -75,9 +75,9 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# WorldMonitor API proxy (handles /api/rss-proxy, /api/opensky, /api/{domain}/v1/* etc.)
+# Globe Intelligence API (handles /api/seismology, /api/conflict, /api/market, etc.)
 # Must be registered BEFORE the static-file catch-all.
-app.include_router(wm_proxy_router)
+app.include_router(globe_api_router)
 
 # -----------------
 # API ENDPOINTS

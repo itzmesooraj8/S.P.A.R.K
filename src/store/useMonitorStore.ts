@@ -104,6 +104,16 @@ export interface FusionItem {
   updatedAt: number;
 }
 
+// ── Provider health ─────────────────────────────────────────────────────────
+export interface ProviderHealth {
+  name: string;
+  status: 'ok' | 'degraded' | 'down' | 'key_required';
+  failureCount: number;
+  lastOkAgo: number | null;   // seconds
+  lastError: string;
+  cooldownRemaining: number;  // seconds
+}
+
 // ── Cases ────────────────────────────────────────────────────────────────────
 export interface CaseNote {
   id: string;
@@ -185,6 +195,11 @@ export interface MonitorState {
   toggleCustomMonitor: (id: string) => void;
   removeCustomMonitor: (id: string) => void;
   updateCustomMonitorCount: (id: string, count: number) => void;
+
+  // ── Provider health
+  providerHealth: ProviderHealth[];
+  providerHealthSummary: { ok: number; degraded: number; down: number; key_required: number; total: number } | null;
+  fetchProviderHealth: () => Promise<void>;
 
   // ── Signal Fusion
   fusionItems: FusionItem[];
@@ -354,6 +369,17 @@ export const useMonitorStore = create<MonitorState>()(
           ),
         })),
 
+      // ── Provider health
+      providerHealth: [],
+      providerHealthSummary: null,
+      fetchProviderHealth: async () => {
+        const data = await safeFetch('/api/globe/v1/getProviderHealth');
+        set({
+          providerHealth: data.providers || [],
+          providerHealthSummary: data.summary || null,
+        });
+      },
+
       // ── Signal Fusion
       fusionItems: [],
       fusionLoading: false,
@@ -431,17 +457,20 @@ export const useMonitorStore = create<MonitorState>()(
       fetchRealTimeData: async () => {
         set({ dataLoading: true });
         const now = Date.now();
+        // Pass active layers so backend skips disabled layer fetches
+        const { visibleLayers } = get();
+        const layers = visibleLayers as string[];
         try {
           const [eqData, flightsData, conflictData, cyberData, financeData, marketData, firesData, climateData] =
             await Promise.all([
-              safeFetch('/api/seismology/v1/listEarthquakes', POST_JSON({})),
-              safeFetch('/api/military/v1/listMilitaryFlights', POST_JSON({})),
-              safeFetch('/api/conflict/v1/listConflictEvents', POST_JSON({})),
-              safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'cyber', maxRecords: 20 })),
-              safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'sanctions', maxRecords: 20 })),
-              safeFetch('/api/market/v1/getTicker', POST_JSON({})),
-              safeFetch('/api/wildfire/v1/listFireDetections', POST_JSON({})),
-              safeFetch('/api/climate/v1/listClimateAnomalies', POST_JSON({})),
+              safeFetch('/api/seismology/v1/listEarthquakes',     POST_JSON({ layers })),
+              safeFetch('/api/military/v1/listMilitaryFlights',   POST_JSON({ layers })),
+              safeFetch('/api/conflict/v1/listConflictEvents',    POST_JSON({ layers })),
+              safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'cyber',      maxRecords: 20 })),
+              safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'sanctions',  maxRecords: 20 })),
+              safeFetch('/api/market/v1/getTicker',               POST_JSON({ layers })),
+              safeFetch('/api/wildfire/v1/listFireDetections',    POST_JSON({ layers })),
+              safeFetch('/api/climate/v1/listClimateAnomalies',   POST_JSON({ layers })),
             ]);
 
           const realEarthquakes: RealEvent[] = (eqData.earthquakes || []).map((eq: any) => ({

@@ -1,8 +1,8 @@
 /**
- * WorldMonitor — S.P.A.R.K World Monitor V2 main layout.
+ * Globe Monitor — S.P.A.R.K Globe Intelligence HUD
  * Full-bleed HUD with floating glassmorphic panels over the CartoDB black globe.
  *
- * New features vs V1:
+ * Features:
  *   - URL state sync (shareable links)
  *   - Time-window filtering (1h/6h/24h/48h/7d) in TopBar
  *   - Activity tracking (NEW badges, seen detection)
@@ -10,11 +10,12 @@
  *   - Custom Monitor panel (keyword-based alerts with colors)
  *   - Snapshot + Playback (IndexedDB timeline)
  *   - Case Drawer (investigation workflow, persistent cases + notes)
+ *   - Provider Health panel (circuit-breaker status per data source)
  *   - Zoom-adaptive clustering + layer visibility on map
  *
  * Layout:
  *   Left column  (19rem):  ThreatMatrix + LiveNewsPanel + CustomMonitorPanel
- *   Right column (18rem):  InstabilityIndex + GdeltIntelPanel + FusionPanel
+ *   Right column (18rem):  InstabilityIndex + GdeltIntelPanel + FusionPanel + ProviderHealthPanel
  *   Bottom-left  (18rem):  ClimateAnomalyPanel
  *   Bottom-right (16rem):  SnapshotPlayback (floating pill)
  *   Bottom-center:         AICore
@@ -36,6 +37,7 @@ import { FusionPanel } from '@/components/monitor/FusionPanel';
 import { CustomMonitorPanel } from '@/components/monitor/CustomMonitorPanel';
 import { SnapshotPlayback } from '@/components/monitor/SnapshotPlayback';
 import { CaseDrawer } from '@/components/monitor/CaseDrawer';
+import ProviderHealthPanel from '@/components/monitor/ProviderHealthPanel';
 import { AICore } from '@/components/monitor/AICore';
 
 /* Per-mode accent colors (shared with TopBar) */
@@ -162,6 +164,7 @@ const WorldMonitor = () => {
                 <InstabilityIndex accentColor={accentColor} />
                 <GdeltIntelPanel accentColor={accentColor} />
                 <FusionPanel accentColor={MODE_COLORS.tech} />
+                <ProviderHealthPanel accentColor={accentColor} />
               </motion.div>
             )}
           </AnimatePresence>
