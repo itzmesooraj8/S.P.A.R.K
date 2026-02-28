@@ -32,6 +32,8 @@ export const TopBar = () => {
   const toggleRightPanel = useMonitorStore((s) => s.toggleRightPanel);
   const dataLoading      = useMonitorStore((s) => s.dataLoading);
   const { newCount }     = useActivityTracker();
+  const markAsSeen       = useMonitorStore((s) => s.markAsSeen);
+  const newEventIds      = useMonitorStore((s) => s.newEventIds);
   const { getShareUrl }  = useUrlState();
 
   const [copied, setCopied] = useState(false);
@@ -186,10 +188,12 @@ export const TopBar = () => {
 
         {/* ── NEW events badge ──────────────────────────────────── */}
         {newCount > 0 && (
-          <motion.div
+          <motion.button
+            onClick={() => markAsSeen(newEventIds)}
             initial={{ scale: 0 }}
             animate={{ scale: 1 }}
-            className="hidden md:flex items-center gap-1 px-1.5 py-0.5 rounded shrink-0"
+            className="hidden md:flex items-center gap-1 px-1.5 py-0.5 rounded shrink-0 cursor-pointer transition-opacity hover:opacity-80"
+            title={`${newCount} new events — click to dismiss`}
             style={{
               background: `${activeMode.color}15`,
               border: `1px solid ${activeMode.color}40`,
@@ -199,7 +203,7 @@ export const TopBar = () => {
             <span className="text-[8px] font-mono font-bold" style={{ color: activeMode.color }}>
               {newCount} NEW
             </span>
-          </motion.div>
+          </motion.button>
         )}
 
         {/* ── Time filter ───────────────────────────────────────── */}

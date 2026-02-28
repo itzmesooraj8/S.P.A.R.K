@@ -15,7 +15,7 @@ import {
   AlertTriangle, Newspaper, Settings2,
   BarChart3, HeartPulse, Archive,
   Layers2, BookOpen, Keyboard, Wifi, WifiOff,
-  ChevronLeft, ChevronRight,
+  ChevronLeft, ChevronRight, Eye,
 } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
 import { useUrlState } from '@/hooks/useUrlState';
@@ -35,6 +35,7 @@ import ProviderHealthPanel from '@/components/monitor/ProviderHealthPanel';
 import { LayerTogglePanel } from '@/components/monitor/LayerTogglePanel';
 import { AICore } from '@/components/monitor/AICore';
 import { CommandPalette, useCommandPalette } from '@/components/monitor/CommandPalette';
+import { StreetViewPanel, type StreetViewCoords } from '@/components/monitor/StreetViewPanel';
 
 const MODE_COLORS: Record<string, string> = {
   world:   '#00f5ff',
@@ -129,6 +130,8 @@ const WorldMonitor = () => {
   const rightPanelOpen    = useMonitorStore((s) => s.rightPanelOpen);
   const toggleLeftPanel   = useMonitorStore((s) => s.toggleLeftPanel);
   const toggleRightPanel  = useMonitorStore((s) => s.toggleRightPanel);
+  const toggleCaseDrawer  = useMonitorStore((s) => s.toggleCaseDrawer);
+  const caseDrawerOpen    = useMonitorStore((s) => s.caseDrawerOpen);
   const mode              = useMonitorStore((s) => s.mode);
   const fetchRealTimeData = useMonitorStore((s) => s.fetchRealTimeData);
   const dataLoading       = useMonitorStore((s) => s.dataLoading);
@@ -141,7 +144,8 @@ const WorldMonitor = () => {
   const [leftTab,        setLeftTab]        = useState<LeftTab>('threats');
   const [rightTab,       setRightTab]       = useState<RightTab>('signal');
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
-  const [caseDrawerOpen, setCaseDrawerOpen] = useState(false);
+  const [streetViewCoords, setStreetViewCoords] = useState<StreetViewCoords | null>(null);
+  const [streetViewMode, setStreetViewMode] = useState(false);
   // Mobile: which bottom-tab is open (null = map only)
   const [mobileTab, setMobileTab] = useState<'left' | 'right' | null>(null);
 
@@ -158,7 +162,9 @@ const WorldMonitor = () => {
     <div className="h-screen w-screen overflow-hidden flex flex-col" style={{ background: '#010812' }}>
 
       {/* ── Globe base ───────────────────────────────────────────── */}
-      <MapContainer />
+      <MapContainer
+        onMapClick={streetViewMode ? (loc) => setStreetViewCoords({ ...loc }) : undefined}
+      />
 
       {/* ── Atmospheric overlays ─────────────────────────────────── */}
       <div className="scan-overlay" />
@@ -301,13 +307,24 @@ const WorldMonitor = () => {
           accentColor={accentColor}
           onClick={() => setLayerPanelOpen((v) => !v)}
         />
+        {/* Street View */}
+        <DockButton
+          icon={<Eye size={14} />}
+          label="Street View"
+          active={streetViewMode}
+          accentColor={accentColor}
+          onClick={() => {
+            setStreetViewMode((v) => !v);
+            if (streetViewMode) setStreetViewCoords(null);
+          }}
+        />
         {/* Cases */}
         <DockButton
           icon={<BookOpen size={14} />}
           label="Cases"
           active={caseDrawerOpen}
           accentColor={accentColor}
-          onClick={() => setCaseDrawerOpen((v) => !v)}
+          onClick={toggleCaseDrawer}
         />
         {/* Command palette hint */}
         <DockButton
@@ -394,6 +411,22 @@ const WorldMonitor = () => {
       <LayerTogglePanel open={layerPanelOpen} onClose={() => setLayerPanelOpen(false)} />
       <CaseDrawer accentColor={accentColor} />
       <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} accentColor={accentColor} />
+      {/* Street View panel — shown when streetViewMode is active and coords picked */}
+      {streetViewMode && (
+        <StreetViewPanel
+          coords={streetViewCoords}
+          onClose={() => { setStreetViewMode(false); setStreetViewCoords(null); }}
+          accentColor={accentColor}
+        />
+      )}
+      {streetViewMode && !streetViewCoords && (
+        <div
+          className="fixed bottom-10 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-full text-[10px] font-mono font-bold tracking-widest pointer-events-none"
+          style={{ background: `${accentColor}20`, border: `1px solid ${accentColor}50`, color: accentColor }}
+        >
+          STREET VIEW ACTIVE — CLICK ANY LOCATION ON THE GLOBE
+        </div>
+      )}
 
       {/* ══════════════════════════════════════════════════════════════
           STATUS BAR  (32px, bottom)

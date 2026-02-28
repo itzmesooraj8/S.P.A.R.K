@@ -66,7 +66,7 @@ const ARC_COLORS: Record<string, { source: [number, number, number, number]; tar
   happy:   { source: [0, 200, 120, 180], target: [0, 200, 120, 40] },
 };
 
-export const MapContainer = () => {
+export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number; lng: number }) => void } = {}) => {
   const mode            = useMonitorStore((s) => s.mode);
   const viewState       = useMonitorStore((s) => s.viewState);
   const setViewState    = useMonitorStore((s) => s.setViewState);
@@ -274,6 +274,11 @@ export const MapContainer = () => {
         controller={true}
         layers={layers}
         getCursor={() => 'default'}
+        onClick={(info: any) => {
+          if (!info.layer && info.coordinate) {
+            onMapClick?.({ lat: info.coordinate[1], lng: info.coordinate[0] });
+          }
+        }}
       >
         <Map
           mapStyle={resolvedStyle as any}
