@@ -1,12 +1,12 @@
 /**
  * FusionPanel — SPARK Signal Fusion: "Why This Matters" intelligence cards.
  *
- * Calls /api/globe/v1/getFusionSummary (new clean Globe API).
+ * Calls /api/globe/v1/getFusionSummary (Globe API).
  * Each FusionItem has: title, summary, confidence, cause/effect chain,
  * evidence links, data gaps, entity tags, severity.
  *
- * This is SPARK's key differentiator over World Monitor:
- * not just aggregation, but causal correlation with confidence.
+ * SPARK differentiator: not just event aggregation, but causal correlation
+ * with confidence scoring, evidence linking, and data-gap surfacing.
  */
 import { useEffect } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';

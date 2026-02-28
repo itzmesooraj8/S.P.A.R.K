@@ -1,8 +1,2 @@
-declare module '@worldmonitor' {
-  export class App {
-    constructor(containerId: string);
-    init(): Promise<void>;
-  }
-}
-
-declare module '@worldmonitor-css';
+// Globe Monitor — ambient type declarations for SPARK Globe Monitor frontend.
+// Globe API is served by spark_core/globe_api.py (FastAPI router).

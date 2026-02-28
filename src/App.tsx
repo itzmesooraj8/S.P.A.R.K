@@ -19,7 +19,6 @@ const App = () => (
           <Route path="/" element={<Index />} />
           <Route path="/globe" element={<GlobeMonitor />} />
           <Route path="/globe-monitor" element={<GlobeMonitor />} />
-          <Route path="/worldmonitor" element={<GlobeMonitor />} />
           {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
           <Route path="*" element={<NotFound />} />
         </Routes>

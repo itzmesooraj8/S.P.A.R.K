@@ -2,7 +2,7 @@
 S.P.A.R.K Globe Intelligence API
 Serves real-time geospatial data for the Globe Monitor HUD.
 
-Architecture upgrades vs legacy worldmonitor_proxy:
+Architecture:
   - Per-provider circuit breakers (3 failures → 60s cooldown)
   - Provider health endpoint (/api/globe/v1/getProviderHealth)
   - Layer-aware loading (disabled layers skip their fetch + interval)
