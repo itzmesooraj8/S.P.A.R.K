@@ -1,11 +1,11 @@
 /**
- * useUrlState — Shareable URL state for SPARK World Monitor.
+ * useUrlState — Shareable URL state for SPARK Globe Monitor.
  * Encodes/decodes: map center+zoom, mode, time window, visible layers.
  *
  * Format (URL hash): #lng,lat,zoom,mode,timeWindow,layers
  * Example: #20.0,25.0,2.2,world,24h,conflict+earthquake+wildfire
  *
- * Usage: Call once at mount in WorldMonitor.tsx — it both reads the initial
+ * Usage: Call once at mount in GlobeMonitor.tsx — it both reads the initial
  * URL state into the store AND subscribes to store changes to keep URL in sync.
  */
 import { useEffect, useRef } from 'react';

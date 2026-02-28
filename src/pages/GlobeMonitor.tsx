@@ -1,5 +1,5 @@
 /**
- * Globe Monitor — S.P.A.R.K Globe Intelligence HUD (V5 Redesign)
+ * SPARK Globe Monitor — S.P.A.R.K Globe Intelligence HUD
  *
  * Layout:
  *   Top:          TopBar (48px) — brand, modes, live status, map controls, clock
@@ -125,7 +125,7 @@ function PanelShell({
   );
 }
 
-const WorldMonitor = () => {
+const GlobeMonitor = () => {
   const leftPanelOpen     = useMonitorStore((s) => s.leftPanelOpen);
   const rightPanelOpen    = useMonitorStore((s) => s.rightPanelOpen);
   const toggleLeftPanel   = useMonitorStore((s) => s.toggleLeftPanel);
@@ -137,6 +137,11 @@ const WorldMonitor = () => {
   const dataLoading       = useMonitorStore((s) => s.dataLoading);
   const lastFetch         = useMonitorStore((s) => s.lastFetch);
   const wsConnected       = useMonitorStore((s) => s.wsConnected);
+  const timeWindow        = useMonitorStore((s) => s.timeWindow);
+  const providerHealthSummary = useMonitorStore((s) => s.providerHealthSummary);
+  const realEventCount    = useMonitorStore((s) =>
+    s.realEvents.length + s.realWorldEvents.length + s.realCyberEvents.length +
+    s.realFireEvents.length + s.realClimateEvents.length);
 
   const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
@@ -439,8 +444,8 @@ const WorldMonitor = () => {
           backdropFilter: 'blur(16px)',
         }}
       >
-        {/* Left: feed status */}
-        <div className="flex items-center gap-2">
+        {/* Left: feed status + provider health summary */}
+        <div className="flex items-center gap-3">
           <span
             className="status-dot shrink-0"
             style={{ background: dataLoading ? '#fbbf24' : accentColor, boxShadow: `0 0 6px ${dataLoading ? '#fbbf2460' : `${accentColor}60`}` }}
@@ -448,15 +453,42 @@ const WorldMonitor = () => {
           <span className="text-[9px] font-mono font-bold tracking-widest" style={{ color: dataLoading ? '#fbbf24' : accentColor }}>
             {dataLoading ? 'SYNCING…' : 'FEEDS NOMINAL'}
           </span>
-          <span className="flex items-center gap-1 text-[9px] font-mono opacity-50" title={wsConnected ? 'Globe WebSocket active' : 'WebSocket offline'}>
+          <span className="flex items-center gap-1 text-[9px] font-mono" title={wsConnected ? 'Globe WebSocket active' : 'WebSocket offline'}>
             {wsConnected
               ? <Wifi size={9} style={{ color: '#34d399' }} />
               : <WifiOff size={9} style={{ color: '#6b7280' }} />}
-            <span style={{ color: wsConnected ? '#34d399' : '#6b7280' }}>{wsConnected ? 'WS LIVE' : 'WS OFF'}</span>
+            <span style={{ color: wsConnected ? '#34d399' : '#6b7280', opacity: 0.7 }}>{wsConnected ? 'WS' : 'OFF'}</span>
           </span>
+
+          {/* Provider health mini-summary */}
+          {providerHealthSummary && (
+            <div className="hidden xl:flex items-center gap-2 pl-1 border-l border-white/8">
+              <span className="text-[8px] font-mono" style={{ color: '#34d399', opacity: 0.7 }}>
+                {providerHealthSummary.ok}✓
+              </span>
+              {providerHealthSummary.degraded > 0 && (
+                <span className="text-[8px] font-mono" style={{ color: '#fbbf24' }}>
+                  {providerHealthSummary.degraded}⚠
+                </span>
+              )}
+              {providerHealthSummary.down > 0 && (
+                <span className="text-[8px] font-mono" style={{ color: '#f87171' }}>
+                  {providerHealthSummary.down}✗
+                </span>
+              )}
+            </div>
+          )}
+
+          {/* Time window indicator */}
+          <div className="hidden lg:flex items-center gap-1 pl-1 border-l border-white/8">
+            <span className="text-[8px] font-mono tracking-wider opacity-40">WINDOW</span>
+            <span className="text-[8px] font-mono font-bold tracking-wider" style={{ color: accentColor, opacity: 0.8 }}>
+              {timeWindow.toUpperCase()}
+            </span>
+          </div>
         </div>
 
-        {/* Center: panel toggle shortcuts */}
+        {/* Center: event count + panel toggle shortcuts */}
         <div className="flex items-center gap-3 mx-auto">
           <button
             onClick={toggleLeftPanel}
@@ -466,6 +498,23 @@ const WorldMonitor = () => {
             <ChevronLeft size={9} />
             {leftPanelOpen ? 'HIDE LEFT' : 'SHOW LEFT'}
           </button>
+          <div className="w-px h-3 bg-white/10" />
+          {/* Live event count badge */}
+          <div
+            className="flex items-center gap-1 px-2 py-0.5 rounded font-mono text-[8px] font-bold tracking-wider"
+            style={{
+              background: `${accentColor}10`,
+              border: `1px solid ${accentColor}25`,
+              color: accentColor,
+              opacity: 0.8,
+            }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full shrink-0"
+              style={{ background: accentColor, boxShadow: `0 0 4px ${accentColor}` }}
+            />
+            {realEventCount > 0 ? `${realEventCount} ACTIVE` : 'NO DATA'}
+          </div>
           <div className="w-px h-3 bg-white/10" />
           <button
             onClick={toggleRightPanel}
@@ -523,5 +572,5 @@ function DockButton({
   );
 }
 
-export default WorldMonitor;
+export default GlobeMonitor;
 

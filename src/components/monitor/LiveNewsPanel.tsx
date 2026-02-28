@@ -1,6 +1,6 @@
 /**
  * LiveNewsPanel — Real-time news feed from GDELT Doc API v2.
- * Mirrors the worldmonitor LiveNewsPanel feature.
+ * Globe Monitor LiveNewsPanel — live news headlines from GDELT.
  * News is filtered by the current monitor mode (world/tech/finance/happy).
  * Sentiment tone shown as colored indicator bar.
  */

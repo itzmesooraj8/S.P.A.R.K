@@ -1,5 +1,5 @@
 /**
- * Global Zustand store for World Monitor V2 — SPARK Edition.
+ * Global Zustand store for SPARK Globe Monitor.
  * Features:
  *   - Time window filtering (1h / 6h / 24h / 48h / 7d)
  *   - Activity tracking: seenEventIds, newEventIds, per-panel change badges

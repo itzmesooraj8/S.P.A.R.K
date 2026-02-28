@@ -50,7 +50,7 @@ const AI_RESPONSES: Record<string, { text: string; lat?: number; lng?: number }>
     lng: 32.5,
   },
   default: {
-    text: '🌐 World Monitor V2 online. All systems nominal. Tracking 847 active events across 4 domains. Global threat level: ELEVATED. Type a region, country, or topic for detailed analysis.',
+    text: '🌐 Globe Monitor online. All systems nominal. Tracking active events across conflict, hazards, finance, and intelligence domains. Global threat level: ELEVATED. Type a region, country, or topic for detailed analysis.',
   },
 };
 
@@ -171,7 +171,7 @@ export const AICore = () => {
               {aiMessages.length === 0 && !isTyping && (
                 <div className="text-[11px] text-foreground/40 leading-relaxed font-mono">
                   <span style={{ color: '#00f5ff80' }}>AI:</span>{' '}
-                  World Monitor V2 intelligence core active. Ask about any region,
+                  Globe Monitor intelligence core active. Ask about any region,
                   conflict zone, market, or technology trend.
                 </div>
               )}

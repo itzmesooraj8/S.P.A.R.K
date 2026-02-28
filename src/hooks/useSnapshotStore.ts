@@ -1,5 +1,5 @@
 /**
- * useSnapshotStore — IndexedDB persistence for World Monitor snapshots.
+ * useSnapshotStore — IndexedDB persistence for Globe Monitor snapshots.
  *
  * Snapshots contain a full dump of real-time data at a point in time.
  * Metadata (id, label, createdAt, eventCount, mode) is kept in Zustand/localStorage.

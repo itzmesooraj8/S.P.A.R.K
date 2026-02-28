@@ -1,6 +1,6 @@
 /**
  * ClimateAnomalyPanel — Shows NASA EONET open natural events.
- * Mirrors worldmonitor ClimateAnomalyPanel feature.
+ * Globe Monitor ClimateAnomalyPanel — NASA EONET natural events.
  * Categories: wildfires, severeStorms, volcanoes, floods, drought, etc.
  */
 import { useMemo } from 'react';

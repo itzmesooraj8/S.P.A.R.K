@@ -1,5 +1,5 @@
 /**
- * TopBar — S.P.A.R.K World Monitor V2 top HUD bar.
+ * TopBar — S.P.A.R.K Globe Monitor top HUD bar.
  * Features:
  *   - SPARK brand glyph + system ID (Orbitron)
  *   - Mode switcher with per-mode accent color (cyan/purple/amber/green)

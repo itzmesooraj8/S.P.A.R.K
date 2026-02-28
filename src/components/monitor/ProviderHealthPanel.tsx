@@ -170,6 +170,13 @@ export default function ProviderHealthPanel({ accentColor = '#00f5ff' }: Props) 
 }
 
 // ── Individual provider row ──────────────────────────────────────────────────
+function fmtAgo(secs: number | null): string {
+  if (secs === null) return '—';
+  if (secs < 60)   return `${secs}s`;
+  if (secs < 3600) return `${Math.floor(secs / 60)}m`;
+  return `${Math.floor(secs / 3600)}h`;
+}
+
 function ProviderRow({ provider }: { provider: ProviderHealth }) {
   const cfg   = STATUS_CFG[provider.status];
   const label = PROVIDER_LABELS[provider.name] ?? provider.name;
@@ -182,7 +189,7 @@ function ProviderRow({ provider }: { provider: ProviderHealth }) {
     <motion.div
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
-      className="flex items-center gap-2 px-2 py-1 rounded"
+      className="flex items-center gap-2 px-2 py-1.5 rounded"
       style={{ background: cfg.bg }}
       title={
         provider.lastError
@@ -209,14 +216,30 @@ function ProviderRow({ provider }: { provider: ProviderHealth }) {
         {label}
       </span>
 
-      {/* Status label / cooldown */}
+      {/* Freshness: last ok ago */}
+      {provider.status === 'ok' && provider.lastOkAgo !== null && (
+        <span className="text-[8px] font-mono shrink-0 opacity-40">
+          {fmtAgo(provider.lastOkAgo)}
+        </span>
+      )}
+
+      {/* Cooldown timer */}
+      {provider.cooldownRemaining > 0 && (
+        <span className="text-[8px] font-mono shrink-0 px-1 py-0.5 rounded"
+          style={{ background: 'rgba(248,113,113,0.15)', color: '#f87171' }}>
+          {provider.cooldownRemaining}s
+        </span>
+      )}
+
+      {/* Status chip */}
       <span className="text-[8px] font-mono shrink-0" style={{ color: cfg.color }}>
-        {provider.cooldownRemaining > 0
-          ? `${provider.cooldownRemaining}s`
-          : provider.failureCount > 0 && provider.status !== 'down'
-            ? `${provider.failureCount}✗`
-            : cfg.label}
+        {provider.failureCount > 0 && provider.status !== 'down' && provider.cooldownRemaining === 0
+          ? `${provider.failureCount}✗`
+          : provider.cooldownRemaining === 0
+            ? cfg.label
+            : ''}
       </span>
     </motion.div>
   );
 }
+

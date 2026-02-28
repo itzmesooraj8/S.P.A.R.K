@@ -1,6 +1,6 @@
 /**
  * GdeltIntelPanel — Intelligence feed from GDELT Doc API v2.
- * Mirrors the worldmonitor GdeltIntelPanel feature.
+ * Globe Monitor GdeltIntelPanel — GDELT intelligence feed.
  *
  * Topics: military, cyber, nuclear, sanctions, intelligence, maritime, tech, climate
  * Sentiment tone: negative = red, positive = green, neutral = gray

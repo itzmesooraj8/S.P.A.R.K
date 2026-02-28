@@ -8,9 +8,9 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, Zap, Shield, Globe, Cpu, TrendingUp, Heart, Flame, Wind, FolderPlus,
 } from 'lucide-react';
-import { useMonitorStore } from '@/store/useMonitorStore';
+import { useMonitorStore, TIME_WINDOW_MS } from '@/store/useMonitorStore';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
-import type { RealEvent, Severity } from '@/store/useMonitorStore';
+import type { RealEvent, Severity, TimeWindow } from '@/store/useMonitorStore';
 import { getEventsForMode, type MonitorEvent } from '@/data/mockData';
 import { BasePanel } from './BasePanel';
 import { ScrollArea } from '@/components/ui/scroll-area';
@@ -41,6 +41,26 @@ const timelineLabels: Record<string, string> = {
   yesterday: 'YESTERDAY',
   this_week: 'THIS WEEK',
 };
+
+const TW_LABELS: Record<TimeWindow, string> = {
+  '1h':  '1 HOUR',
+  '6h':  '6 HOURS',
+  '24h': '24 HOURS',
+  '48h': '48 HOURS',
+  '7d':  '7 DAYS',
+};
+
+/** Apply time-window filter to events that have fetchedAt. Mock events (no fetchedAt) are always kept. */
+function applyTimeWindow(
+  events: (RealEvent | MonitorEvent)[],
+  timeWindow: TimeWindow,
+): (RealEvent | MonitorEvent)[] {
+  const cutoff = Date.now() - TIME_WINDOW_MS[timeWindow];
+  return events.filter((e) => {
+    const fetched = (e as any).fetchedAt;
+    return !fetched || fetched >= cutoff;
+  });
+}
 
 /** Merge real events (from store) with mock fallback; deduplicate by id. */
 function mergeEvents(
@@ -116,15 +136,17 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
   const cases           = useMonitorStore((s) => s.cases);
   const openCaseDrawer  = useMonitorStore((s) => s.toggleCaseDrawer);
   const caseDrawerOpen  = useMonitorStore((s) => s.caseDrawerOpen);
+  const timeWindow      = useMonitorStore((s) => s.timeWindow);
+  const setTimeWindow   = useMonitorStore((s) => s.setTimeWindow);
 
   const { isNew, observe, newCount } = useActivityTracker();
 
   const isLive = lastFetch > 0;
 
-  const events = useMemo(
-    () => mergeEvents(realWorldEvents, realCyberEvents, realFinanceEvents, realClimateEvents, realEvents, mode, dataLoading),
-    [realWorldEvents, realCyberEvents, realFinanceEvents, realClimateEvents, realEvents, mode, dataLoading],
-  );
+  const events = useMemo(() => {
+    const merged = mergeEvents(realWorldEvents, realCyberEvents, realFinanceEvents, realClimateEvents, realEvents, mode, dataLoading);
+    return applyTimeWindow(merged, timeWindow);
+  }, [realWorldEvents, realCyberEvents, realFinanceEvents, realClimateEvents, realEvents, mode, dataLoading, timeWindow]);
 
   /** Group events by timeline period */
   const grouped = useMemo(() => {
@@ -159,6 +181,8 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
     if (!caseDrawerOpen) openCaseDrawer();
   };
 
+  const TW_OPTIONS: TimeWindow[] = ['1h', '6h', '24h', '48h', '7d'];
+
   return (
     <BasePanel
       title={mode === 'happy' ? 'Good News Feed' : 'Threat Matrix'}
@@ -180,6 +204,23 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
       }
       accentColor={accentColor}
     >
+      {/* Time-window selector */}
+      <div className="flex items-center gap-0.5 px-2 py-1.5 border-b border-white/5">
+        {TW_OPTIONS.map((tw) => (
+          <button
+            key={tw}
+            onClick={() => setTimeWindow(tw)}
+            className="flex-1 text-[8px] font-mono font-bold py-0.5 rounded transition-all duration-150"
+            style={{
+              background: timeWindow === tw ? `${accentColor}20` : 'transparent',
+              color: timeWindow === tw ? accentColor : 'rgba(255,255,255,0.25)',
+              border: `1px solid ${timeWindow === tw ? `${accentColor}40` : 'transparent'}`,
+            }}
+          >
+            {tw}
+          </button>
+        ))}
+      </div>
       <ScrollArea className="max-h-[380px]">
         <div className="p-2 space-y-3">
           <AnimatePresence mode="popLayout">

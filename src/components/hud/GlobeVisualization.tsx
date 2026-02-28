@@ -1,9 +1,9 @@
-import WorldMonitor from '@/pages/WorldMonitor';
+import GlobeMonitor from '@/pages/GlobeMonitor';
 
 export default function GlobeVisualization() {
   return (
     <div className="w-full h-full overflow-hidden bg-black/80">
-      <WorldMonitor />
+      <GlobeMonitor />
     </div>
   );
 }
