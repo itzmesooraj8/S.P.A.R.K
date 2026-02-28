@@ -999,6 +999,78 @@ async def list_news_articles(request: Request):
 
 
 # ──────────────────────────────────────────────────────────────
+# NEWS GEO  (/api/news/v1/listNewsGeo)
+# Returns geo-tagged news events for globe map overlay.
+# Uses GDELT artgeo mode — only articles with resolved coordinates.
+# ──────────────────────────────────────────────────────────────
+_NEWS_GEO_QUERIES: dict[str, str] = {
+    "world":   "crisis conflict protest government election war",
+    "tech":    "AI technology cyber hack satellite launch",
+    "finance": "economy market crash trade sanctions bank",
+    "happy":   "breakthrough discovery innovation science climate",
+}
+
+@router.api_route("/api/news/v1/listNewsGeo", methods=["POST", "OPTIONS"])
+async def list_news_geo(request: Request):
+    """Geo-tagged world news for the globe map layer (artgeo mode)."""
+    if request.method == "OPTIONS":
+        return _options_response()
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    mode  = body.get("mode", "world")
+    query = _NEWS_GEO_QUERIES.get(mode, "world news crisis")
+
+    data = await guarded_fetch(
+        "gdelt_news",
+        "https://api.gdeltproject.org/api/v2/doc/doc",
+        params={
+            "query":      f"{query} sourcelang:eng",
+            "mode":       "artgeo",
+            "format":     "json",
+            "maxrecords": "60",
+            "timespan":   "6h",
+            "sort":       "ToneDesc",
+        },
+        ttl=120,
+    )
+    if data is None:
+        return JSONResponse({
+            "events": [],
+            "degraded": True,
+            "providerStatus": _CB["gdelt_news"].to_dict(),
+        })
+
+    events = []
+    for a in (data.get("articles", []) or [])[:60]:
+        lat = a.get("actiongeo_lat")
+        lon = a.get("actiongeo_long")
+        if not lat or not lon:
+            continue
+        try:
+            lat, lon = float(lat), float(lon)
+        except (ValueError, TypeError):
+            continue
+        tone = float(a.get("tone", 0) or 0)
+        events.append({
+            "id":          (a.get("url") or "")[:64],
+            "title":       (a.get("title") or "")[:120],
+            "url":         a.get("url") or "",
+            "source":      a.get("domain") or "",
+            "date":        a.get("seendate") or "",
+            "location":    a.get("actiongeo_fullname") or "Unknown",
+            "lat":         lat,
+            "lng":         lon,
+            "tone":        round(tone, 2),
+            "severity":    "critical" if tone < -10 else "high" if tone < -5 else "medium" if tone < 0 else "low",
+            "category":    "news",
+        })
+    _stamp(events, "gdelt_news")
+    return JSONResponse({"events": events, "degraded": False})
+
+
+# ──────────────────────────────────────────────────────────────
 # COUNTRY INTELLIGENCE
 # ──────────────────────────────────────────────────────────────
 @router.api_route("/api/intel/v1/getCountryIntelligence", methods=["POST", "OPTIONS"])

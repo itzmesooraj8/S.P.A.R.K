@@ -38,8 +38,11 @@ export const LiveNewsPanel = ({ accentColor = 'hsl(210 100% 55%)' }: { accentCol
   const newsArticles = useMonitorStore((s) => s.newsArticles);
   const fetchNews = useMonitorStore((s) => s.fetchNews);
 
+  // Fetch on mount + mode change, then auto-refresh every 90 seconds
   useEffect(() => {
     fetchNews(mode);
+    const id = setInterval(() => fetchNews(mode), 90_000);
+    return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [mode]);
 

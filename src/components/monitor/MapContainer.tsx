@@ -81,6 +81,7 @@ export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number;
   const realEvents        = useMonitorStore((s) => s.realEvents);
   const realFireEvents    = useMonitorStore((s) => s.realFireEvents);
   const realClimateEvents = useMonitorStore((s) => s.realClimateEvents);
+  const newsGeoEvents     = useMonitorStore((s) => s.newsGeoEvents);
   const lastFetch         = useMonitorStore((s) => s.lastFetch);
 
   const zoom = viewState.zoom;
@@ -221,6 +222,37 @@ export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number;
         }),
       ] : []),
 
+      ...(visibleLayers.includes('news') ? [
+        new ScatterplotLayer({
+          id: 'news-scatter',
+          data: newsGeoEvents.filter((e) => withinWindow(e.fetchedAt)),
+          getPosition: (d: any) => [d.lng, d.lat],
+          getRadius: (d: any) => {
+            const sizes: Record<string, number> = { critical: 65000, high: 45000, medium: 30000, low: 18000 };
+            return (sizes[d.severity] ?? 25000) * zoomScale;
+          },
+          getFillColor: (d: any) => {
+            // Blue-white spectrum by severity for news
+            const sev = d.severity || 'medium';
+            if (sev === 'critical') return [220, 80, 255, 230] as [number, number, number, number];
+            if (sev === 'high')     return [120, 160, 255, 210] as [number, number, number, number];
+            if (sev === 'medium')   return [80, 200, 255, 190] as [number, number, number, number];
+            return [60, 230, 200, 160] as [number, number, number, number];
+          },
+          getLineColor: [255, 255, 255, 60],
+          stroked: true,
+          getLineWidth: 1,
+          lineWidthMinPixels: 1,
+          radiusMinPixels: 2,
+          radiusMaxPixels: Math.round(16 * zoomScale),
+          opacity: 0.75,
+          pickable: true,
+          autoHighlight: true,
+          highlightColor: [255, 240, 80, 120],
+          updateTriggers: { getRadius: [zoomScale] },
+        }),
+      ] : []),
+
       ...(visibleLayers.includes('custom') ? [
         new ScatterplotLayer({
           id: 'custom-monitor-glow',
@@ -246,7 +278,7 @@ export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number;
         }),
       ] : []),
     ],
-    [events, arcs, arcColors, realFireEvents, realClimateEvents, visibleLayers, zoomScale, getCustomColor, withinWindow],
+    [events, arcs, arcColors, realFireEvents, realClimateEvents, newsGeoEvents, visibleLayers, zoomScale, getCustomColor, withinWindow],
   );
 
   const onViewStateChange = useCallback(

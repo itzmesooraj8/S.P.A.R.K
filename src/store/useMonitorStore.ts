@@ -18,7 +18,7 @@ export type MonitorMode = 'world' | 'tech' | 'finance' | 'happy';
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type TimeWindow = '1h' | '6h' | '24h' | '48h' | '7d';
 
-// ── Layer catalog (expanded — 36 layers) ────────────────────────────────────
+// ── Layer catalog (expanded — 37 layers) ────────────────────────────────────
 export const ALL_LAYERS = [
   // Geopolitical
   'conflict', 'displacement', 'cyber', 'government',
@@ -34,6 +34,8 @@ export const ALL_LAYERS = [
   'network', 'bgp', 'leaks', 'custom',
   // Space / special
   'satellites', 'solar',
+  // Live news geo
+  'news',
 ] as const;
 export type LayerId = (typeof ALL_LAYERS)[number];
 
@@ -198,6 +200,7 @@ export interface MonitorState {
   realWorldEvents: RealEvent[];
   realCyberEvents: RealEvent[];
   realFinanceEvents: RealEvent[];
+  newsGeoEvents: RealEvent[];
   realClimateEvents: RealEvent[];
   realFireEvents: RealFireEvent[];
   realMarketTickers: RealTicker[];
@@ -276,6 +279,7 @@ export interface MonitorState {
   fetchRealTimeData: () => Promise<void>;
   fetchGdeltIntel: (topic: string) => Promise<void>;
   fetchNews: (mode: MonitorMode) => Promise<void>;
+  fetchNewsGeo: (mode: MonitorMode) => Promise<void>;
 }
 
 // ── Time-window helper: ms per window ────────────────────────────────────────
@@ -298,7 +302,7 @@ const DEFAULT_VIEW: ViewState = {
 };
 
 const DEFAULT_VISIBLE_LAYERS: LayerId[] = [
-  'conflict', 'earthquake', 'wildfire', 'climate', 'flights', 'custom',
+  'conflict', 'earthquake', 'wildfire', 'climate', 'flights', 'custom', 'news',
 ];
 
 const POST_JSON = (body: unknown) => ({
@@ -356,6 +360,7 @@ export const useMonitorStore = create<MonitorState>()(
       realWorldEvents: [],
       realCyberEvents: [],
       realFinanceEvents: [],
+      newsGeoEvents: [],
       realClimateEvents: [],
       realFireEvents: [],
       realMarketTickers: [],
@@ -524,7 +529,7 @@ export const useMonitorStore = create<MonitorState>()(
         const { visibleLayers } = get();
         const layers = visibleLayers as string[];
         try {
-          const [eqData, flightsData, conflictData, cyberData, financeData, marketData, firesData, climateData] =
+          const [eqData, flightsData, conflictData, cyberData, financeData, marketData, firesData, climateData, newsGeoData] =
             await Promise.all([
               safeFetch('/api/seismology/v1/listEarthquakes',     POST_JSON({ layers })),
               safeFetch('/api/military/v1/listMilitaryFlights',   POST_JSON({ layers })),
@@ -534,6 +539,7 @@ export const useMonitorStore = create<MonitorState>()(
               safeFetch('/api/market/v1/getTicker',               POST_JSON({ layers })),
               safeFetch('/api/wildfire/v1/listFireDetections',    POST_JSON({ layers })),
               safeFetch('/api/climate/v1/listClimateAnomalies',   POST_JSON({ layers })),
+              safeFetch('/api/news/v1/listNewsGeo',               POST_JSON({ mode: get().mode })),
             ]);
 
           const realEarthquakes: RealEvent[] = (eqData.earthquakes || []).map((eq: any) => ({
@@ -630,6 +636,21 @@ export const useMonitorStore = create<MonitorState>()(
               fetchedAt: now,
             }));
 
+          const newsGeoEvents: RealEvent[] = (newsGeoData.events || [])
+            .filter((e: any) => e.lat && e.lng)
+            .map((e: any) => ({
+              id:          e.id || Math.random().toString(36).slice(2),
+              title:       e.title || 'World News',
+              location:    e.location || 'Unknown',
+              lat:         e.lat,
+              lng:         e.lng,
+              severity:    (e.severity as Severity) || 'medium',
+              category:    'news',
+              timestamp:   'today' as const,
+              description: e.source || 'GDELT',
+              fetchedAt:   now,
+            }));
+
           // ── Activity tracking: find NEW events ──────────────────────────
           const incomingIds = [
             ...realEarthquakes.map((e) => e.id),
@@ -662,6 +683,7 @@ export const useMonitorStore = create<MonitorState>()(
             realClimateEvents,
             realFireEvents,
             realMarketTickers,
+            newsGeoEvents,
             dataLoading: false,
             lastFetch: now,
             newEventIds,
@@ -685,6 +707,26 @@ export const useMonitorStore = create<MonitorState>()(
         set({ newsArticles: data.articles || [] });
       },
 
+      // ── fetchNewsGeo ──────────────────────────────────────────────────────
+      // Geo-tagged news for globe map overlay (GDELT artgeo mode)
+      fetchNewsGeo: async (mode: MonitorMode) => {
+        const now = Date.now();
+        const data = await safeFetch('/api/news/v1/listNewsGeo', POST_JSON({ mode }));
+        const newsGeoEvents: RealEvent[] = (data.events || []).map((e: any) => ({
+          id:          e.id,
+          title:       e.title,
+          location:    e.location || 'Unknown',
+          lat:         e.lat,
+          lng:         e.lng,
+          severity:    e.severity || 'medium',
+          category:    'news',
+          timestamp:   'today' as const,
+          description: e.source || 'GDELT News',
+          fetchedAt:   now,
+        }));
+        set({ newsGeoEvents });
+      },
+
       // ── Map settings
       mapView: '3d',
       setMapView: (view) => set({ mapView: view }),
@@ -697,6 +739,7 @@ export const useMonitorStore = create<MonitorState>()(
       setMode: (mode) => {
         set({ mode, selectedEventId: null });
         get().fetchNews(mode);
+        get().fetchNewsGeo(mode);
       },
       flyTo: (longitude, latitude, zoom = 5) =>
         set({ viewState: { longitude, latitude, zoom, pitch: 45, bearing: 0, transitionDuration: 2000 } }),
