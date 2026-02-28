@@ -31,24 +31,46 @@ import os
 import time
 import xml.etree.ElementTree as ET
 from typing import Any
+from pathlib import Path
 
 import httpx
+import yaml
 from fastapi import APIRouter, Request, Response
 from fastapi.responses import JSONResponse
 
 router = APIRouter()
 
 # ──────────────────────────────────────────────────────────────
-# Optional API keys
+# Optional API keys — env vars take priority, secrets.yaml fallback
 # ──────────────────────────────────────────────────────────────
+def _load_secrets_yaml() -> dict:
+    """Load secrets.yaml from project root (two levels up from this file)."""
+    try:
+        root = Path(__file__).parent.parent
+        p = root / "config" / "secrets.yaml"
+        if p.exists():
+            data = yaml.safe_load(p.read_text()) or {}
+            return data.get("keys", {})
+    except Exception:
+        pass
+    return {}
+
+_YAML_KEYS = _load_secrets_yaml()
+
+def _key(env_name: str, yaml_name: str) -> str | None:
+    """Return env var if set, else secrets.yaml value, else None."""
+    val = os.getenv(env_name) or _YAML_KEYS.get(yaml_name, "") or None
+    return val if val and val.strip() else None
+
 _KEYS = {
-    "acled":       os.getenv("ACLED_ACCESS_TOKEN"),
-    "finnhub":     os.getenv("FINNHUB_API_KEY"),
-    "eia":         os.getenv("EIA_API_KEY"),
-    "nasa_firms":  os.getenv("NASA_FIRMS_API_KEY"),
-    "cloudflare":  os.getenv("CLOUDFLARE_API_TOKEN"),
-    "opensky_id":  os.getenv("OPENSKY_CLIENT_ID"),
-    "opensky_sec": os.getenv("OPENSKY_CLIENT_SECRET"),
+    "acled":       _key("ACLED_ACCESS_TOKEN",   "acled_access_token"),
+    "acled_email": _key("ACLED_EMAIL",           "acled_email"),
+    "finnhub":     _key("FINNHUB_API_KEY",       "finnhub_api_key"),
+    "eia":         _key("EIA_API_KEY",           "eia_api_key"),
+    "nasa_firms":  _key("NASA_FIRMS_API_KEY",    "nasa_firms_api_key"),
+    "cloudflare":  _key("CLOUDFLARE_API_TOKEN",  "cloudflare_api_token"),
+    "opensky_id":  _key("OPENSKY_CLIENT_ID",     "opensky_client_id"),
+    "opensky_sec": _key("OPENSKY_CLIENT_SECRET", "opensky_client_secret"),
 }
 
 
@@ -153,6 +175,13 @@ if not _KEYS["finnhub"]:     _CB["finnhub"].set_key_required()
 if not _KEYS["eia"]:         _CB["eia"].set_key_required()
 if not _KEYS["nasa_firms"]:  _CB["nasa_firms"].set_key_required()
 if not _KEYS["cloudflare"]:  _CB["cloudflare"].set_key_required()
+
+# Log which keyed providers are active
+_active = [k for k in ["acled","finnhub","eia","nasa_firms","cloudflare"] if _KEYS.get(k)]
+if _active:
+    print(f"[Globe API] Keyed providers active: {', '.join(_active)}")
+else:
+    print("[Globe API] No optional API keys set — using free-tier providers only")
 
 
 # ──────────────────────────────────────────────────────────────
@@ -909,8 +938,13 @@ async def search_gdelt_documents(request: Request):
     max_records = min(int(body.get("maxRecords", 25)), 50)
     query      = _TOPIC_QUERIES.get(topic, topic)
 
+    # Use dedicated CB keys for high-frequency polling topics so they
+    # can't trip and block the user-facing Intel panel (gdelt_intel).
+    _TOPIC_CB_MAP = {"cyber": "gdelt_cyber", "sanctions": "gdelt_sanctions"}
+    cb_name = _TOPIC_CB_MAP.get(topic, "gdelt_intel")
+
     data = await guarded_fetch(
-        "gdelt_intel",
+        cb_name,
         "https://api.gdeltproject.org/api/v2/doc/doc",
         params={
             "query":      f"{query} sourcelang:eng",
@@ -926,7 +960,7 @@ async def search_gdelt_documents(request: Request):
         return JSONResponse({
             "articles": [],
             "degraded": True,
-            "providerStatus": _CB["gdelt_intel"].to_dict(),
+            "providerStatus": _CB[cb_name].to_dict(),
         })
 
     articles = []
@@ -1023,7 +1057,7 @@ async def list_news_geo(request: Request):
     query = _NEWS_GEO_QUERIES.get(mode, "world news crisis")
 
     data = await guarded_fetch(
-        "gdelt_news",
+        "gdelt_news_geo",
         "https://api.gdeltproject.org/api/v2/doc/doc",
         params={
             "query":      f"{query} sourcelang:eng",
@@ -1039,7 +1073,7 @@ async def list_news_geo(request: Request):
         return JSONResponse({
             "events": [],
             "degraded": True,
-            "providerStatus": _CB["gdelt_news"].to_dict(),
+            "providerStatus": _CB["gdelt_news_geo"].to_dict(),
         })
 
     events = []

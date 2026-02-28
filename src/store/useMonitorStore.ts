@@ -208,6 +208,8 @@ export interface MonitorState {
   newsArticles: GdeltArticle[];
   intelTopic: string;
   dataLoading: boolean;
+  newsLoading: boolean;
+  intelLoading: boolean;
   lastFetch: number;
 
   // ── Activity tracking
@@ -368,6 +370,8 @@ export const useMonitorStore = create<MonitorState>()(
       newsArticles: [],
       intelTopic: 'military',
       dataLoading: false,
+      newsLoading: false,
+      intelLoading: false,
       lastFetch: 0,
 
       // ── Activity tracking
@@ -696,15 +700,16 @@ export const useMonitorStore = create<MonitorState>()(
 
       // ── fetchGdeltIntel ───────────────────────────────────────────────────
       fetchGdeltIntel: async (topic: string) => {
-        set({ intelTopic: topic });
+        set({ intelTopic: topic, intelLoading: true });
         const data = await safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic, maxRecords: 25 }));
-        set({ gdeltArticles: data.articles || [] });
+        set({ gdeltArticles: data.articles || [], intelLoading: false });
       },
 
       // ── fetchNews ─────────────────────────────────────────────────────────
       fetchNews: async (mode: MonitorMode) => {
+        set({ newsLoading: true });
         const data = await safeFetch('/api/news/v1/listNewsArticles', POST_JSON({ mode }));
-        set({ newsArticles: data.articles || [] });
+        set({ newsArticles: data.articles || [], newsLoading: false });
       },
 
       // ── fetchNewsGeo ──────────────────────────────────────────────────────

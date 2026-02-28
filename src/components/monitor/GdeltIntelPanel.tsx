@@ -57,14 +57,17 @@ const formatDate = (raw: string): string => {
 export const GdeltIntelPanel = ({ accentColor = 'hsl(270 80% 65%)' }: { accentColor?: string }) => {
   const gdeltArticles = useMonitorStore((s) => s.gdeltArticles);
   const intelTopic = useMonitorStore((s) => s.intelTopic);
+  const intelLoading = useMonitorStore((s) => s.intelLoading);
   const setIntelTopic = useMonitorStore((s) => s.setIntelTopic);
   const fetchGdeltIntel = useMonitorStore((s) => s.fetchGdeltIntel);
 
-  // Load initial topic on mount
+  // Load on mount + auto-refresh every 2 minutes
   useEffect(() => {
     fetchGdeltIntel(intelTopic);
+    const id = setInterval(() => fetchGdeltIntel(intelTopic), 120_000);
+    return () => clearInterval(id);
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [intelTopic]);
 
   const handleTopicClick = (topicId: string) => {
     setIntelTopic(topicId);
@@ -119,9 +122,13 @@ export const GdeltIntelPanel = ({ accentColor = 'hsl(270 80% 65%)' }: { accentCo
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-[11px] text-muted-foreground text-center py-6 font-mono"
+                className="text-[11px] text-muted-foreground text-center py-6 font-mono flex flex-col items-center gap-2"
               >
-                Loading intelligence feed…
+                {intelLoading ? (
+                  <><RefreshCw size={12} className="animate-spin opacity-50" /><span>Fetching intelligence…</span></>
+                ) : (
+                  <><span className="text-foreground/30">No data from GDELT</span><button onClick={handleRefresh} className="text-[10px] text-purple-400/60 hover:text-purple-400 transition-colors flex items-center gap-1"><RefreshCw size={9} />Retry</button></>
+                )}
               </motion.div>
             ) : (
               gdeltArticles.map((article, i) => (

@@ -37,6 +37,7 @@ export const LiveNewsPanel = ({ accentColor = 'hsl(210 100% 55%)' }: { accentCol
   const mode = useMonitorStore((s) => s.mode);
   const newsArticles = useMonitorStore((s) => s.newsArticles);
   const fetchNews = useMonitorStore((s) => s.fetchNews);
+  const newsLoading = useMonitorStore((s) => s.newsLoading);
 
   // Fetch on mount + mode change, then auto-refresh every 90 seconds
   useEffect(() => {
@@ -80,9 +81,13 @@ export const LiveNewsPanel = ({ accentColor = 'hsl(210 100% 55%)' }: { accentCol
               <motion.div
                 initial={{ opacity: 0 }}
                 animate={{ opacity: 1 }}
-                className="text-[11px] text-muted-foreground text-center py-6 font-mono"
+                className="text-[11px] text-muted-foreground text-center py-6 font-mono flex flex-col items-center gap-2"
               >
-                Loading news feed…
+                {newsLoading ? (
+                  <><RefreshCw size={12} className="animate-spin opacity-50" /><span>Fetching news feed…</span></>
+                ) : (
+                  <><span className="text-foreground/30">No articles returned</span><button onClick={handleRefresh} className="text-[10px] text-cyan-400/60 hover:text-cyan-400 transition-colors flex items-center gap-1"><RefreshCw size={9} />Retry</button></>
+                )}
               </motion.div>
             ) : (
               newsArticles.map((article, i) => (
