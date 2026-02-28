@@ -9,7 +9,7 @@ import { useCallback, useMemo } from 'react';
 import { Map } from 'react-map-gl/maplibre';
 import { DeckGL } from '@deck.gl/react';
 import { ScatterplotLayer, ArcLayer } from '@deck.gl/layers';
-import { FlyToInterpolator, GlobeView, MapView } from '@deck.gl/core';
+import { FlyToInterpolator, _GlobeView as GlobeView, MapView } from '@deck.gl/core';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMonitorStore, TIME_WINDOW_MS } from '@/store/useMonitorStore';
 import { getEventsForMode, getArcsForMode } from '@/data/mockData';
@@ -94,7 +94,7 @@ export const MapContainer = () => {
 
   // ── deck.gl view (3D = GlobeView, 2D = MapView) ─────────────────────────
   const deckView = useMemo(
-    () => mapView === '3d' ? new GlobeView({ id: 'globe' }) : new MapView({ id: 'map', repeat: true }),
+    () => mapView === '3d' ? new GlobeView({ id: 'globe' } as any) : new MapView({ id: 'map', repeat: true }),
     [mapView],
   );
 

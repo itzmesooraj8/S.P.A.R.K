@@ -18,7 +18,7 @@ import {
   Globe2, Map, Satellite, Layers, EyeOff, Eye,
   Navigation, Radio, Cpu, Tag,
 } from 'lucide-react';
-import { useMonitorStore } from '@/store/useMonitorStore';
+import { useMonitorStore, type ViewState } from '@/store/useMonitorStore';
 
 /* World city fly-to presets */
 const CITY_PRESETS = [
@@ -60,7 +60,11 @@ export const CommandPalette: React.FC<Props> = ({ open, onOpenChange, accentColo
 
   const toggleLeftPanel  = useMonitorStore((s) => s.toggleLeftPanel);
   const toggleRightPanel = useMonitorStore((s) => s.toggleRightPanel);
-  const setViewpoint     = useMonitorStore((s) => s.setViewpoint);
+  const setViewState     = useMonitorStore((s) => s.setViewState);
+
+  const flyTo = (lat: number, lng: number) => {
+    setViewState({ latitude: lat, longitude: lng, zoom: 5, pitch: 30, bearing: 0, transitionDuration: 2000 } as ViewState);
+  };
 
   const run = (fn: () => void) => { fn(); onOpenChange(false); };
 
@@ -75,7 +79,7 @@ export const CommandPalette: React.FC<Props> = ({ open, onOpenChange, accentColo
           {CITY_PRESETS.map((city) => (
             <CommandItem
               key={city.label}
-              onSelect={() => run(() => setViewpoint?.({ latitude: city.lat, longitude: city.lng, zoom: 5 }))}
+              onSelect={() => run(() => flyTo(city.lat, city.lng))}
             >
               <Navigation size={13} className="mr-2 opacity-60" />
               {city.label}

@@ -1,29 +1,22 @@
 /**
- * Globe Monitor — S.P.A.R.K Globe Intelligence HUD
- * Full-bleed HUD with floating glassmorphic panels over the CartoDB black globe.
- *
- * Features:
- *   - URL state sync (shareable links)
- *   - Time-window filtering (1h/6h/24h/48h/7d) in TopBar
- *   - Activity tracking (NEW badges, seen detection)
- *   - Signal Fusion panel (causal correlations)
- *   - Custom Monitor panel (keyword-based alerts with colors)
- *   - Snapshot + Playback (IndexedDB timeline)
- *   - Case Drawer (investigation workflow, persistent cases + notes)
- *   - Provider Health panel (circuit-breaker status per data source)
- *   - Zoom-adaptive clustering + layer visibility on map
+ * Globe Monitor — S.P.A.R.K Globe Intelligence HUD (V5 Redesign)
  *
  * Layout:
- *   Left column  (19rem):  ThreatMatrix + LiveNewsPanel + CustomMonitorPanel
- *   Right column (18rem):  InstabilityIndex + GdeltIntelPanel + FusionPanel + ProviderHealthPanel
- *   Bottom-left  (18rem):  ClimateAnomalyPanel
- *   Bottom-right (16rem):  SnapshotPlayback (floating pill)
- *   Bottom-center:         AICore
- *   Right edge:            CaseDrawer (slide-in)
- *   Screen edges:          4× HUD corner brackets + scan-line overlay + status bar
+ *   Top:          TopBar (48px) — brand, modes, live status, map controls, clock
+ *   Left drawer:  3 tabs — THREATS | INTEL | MONITOR  (collapsible, 19rem)
+ *   Right drawer: 3 tabs — SIGNAL | HEALTH | ARCHIVE  (collapsible, 18rem)
+ *   Bottom dock:  status bar + quick-action icon cluster
+ *   Overlays:     AICore (floating center), CaseDrawer (slide-in right edge)
+ *   Mobile:       bottom tab nav instead of side drawers
  */
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
+import {
+  AlertTriangle, Newspaper, Settings2,
+  BarChart3, HeartPulse, Archive,
+  Layers2, BookOpen, Keyboard, Wifi, WifiOff,
+  ChevronLeft, ChevronRight,
+} from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
 import { useUrlState } from '@/hooks/useUrlState';
 import { useGlobeSocket } from '@/hooks/useGlobeSocket';
@@ -43,7 +36,6 @@ import { LayerTogglePanel } from '@/components/monitor/LayerTogglePanel';
 import { AICore } from '@/components/monitor/AICore';
 import { CommandPalette, useCommandPalette } from '@/components/monitor/CommandPalette';
 
-/* Per-mode accent colors (shared with TopBar) */
 const MODE_COLORS: Record<string, string> = {
   world:   '#00f5ff',
   tech:    '#a78bfa',
@@ -51,208 +43,452 @@ const MODE_COLORS: Record<string, string> = {
   happy:   '#34d399',
 };
 
+/* ── Tab definitions ─────────────────────────────────────────────────────── */
+const LEFT_TABS = [
+  { id: 'threats', label: 'THREATS', icon: AlertTriangle },
+  { id: 'intel',   label: 'INTEL',   icon: Newspaper },
+  { id: 'monitor', label: 'MONITOR', icon: Settings2 },
+] as const;
+
+const RIGHT_TABS = [
+  { id: 'signal',  label: 'SIGNAL',  icon: BarChart3 },
+  { id: 'health',  label: 'HEALTH',  icon: HeartPulse },
+  { id: 'archive', label: 'ARCHIVE', icon: Archive },
+] as const;
+
+type LeftTab  = typeof LEFT_TABS[number]['id'];
+type RightTab = typeof RIGHT_TABS[number]['id'];
+
+/* ── Reusable glassy panel tab-bar ───────────────────────────────────────── */
+function PanelTabs<T extends string>({
+  tabs, active, onSelect, accentColor,
+}: {
+  tabs: readonly { id: T; label: string; icon: React.ComponentType<{ size?: number }> }[];
+  active: T;
+  onSelect: (id: T) => void;
+  accentColor: string;
+}) {
+  return (
+    <div
+      className="flex items-center gap-px shrink-0"
+      style={{
+        background: 'rgba(255,255,255,0.025)',
+        borderBottom: `1px solid rgba(255,255,255,0.06)`,
+      }}
+    >
+      {tabs.map(({ id, label, icon: Icon }) => (
+        <button
+          key={id}
+          onClick={() => onSelect(id)}
+          className="relative flex-1 flex items-center justify-center gap-1.5 py-2 text-[9px] font-bold
+                     tracking-[0.18em] font-mono transition-colors duration-200"
+          style={{ color: active === id ? accentColor : 'rgba(255,255,255,0.3)' }}
+        >
+          {active === id && (
+            <motion.div
+              layoutId={`tab-bg-${tabs[0].id}`}
+              className="absolute inset-0"
+              style={{ background: `${accentColor}10`, borderBottom: `2px solid ${accentColor}` }}
+              transition={{ type: 'spring', stiffness: 400, damping: 32 }}
+            />
+          )}
+          <Icon size={10} className="relative z-10 shrink-0" />
+          <span className="relative z-10">{label}</span>
+        </button>
+      ))}
+    </div>
+  );
+}
+
+/* ── Panel wrapper shared styles ─────────────────────────────────────────── */
+function PanelShell({
+  children, accentColor, width = '19rem',
+}: {
+  children: React.ReactNode;
+  accentColor: string;
+  width?: string;
+}) {
+  return (
+    <div
+      className="h-full flex flex-col rounded-xl overflow-hidden"
+      style={{
+        width,
+        background: 'rgba(2, 8, 20, 0.82)',
+        border: `1px solid ${accentColor}18`,
+        backdropFilter: 'blur(28px) saturate(1.3)',
+        boxShadow: `0 0 40px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.04)`,
+      }}
+    >
+      {children}
+    </div>
+  );
+}
+
 const WorldMonitor = () => {
-  const leftPanelOpen  = useMonitorStore((s) => s.leftPanelOpen);
-  const rightPanelOpen = useMonitorStore((s) => s.rightPanelOpen);
-  const mode           = useMonitorStore((s) => s.mode);
+  const leftPanelOpen     = useMonitorStore((s) => s.leftPanelOpen);
+  const rightPanelOpen    = useMonitorStore((s) => s.rightPanelOpen);
+  const toggleLeftPanel   = useMonitorStore((s) => s.toggleLeftPanel);
+  const toggleRightPanel  = useMonitorStore((s) => s.toggleRightPanel);
+  const mode              = useMonitorStore((s) => s.mode);
   const fetchRealTimeData = useMonitorStore((s) => s.fetchRealTimeData);
-  const dataLoading    = useMonitorStore((s) => s.dataLoading);
-  const lastFetch      = useMonitorStore((s) => s.lastFetch);
+  const dataLoading       = useMonitorStore((s) => s.dataLoading);
+  const lastFetch         = useMonitorStore((s) => s.lastFetch);
+  const wsConnected       = useMonitorStore((s) => s.wsConnected);
 
   const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
-  // ── WebSocket real-time push (Globe /ws/globe) ──────────────────
-  useGlobeSocket();
 
-  // ── Layer toggle panel state ───────────────────────────────
+  const [leftTab,        setLeftTab]        = useState<LeftTab>('threats');
+  const [rightTab,       setRightTab]       = useState<RightTab>('signal');
   const [layerPanelOpen, setLayerPanelOpen] = useState(false);
-  const wsConnected = useMonitorStore((s) => s.wsConnected);
-  // ── URL state sync ───────────────────────────────────────────────────────
-  // Reads initial URL hash into store + keeps URL in sync with store changes
+  const [caseDrawerOpen, setCaseDrawerOpen] = useState(false);
+  // Mobile: which bottom-tab is open (null = map only)
+  const [mobileTab, setMobileTab] = useState<'left' | 'right' | null>(null);
+
+  useGlobeSocket();
   useUrlState();
 
-  // ── Poll real-time data every 30 s ───────────────────────────────────────
   useEffect(() => {
     fetchRealTimeData();
-    const interval = setInterval(fetchRealTimeData, 30_000);
-    return () => clearInterval(interval);
+    const id = setInterval(fetchRealTimeData, 30_000);
+    return () => clearInterval(id);
   }, [fetchRealTimeData]);
 
-  // ── Subtle parallax on mouse move ────────────────────────────────────────
-  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
-  const rafRef = useRef<number>(0);
-  const handleMouseMove = useCallback((e: React.MouseEvent) => {
-    cancelAnimationFrame(rafRef.current);
-    rafRef.current = requestAnimationFrame(() => {
-      setMousePos({
-        x: (e.clientX / window.innerWidth - 0.5) * 2,
-        y: (e.clientY / window.innerHeight - 0.5) * 2,
-      });
-    });
-  }, []);
-
   return (
-    <div
-      className="h-screen w-screen overflow-hidden"
-      style={{ background: '#010812' }}
-      onMouseMove={handleMouseMove}
-    >
-      {/* ── Base layer: CartoDB black globe ─────────────────────── */}
+    <div className="h-screen w-screen overflow-hidden flex flex-col" style={{ background: '#010812' }}>
+
+      {/* ── Globe base ───────────────────────────────────────────── */}
       <MapContainer />
 
-      {/* ── Scan-line overlay ────────────────────────────────────── */}
+      {/* ── Atmospheric overlays ─────────────────────────────────── */}
       <div className="scan-overlay" />
-
-      {/* ── Atmosphere gradient ──────────────────────────────────── */}
       <div className="absolute inset-0 atmosphere-glow pointer-events-none" />
 
-      {/* ── Screen-level HUD corner brackets ─────────────────────── */}
-      <span
-        className="hud-screen-corner hud-corner-tl"
-        style={{ borderColor: accentColor, opacity: 0.5 }}
-      />
-      <span
-        className="hud-screen-corner hud-corner-tr"
-        style={{ borderColor: accentColor, opacity: 0.5 }}
-      />
-      <span
-        className="hud-screen-corner hud-corner-bl"
-        style={{ borderColor: accentColor, opacity: 0.35 }}
-      />
-      <span
-        className="hud-screen-corner hud-corner-br"
-        style={{ borderColor: accentColor, opacity: 0.35 }}
-      />
+      {/* ── HUD corner brackets ──────────────────────────────────── */}
+      {(['tl','tr','bl','br'] as const).map((pos) => (
+        <span
+          key={pos}
+          className={`hud-screen-corner hud-corner-${pos}`}
+          style={{ borderColor: accentColor, opacity: pos.startsWith('t') ? 0.5 : 0.3 }}
+        />
+      ))}
 
-      {/* ── Top Bar (with TimeFilterBar + share button) ───────────── */}
+      {/* ══════════════════════════════════════════════════════════════
+          TOP BAR
+      ══════════════════════════════════════════════════════════════ */}
       <TopBar />
 
-      {/* ── Floating HUD panels with subtle parallax ─────────────── */}
-      <div className="fixed inset-0 pointer-events-none pt-14 pb-5 px-3 z-40">
-        <div
-          className="relative h-full flex gap-3"
-          style={{
-            transform: `translate(${mousePos.x * 3}px, ${mousePos.y * 2}px)`,
-            transition: 'transform 0.12s ease-out',
-          }}
-        >
-          {/* ── LEFT COLUMN ─────────────────────────────────────── */}
-          <AnimatePresence mode="wait">
+      {/* ══════════════════════════════════════════════════════════════
+          MAIN HUD LAYER  (below TopBar, above status bar)
+      ══════════════════════════════════════════════════════════════ */}
+      <div className="fixed inset-0 pointer-events-none z-40" style={{ top: '49px', bottom: '32px' }}>
+        <div className="relative h-full flex items-stretch gap-2 px-2 py-2">
+
+          {/* ── LEFT PANEL ───────────────────────────────────────── */}
+          <AnimatePresence>
             {leftPanelOpen && (
               <motion.div
-                key={`left-${mode}`}
-                initial={{ opacity: 0, x: -32, scale: 0.97 }}
+                key="left-panel"
+                initial={{ opacity: 0, x: -48, scale: 0.96 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: -24, scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-                className="pointer-events-auto w-76 hidden md:flex flex-col gap-2 overflow-y-auto scrollbar-hud pb-2"
-                style={{ maxHeight: 'calc(100vh - 9rem)', width: '19rem' }}
+                exit={{ opacity: 0, x: -40, scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                className="pointer-events-auto hidden md:flex flex-col shrink-0"
+                style={{ width: '19rem', height: '100%' }}
               >
-                <ThreatMatrix accentColor={accentColor} />
-                <LiveNewsPanel accentColor={accentColor} />
-                <CustomMonitorPanel accentColor={accentColor} />
+                <PanelShell accentColor={accentColor} width="19rem">
+                  {/* Tab bar */}
+                  <PanelTabs tabs={LEFT_TABS} active={leftTab} onSelect={setLeftTab} accentColor={accentColor} />
+
+                  {/* Tab content */}
+                  <div className="flex-1 overflow-y-auto scrollbar-hud">
+                    <AnimatePresence mode="wait">
+                      {leftTab === 'threats' && (
+                        <motion.div key="threats" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <ThreatMatrix accentColor={accentColor} />
+                        </motion.div>
+                      )}
+                      {leftTab === 'intel' && (
+                        <motion.div key="intel" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <LiveNewsPanel accentColor={accentColor} />
+                          <GdeltIntelPanel accentColor={accentColor} />
+                        </motion.div>
+                      )}
+                      {leftTab === 'monitor' && (
+                        <motion.div key="monitor" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <CustomMonitorPanel accentColor={accentColor} />
+                          <ClimateAnomalyPanel accentColor={accentColor} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </PanelShell>
+
+                {/* Collapse handle */}
+                <button
+                  onClick={toggleLeftPanel}
+                  className="absolute -right-3 top-1/2 -translate-y-1/2 w-5 h-10 rounded-r-md flex items-center justify-center
+                             opacity-0 group-hover:opacity-100 transition-opacity pointer-events-auto"
+                  style={{ background: `${accentColor}20`, border: `1px solid ${accentColor}30`, color: accentColor }}
+                >
+                  <ChevronLeft size={12} />
+                </button>
               </motion.div>
             )}
           </AnimatePresence>
 
           {/* ── CENTER SPACER ────────────────────────────────────── */}
-          <div className="flex-1" />
+          <div className="flex-1 flex flex-col justify-end pointer-events-none">
+            {/* AI Core floats above bottom dock */}
+            <div className="pointer-events-auto pb-1">
+              <AICore />
+            </div>
+          </div>
 
-          {/* ── RIGHT COLUMN ─────────────────────────────────────── */}
-          <AnimatePresence mode="wait">
+          {/* ── RIGHT PANEL ──────────────────────────────────────── */}
+          <AnimatePresence>
             {rightPanelOpen && (
               <motion.div
                 key="right-panel"
-                initial={{ opacity: 0, x: 32, scale: 0.97 }}
+                initial={{ opacity: 0, x: 48, scale: 0.96 }}
                 animate={{ opacity: 1, x: 0, scale: 1 }}
-                exit={{ opacity: 0, x: 24, scale: 0.97 }}
-                transition={{ type: 'spring', stiffness: 260, damping: 26 }}
-                className="pointer-events-auto hidden md:flex flex-col gap-2 overflow-y-auto scrollbar-hud pb-2"
-                style={{ maxHeight: 'calc(100vh - 9rem)', width: '18rem' }}
+                exit={{ opacity: 0, x: 40, scale: 0.96 }}
+                transition={{ type: 'spring', stiffness: 300, damping: 28 }}
+                className="pointer-events-auto hidden md:flex flex-col shrink-0"
+                style={{ width: '18rem', height: '100%' }}
               >
-                <InstabilityIndex accentColor={accentColor} />
-                <GdeltIntelPanel accentColor={accentColor} />
-                <FusionPanel accentColor={MODE_COLORS.tech} />
-                <ProviderHealthPanel accentColor={accentColor} />
+                <PanelShell accentColor={accentColor} width="18rem">
+                  <PanelTabs tabs={RIGHT_TABS} active={rightTab} onSelect={setRightTab} accentColor={accentColor} />
+
+                  <div className="flex-1 overflow-y-auto scrollbar-hud">
+                    <AnimatePresence mode="wait">
+                      {rightTab === 'signal' && (
+                        <motion.div key="signal" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <InstabilityIndex accentColor={accentColor} />
+                          <FusionPanel accentColor={MODE_COLORS.tech} />
+                        </motion.div>
+                      )}
+                      {rightTab === 'health' && (
+                        <motion.div key="health" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <ProviderHealthPanel accentColor={accentColor} />
+                        </motion.div>
+                      )}
+                      {rightTab === 'archive' && (
+                        <motion.div key="archive" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <SnapshotPlayback accentColor={accentColor} />
+                        </motion.div>
+                      )}
+                    </AnimatePresence>
+                  </div>
+                </PanelShell>
               </motion.div>
             )}
           </AnimatePresence>
         </div>
       </div>
 
-      {/* ── BOTTOM-LEFT: Climate Anomalies ────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════
+          FLOATING QUICK-ACTION DOCK  (bottom-right)
+      ══════════════════════════════════════════════════════════════ */}
+      <div
+        className="fixed bottom-9 right-3 z-50 pointer-events-auto flex-col gap-1.5 items-end hidden md:flex"
+      >
+        {/* Layers */}
+        <DockButton
+          icon={<Layers2 size={14} />}
+          label="Layers"
+          active={layerPanelOpen}
+          accentColor={accentColor}
+          onClick={() => setLayerPanelOpen((v) => !v)}
+        />
+        {/* Cases */}
+        <DockButton
+          icon={<BookOpen size={14} />}
+          label="Cases"
+          active={caseDrawerOpen}
+          accentColor={accentColor}
+          onClick={() => setCaseDrawerOpen((v) => !v)}
+        />
+        {/* Command palette hint */}
+        <DockButton
+          icon={<Keyboard size={14} />}
+          label="⌃K"
+          active={cmdOpen}
+          accentColor={accentColor}
+          onClick={() => setCmdOpen(true)}
+        />
+      </div>
+
+      {/* ══════════════════════════════════════════════════════════════
+          MOBILE BOTTOM NAV  (visible < md)
+      ══════════════════════════════════════════════════════════════ */}
+      <div
+        className="fixed bottom-0 left-0 right-0 z-50 flex md:hidden items-center"
+        style={{
+          background: 'rgba(1,8,20,0.97)',
+          borderTop: `1px solid ${accentColor}20`,
+          backdropFilter: 'blur(20px)',
+          height: '52px',
+        }}
+      >
+        {[
+          { id: 'left' as const,  label: 'THREATS', icon: AlertTriangle },
+          { id: null,             label: 'MAP',      icon: null },
+          { id: 'right' as const, label: 'SIGNAL',   icon: BarChart3 },
+        ].map(({ id, label, icon: Icon }) => (
+          <button
+            key={label}
+            onClick={() => setMobileTab(mobileTab === id ? null : id)}
+            className="flex-1 flex flex-col items-center justify-center gap-1 text-[9px] font-mono
+                       font-bold tracking-widest transition-colors duration-200"
+            style={{ color: mobileTab === id ? accentColor : 'rgba(255,255,255,0.3)' }}
+          >
+            {Icon ? <Icon size={16} /> : (
+              <div className="w-4 h-4 rounded-full border" style={{ borderColor: mobileTab === id ? accentColor : 'rgba(255,255,255,0.2)', background: mobileTab === id ? `${accentColor}20` : 'transparent' }} />
+            )}
+            {label}
+          </button>
+        ))}
+      </div>
+
+      {/* Mobile panel overlay */}
       <AnimatePresence>
-        <motion.div
-          key="climate-panel"
-          initial={{ opacity: 0, y: 24, scale: 0.96 }}
-          animate={{ opacity: 1, y: 0, scale: 1 }}
-          exit={{ opacity: 0, y: 16, scale: 0.96 }}
-          transition={{ type: 'spring', stiffness: 240, damping: 26, delay: 0.25 }}
-          className="fixed bottom-6 left-3 pointer-events-auto z-40 hidden md:block"
-          style={{ width: '18rem' }}
-        >
-          <ClimateAnomalyPanel accentColor={accentColor} />
-        </motion.div>
+        {mobileTab && (
+          <motion.div
+            key={`mobile-${mobileTab}`}
+            initial={{ y: '100%' }}
+            animate={{ y: 0 }}
+            exit={{ y: '100%' }}
+            transition={{ type: 'spring', stiffness: 320, damping: 32 }}
+            className="fixed bottom-[52px] left-0 right-0 z-40 md:hidden rounded-t-2xl overflow-hidden"
+            style={{
+              height: '60vh',
+              background: 'rgba(2,8,20,0.97)',
+              border: `1px solid ${accentColor}20`,
+              backdropFilter: 'blur(28px)',
+            }}
+          >
+            <div className="h-full overflow-y-auto scrollbar-hud p-3 flex flex-col gap-2">
+              {mobileTab === 'left' && (
+                <>
+                  <ThreatMatrix accentColor={accentColor} />
+                  <LiveNewsPanel accentColor={accentColor} />
+                  <CustomMonitorPanel accentColor={accentColor} />
+                </>
+              )}
+              {mobileTab === 'right' && (
+                <>
+                  <InstabilityIndex accentColor={accentColor} />
+                  <FusionPanel accentColor={MODE_COLORS.tech} />
+                  <ProviderHealthPanel accentColor={accentColor} />
+                </>
+              )}
+            </div>
+          </motion.div>
+        )}
       </AnimatePresence>
 
-      {/* ── BOTTOM-CENTER: AI Core ────────────────────────────────── */}
-      <AICore />
-
-      {/* ── BOTTOM-RIGHT: Snapshot Playback ──────────────────────── */}
-      <SnapshotPlayback accentColor={accentColor} />
-
-      {/* ── RIGHT EDGE: Case Drawer (investigation mode) ──────────── */}
-      <CaseDrawer accentColor={accentColor} />
-
-      {/* ── LAYER TOGGLE BUTTON (top-right floating) ────────────── */}}
-      <button
-        onClick={() => setLayerPanelOpen((v) => !v)}
-        className="fixed top-16 right-4 z-40 pointer-events-auto
-                   flex items-center gap-1.5 rounded-lg px-3 py-2
-                   border border-white/20 bg-gray-900/80 backdrop-blur-sm
-                   text-xs font-semibold text-white hover:bg-white/10
-                   transition-colors duration-150"
-        title="Toggle layer visibility"
-      >
-        <span>⊞</span>
-        <span>Layers</span>
-      </button>
-
-      {/* ── LAYER TOGGLE PANEL ─────────────────────────────────── */}
+      {/* ══════════════════════════════════════════════════════════════
+          OVERLAYS
+      ══════════════════════════════════════════════════════════════ */}
       <LayerTogglePanel open={layerPanelOpen} onClose={() => setLayerPanelOpen(false)} />
-
-      {/* ── COMMAND PALETTE (Ctrl+K) ───────────────────────────── */}
+      <CaseDrawer accentColor={accentColor} />
       <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} accentColor={accentColor} />
 
-      {/* ── STATUS BAR ───────────────────────────────────────────── */}
-      <div className="hud-status-bar">
-        <span
-          className="status-dot shrink-0"
-          style={{ background: dataLoading ? '#fbbf24' : accentColor }}
-        />
-        <span style={{ color: dataLoading ? '#fbbf24' : accentColor, opacity: 0.7 }}>
-          {dataLoading ? 'SYNCING DATA…' : 'ALL FEEDS NOMINAL'}
-        </span>
-        {/* WebSocket push indicator */}
-        <span
-          className="ml-2 flex items-center gap-1 text-[10px] opacity-70"
-          title={wsConnected ? 'Globe WS push active' : 'Globe WS disconnected'}
-        >
+      {/* ══════════════════════════════════════════════════════════════
+          STATUS BAR  (32px, bottom)
+      ══════════════════════════════════════════════════════════════ */}
+      <div
+        className="hud-status-bar hidden md:flex"
+        style={{
+          borderTop: `1px solid ${accentColor}14`,
+          background: 'rgba(1,6,18,0.92)',
+          backdropFilter: 'blur(16px)',
+        }}
+      >
+        {/* Left: feed status */}
+        <div className="flex items-center gap-2">
           <span
-            className="inline-block w-1.5 h-1.5 rounded-full"
-            style={{ background: wsConnected ? '#34d399' : '#6b7280' }}
+            className="status-dot shrink-0"
+            style={{ background: dataLoading ? '#fbbf24' : accentColor, boxShadow: `0 0 6px ${dataLoading ? '#fbbf2460' : `${accentColor}60`}` }}
           />
-          {wsConnected ? 'WS' : 'REST'}
-        </span>
-        <span className="ml-auto opacity-50">© CARTO · © OpenStreetMap contributors</span>
-        {lastFetch > 0 && (
-          <span className="opacity-40">
-            LAST SYNC {new Date(lastFetch).toISOString().slice(11, 19)} UTC
+          <span className="text-[9px] font-mono font-bold tracking-widest" style={{ color: dataLoading ? '#fbbf24' : accentColor }}>
+            {dataLoading ? 'SYNCING…' : 'FEEDS NOMINAL'}
           </span>
-        )}
+          <span className="flex items-center gap-1 text-[9px] font-mono opacity-50" title={wsConnected ? 'Globe WebSocket active' : 'WebSocket offline'}>
+            {wsConnected
+              ? <Wifi size={9} style={{ color: '#34d399' }} />
+              : <WifiOff size={9} style={{ color: '#6b7280' }} />}
+            <span style={{ color: wsConnected ? '#34d399' : '#6b7280' }}>{wsConnected ? 'WS LIVE' : 'WS OFF'}</span>
+          </span>
+        </div>
+
+        {/* Center: panel toggle shortcuts */}
+        <div className="flex items-center gap-3 mx-auto">
+          <button
+            onClick={toggleLeftPanel}
+            className="flex items-center gap-1 text-[9px] font-mono tracking-widest transition-colors duration-150 hover:opacity-100 opacity-40"
+            style={{ color: leftPanelOpen ? accentColor : 'rgba(255,255,255,0.5)' }}
+          >
+            <ChevronLeft size={9} />
+            {leftPanelOpen ? 'HIDE LEFT' : 'SHOW LEFT'}
+          </button>
+          <div className="w-px h-3 bg-white/10" />
+          <button
+            onClick={toggleRightPanel}
+            className="flex items-center gap-1 text-[9px] font-mono tracking-widest transition-colors duration-150 hover:opacity-100 opacity-40"
+            style={{ color: rightPanelOpen ? accentColor : 'rgba(255,255,255,0.5)' }}
+          >
+            {rightPanelOpen ? 'HIDE RIGHT' : 'SHOW RIGHT'}
+            <ChevronRight size={9} />
+          </button>
+        </div>
+
+        {/* Right: credits + sync time */}
+        <div className="flex items-center gap-3 ml-auto">
+          <span className="hidden xl:inline text-[8px] font-mono opacity-25 tracking-wider">
+            © CARTO · © OpenStreetMap
+          </span>
+          {lastFetch > 0 && (
+            <span className="text-[8px] font-mono opacity-35 tracking-wider">
+              SYNC {new Date(lastFetch).toISOString().slice(11, 19)} UTC
+            </span>
+          )}
+        </div>
       </div>
     </div>
   );
 };
 
+/* ── Dock icon button ─────────────────────────────────────────────────────── */
+function DockButton({
+  icon, label, active, accentColor, onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  active: boolean;
+  accentColor: string;
+  onClick: () => void;
+}) {
+  return (
+    <button
+      onClick={onClick}
+      className="flex items-center gap-2 pl-2.5 pr-3 py-1.5 rounded-lg text-[10px] font-mono
+                 font-bold tracking-widest transition-all duration-200 group"
+      style={{
+        background: active ? `${accentColor}18` : 'rgba(2,8,20,0.82)',
+        border: `1px solid ${active ? `${accentColor}45` : 'rgba(255,255,255,0.09)'}`,
+        color: active ? accentColor : 'rgba(255,255,255,0.45)',
+        backdropFilter: 'blur(16px)',
+        boxShadow: active ? `0 0 14px ${accentColor}22` : '0 2px 12px rgba(0,0,0,0.3)',
+      }}
+      title={label}
+    >
+      <span style={{ color: active ? accentColor : 'rgba(255,255,255,0.4)' }}>{icon}</span>
+      <span>{label}</span>
+    </button>
+  );
+}
+
 export default WorldMonitor;
+

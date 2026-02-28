@@ -5,7 +5,7 @@
  */
 import React, { useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Globe2, Map, Satellite, Navigation, Tag, TagOff, SlidersHorizontal } from 'lucide-react';
+import { Globe2, Map, Satellite, Navigation, Tag, EyeOff, SlidersHorizontal } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
 
 const MAP_STYLE_OPTS = [
@@ -132,7 +132,7 @@ export const MapControls: React.FC<Props> = ({ accentColor = '#00f5ff' }) => {
                   border: `1px solid ${mapLabels ? `${accentColor}40` : 'rgba(255,255,255,0.06)'}`,
                 }}
               >
-                {mapLabels ? <Tag size={13} /> : <TagOff size={13} />}
+                {mapLabels ? <Tag size={13} /> : <EyeOff size={13} />}
                 <span className="font-semibold tracking-wide">Country Labels</span>
                 <span
                   className="ml-auto text-[10px] font-bold tracking-widest"
