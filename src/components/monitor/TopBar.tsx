@@ -15,6 +15,8 @@ import { useActivityTracker } from '@/hooks/useActivityTracker';
 import { useUrlState } from '@/hooks/useUrlState';
 import { MarketTicker } from './MarketTicker';
 import { TimeFilterBar } from './TimeFilterBar';
+import { MapControls } from './MapControls';
+import { SystemEnvBar } from './SystemEnvBar';
 
 const MODES: { id: MonitorMode; label: string; icon: typeof Globe; color: string; dimColor: string }[] = [
   { id: 'world',   label: 'WORLD',   icon: Globe,       color: '#00f5ff', dimColor: 'rgba(0,245,255,0.12)' },
@@ -129,7 +131,7 @@ export const TopBar = () => {
               S.P.A.R.K
             </span>
             <span className="text-[7px] font-mono text-foreground/30 tracking-[0.2em] leading-none mt-0.5">
-              WORLD MONITOR V2
+              GLOBE MONITOR
             </span>
           </div>
           {/* Divider */}
@@ -203,6 +205,16 @@ export const TopBar = () => {
         {/* ── Time filter ───────────────────────────────────────── */}
         <div className="hidden lg:block shrink-0">
           <TimeFilterBar accentColor={activeMode.color} />
+        </div>
+
+        {/* ── Map controls ─────────────────────────────────────── */}
+        <div className="hidden md:block shrink-0">
+          <MapControls accentColor={activeMode.color} />
+        </div>
+
+        {/* ── System env bar ───────────────────────────────────── */}
+        <div className="hidden xl:flex shrink-0 border-l border-white/08 pl-3" style={{ borderColor: `${activeMode.color}15` }}>
+          <SystemEnvBar accentColor={activeMode.color} compact />
         </div>
 
         {/* ── Market ticker (flex fill) ──────────────────────────── */}

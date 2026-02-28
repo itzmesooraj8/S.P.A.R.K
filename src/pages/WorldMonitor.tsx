@@ -41,6 +41,7 @@ import { CaseDrawer } from '@/components/monitor/CaseDrawer';
 import ProviderHealthPanel from '@/components/monitor/ProviderHealthPanel';
 import { LayerTogglePanel } from '@/components/monitor/LayerTogglePanel';
 import { AICore } from '@/components/monitor/AICore';
+import { CommandPalette, useCommandPalette } from '@/components/monitor/CommandPalette';
 
 /* Per-mode accent colors (shared with TopBar) */
 const MODE_COLORS: Record<string, string> = {
@@ -59,6 +60,7 @@ const WorldMonitor = () => {
   const lastFetch      = useMonitorStore((s) => s.lastFetch);
 
   const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
+  const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
   // ── WebSocket real-time push (Globe /ws/globe) ──────────────────
   useGlobeSocket();
 
@@ -202,7 +204,7 @@ const WorldMonitor = () => {
       {/* ── RIGHT EDGE: Case Drawer (investigation mode) ──────────── */}
       <CaseDrawer accentColor={accentColor} />
 
-      {/* ── LAYER TOGGLE BUTTON (top-right floating) ─────────────── */}
+      {/* ── LAYER TOGGLE BUTTON (top-right floating) ────────────── */}}
       <button
         onClick={() => setLayerPanelOpen((v) => !v)}
         className="fixed top-16 right-4 z-40 pointer-events-auto
@@ -216,8 +218,11 @@ const WorldMonitor = () => {
         <span>Layers</span>
       </button>
 
-      {/* ── LAYER TOGGLE PANEL ────────────────────────────────────── */}
+      {/* ── LAYER TOGGLE PANEL ─────────────────────────────────── */}
       <LayerTogglePanel open={layerPanelOpen} onClose={() => setLayerPanelOpen(false)} />
+
+      {/* ── COMMAND PALETTE (Ctrl+K) ───────────────────────────── */}
+      <CommandPalette open={cmdOpen} onOpenChange={setCmdOpen} accentColor={accentColor} />
 
       {/* ── STATUS BAR ───────────────────────────────────────────── */}
       <div className="hud-status-bar">

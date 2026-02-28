@@ -251,6 +251,14 @@ export interface MonitorState {
   removeSnapshotMeta: (id: string) => void;
   setPlaybackIndex: (i: number | null) => void;
 
+  // ── Map settings
+  mapView: '2d' | '3d';
+  setMapView: (view: '2d' | '3d') => void;
+  mapStyle: 'dark' | 'street' | 'satellite';
+  setMapStyle: (style: 'dark' | 'street' | 'satellite') => void;
+  mapLabels: boolean;
+  setMapLabels: (on: boolean) => void;
+
   // ── Actions
   setMode: (mode: MonitorMode) => void;
   flyTo: (lng: number, lat: number, zoom?: number) => void;
@@ -677,6 +685,14 @@ export const useMonitorStore = create<MonitorState>()(
         set({ newsArticles: data.articles || [] });
       },
 
+      // ── Map settings
+      mapView: '3d',
+      setMapView: (view) => set({ mapView: view }),
+      mapStyle: 'dark',
+      setMapStyle: (style) => set({ mapStyle: style }),
+      mapLabels: true,
+      setMapLabels: (on) => set({ mapLabels: on }),
+
       // ── Standard actions ──────────────────────────────────────────────────
       setMode: (mode) => {
         set({ mode, selectedEventId: null });
@@ -710,6 +726,9 @@ export const useMonitorStore = create<MonitorState>()(
         snapshots:     s.snapshots,
         leftPanelOpen:  s.leftPanelOpen,
         rightPanelOpen: s.rightPanelOpen,
+        mapView:        s.mapView,
+        mapStyle:       s.mapStyle,
+        mapLabels:      s.mapLabels,
       }),
     }
   )

@@ -1,27 +1,57 @@
 /**
- * MapContainer — Full-bleed 3D globe using deck.gl + MapLibre.
- * Layers rendered in order:
- *   1. Arc connections (mode-curated)
- *   2. Conflict / earthquake scatter (real + mock fallback)
- *   3. NASA EONET wildfire scatter (red/orange)
- *   4. Climate anomaly scatter (teal)
- *   5. Custom monitor highlights (user-defined keyword colors)
- *
- * Features:
- *   - Zoom-adaptive clustering: radius scales with zoom level
- *   - Layer visibility: respects store visibleLayers
- *   - Time-window filtering: only shows events within selected window
- *   - Custom monitor highlighting: matched events glow in monitor color
+ * MapContainer — Multi-mode globe/map for SPARK Globe Monitor.
+ * Supports:
+ *   View:   2D (flat) | 3D (deck.gl GlobeView + MapLibre globe projection)
+ *   Style:  Dark | Street (Carto Voyager) | Satellite (ESRI World Imagery)
+ *   Labels: Country + city names toggle
  */
 import { useCallback, useMemo } from 'react';
 import { Map } from 'react-map-gl/maplibre';
 import { DeckGL } from '@deck.gl/react';
 import { ScatterplotLayer, ArcLayer } from '@deck.gl/layers';
-import { FlyToInterpolator } from '@deck.gl/core';
+import { FlyToInterpolator, GlobeView, MapView } from '@deck.gl/core';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMonitorStore, TIME_WINDOW_MS } from '@/store/useMonitorStore';
 import { getEventsForMode, getArcsForMode } from '@/data/mockData';
 
+// ── Map style URLs ────────────────────────────────────────────────────────────
+const STYLES = {
+  dark:         'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json',
+  darkLabels:   'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
+  streetLabels: 'https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json',
+};
+
+/** Satellite GL style using free ESRI World Imagery tiles (no key needed) */
+function buildSatelliteStyle(labels: boolean): object {
+  return {
+    version: 8,
+    glyphs: 'https://fonts.openmaptiles.org/{fontstack}/{range}.pbf',
+    sources: {
+      esri: {
+        type: 'raster',
+        tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'],
+        tileSize: 256,
+        maxzoom: 19,
+        attribution: '&copy; Esri &mdash; Esri, i-cubed, USDA, USGS, AEX, GeoEye, Getmapping, Aerogrid, IGN, IGP',
+      },
+      ...(labels ? {
+        osm_labels: {
+          type: 'raster',
+          tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+          tileSize: 256,
+          maxzoom: 19,
+        },
+      } : {}),
+    },
+    layers: [
+      { id: 'bg', type: 'background', paint: { 'background-color': '#010812' } },
+      { id: 'satellite', type: 'raster', source: 'esri',
+        paint: { 'raster-saturation': -0.05, 'raster-contrast': 0.1 } },
+    ],
+  };
+}
+
+// ── Severity and arc colors ───────────────────────────────────────────────────
 const SEVERITY_COLORS: Record<string, [number, number, number, number]> = {
   low:      [0, 200, 150, 180],
   medium:   [255, 180, 0, 200],
@@ -36,35 +66,45 @@ const ARC_COLORS: Record<string, { source: [number, number, number, number]; tar
   happy:   { source: [0, 200, 120, 180], target: [0, 200, 120, 40] },
 };
 
-// CartoDB dark-matter-nolabels — pure black base, geography in dark charcoal
-const MAP_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-nolabels-gl-style/style.json';
-
 export const MapContainer = () => {
-  const mode           = useMonitorStore((s) => s.mode);
-  const viewState      = useMonitorStore((s) => s.viewState);
-  const setViewState   = useMonitorStore((s) => s.setViewState);
-  const visibleLayers  = useMonitorStore((s) => s.visibleLayers);
-  const timeWindow     = useMonitorStore((s) => s.timeWindow);
-  const customMonitors = useMonitorStore((s) => s.customMonitors);
+  const mode            = useMonitorStore((s) => s.mode);
+  const viewState       = useMonitorStore((s) => s.viewState);
+  const setViewState    = useMonitorStore((s) => s.setViewState);
+  const visibleLayers   = useMonitorStore((s) => s.visibleLayers);
+  const timeWindow      = useMonitorStore((s) => s.timeWindow);
+  const customMonitors  = useMonitorStore((s) => s.customMonitors);
+  const mapView         = useMonitorStore((s) => s.mapView);
+  const mapStyle        = useMonitorStore((s) => s.mapStyle);
+  const mapLabels       = useMonitorStore((s) => s.mapLabels);
 
-  // Real-time data
-  const realWorldEvents  = useMonitorStore((s) => s.realWorldEvents);
-  const realEvents       = useMonitorStore((s) => s.realEvents);     // earthquakes + flights
-  const realFireEvents   = useMonitorStore((s) => s.realFireEvents);
+  const realWorldEvents   = useMonitorStore((s) => s.realWorldEvents);
+  const realEvents        = useMonitorStore((s) => s.realEvents);
+  const realFireEvents    = useMonitorStore((s) => s.realFireEvents);
   const realClimateEvents = useMonitorStore((s) => s.realClimateEvents);
-  const lastFetch        = useMonitorStore((s) => s.lastFetch);
+  const lastFetch         = useMonitorStore((s) => s.lastFetch);
 
   const zoom = viewState.zoom;
 
-  // ── Zoom-adaptive radius helper ──────────────────────────────────────────
-  // At zoom 2 → large dots. At zoom 8+ → precise fine dots.
+  // ── Resolved map style ──────────────────────────────────────────────────
+  const resolvedStyle = useMemo(() => {
+    if (mapStyle === 'satellite') return buildSatelliteStyle(mapLabels);
+    if (mapStyle === 'street')   return STYLES.streetLabels;   // voyager always has labels
+    return mapLabels ? STYLES.darkLabels : STYLES.dark;
+  }, [mapStyle, mapLabels]);
+
+  // ── deck.gl view (3D = GlobeView, 2D = MapView) ─────────────────────────
+  const deckView = useMemo(
+    () => mapView === '3d' ? new GlobeView({ id: 'globe' }) : new MapView({ id: 'map', repeat: true }),
+    [mapView],
+  );
+
+  // ── Zoom-adaptive radius ────────────────────────────────────────────────
   const zoomScale = useMemo(() => {
-    // Map zoom 1-12 to scale 2.0 → 0.3
     const t = Math.min(1, Math.max(0, (zoom - 1) / 11));
-    return 2.0 - t * 1.7; // 2.0 at z=1, 0.3 at z=12
+    return 2.0 - t * 1.7;
   }, [zoom]);
 
-  // ── Time window filter ─────────────────────────────────────────────────
+  // ── Time window filter ──────────────────────────────────────────────────
   const cutoff = useMemo(() => {
     if (lastFetch === 0) return 0;
     return Date.now() - TIME_WINDOW_MS[timeWindow];
@@ -72,10 +112,10 @@ export const MapContainer = () => {
 
   const withinWindow = useCallback(
     (fetchedAt?: number) => !fetchedAt || fetchedAt >= cutoff,
-    [cutoff]
+    [cutoff],
   );
 
-  // ── Merge mock + real events ──────────────────────────────────────────
+  // ── Merge mock + real events ────────────────────────────────────────────
   const events = useMemo(() => {
     const mockEvs = getEventsForMode(mode);
     if (lastFetch === 0) return mockEvs;
@@ -85,10 +125,10 @@ export const MapContainer = () => {
     return [...realCombined, ...extras];
   }, [mode, realWorldEvents, realEvents, lastFetch, withinWindow]);
 
-  const arcs = useMemo(() => getArcsForMode(mode), [mode]);
+  const arcs      = useMemo(() => getArcsForMode(mode), [mode]);
   const arcColors = ARC_COLORS[mode];
 
-  // ── Custom monitor color lookup ───────────────────────────────────────
+  // ── Custom monitor color lookup ─────────────────────────────────────────
   const getCustomColor = useCallback(
     (title: string): [number, number, number, number] | null => {
       for (const m of customMonitors) {
@@ -103,12 +143,12 @@ export const MapContainer = () => {
       }
       return null;
     },
-    [customMonitors]
+    [customMonitors],
   );
 
+  // ── Layers ──────────────────────────────────────────────────────────────
   const layers = useMemo(
     () => [
-      // Arc connections
       new ArcLayer({
         id: 'connection-arcs',
         data: arcs,
@@ -120,7 +160,6 @@ export const MapContainer = () => {
         greatCircle: true,
       }),
 
-      // Main events scatter (conflict + earthquakes + flights)
       ...(visibleLayers.includes('conflict') || visibleLayers.includes('earthquake') || visibleLayers.includes('flights') ? [
         new ScatterplotLayer({
           id: 'events-scatter',
@@ -128,25 +167,22 @@ export const MapContainer = () => {
           getPosition: (d: any) => [d.lng, d.lat],
           getRadius: (d: any) => {
             const base: Record<string, number> = { critical: 80000, high: 60000, medium: 40000, low: 25000 };
-            return (base[(d.severity) ?? 'medium'] ?? 30000) * zoomScale;
+            return (base[d.severity ?? 'medium'] ?? 30000) * zoomScale;
           },
           getFillColor: (d: any) => {
             const custom = getCustomColor(d.title || '');
             if (custom) return custom;
-            return SEVERITY_COLORS[(d.severity) ?? 'medium'] ?? [100, 100, 100, 150];
+            return SEVERITY_COLORS[d.severity ?? 'medium'] ?? [100, 100, 100, 150];
           },
           radiusMinPixels: 3,
           radiusMaxPixels: Math.round(22 * zoomScale),
-          opacity: 0.8,
-          pickable: true,
-          autoHighlight: true,
+          opacity: 0.8, pickable: true, autoHighlight: true,
           highlightColor: [0, 220, 255, 100],
           transitions: { getPosition: 800, getRadius: 600, getFillColor: 800 },
           updateTriggers: { getFillColor: [customMonitors], getRadius: [zoomScale] },
         }),
       ] : []),
 
-      // Wildfire scatter (NASA EONET)
       ...(visibleLayers.includes('wildfire') ? [
         new ScatterplotLayer({
           id: 'wildfire-scatter',
@@ -156,15 +192,12 @@ export const MapContainer = () => {
           getFillColor: [255, 80, 0, 220],
           radiusMinPixels: 2,
           radiusMaxPixels: Math.round(14 * zoomScale),
-          opacity: 0.9,
-          pickable: true,
-          autoHighlight: true,
+          opacity: 0.9, pickable: true, autoHighlight: true,
           highlightColor: [255, 200, 0, 120],
           updateTriggers: { getRadius: [zoomScale] },
         }),
       ] : []),
 
-      // Climate anomaly scatter (NASA EONET)
       ...(visibleLayers.includes('climate') ? [
         new ScatterplotLayer({
           id: 'climate-scatter',
@@ -172,26 +205,22 @@ export const MapContainer = () => {
           getPosition: (d: any) => [d.lng, d.lat],
           getRadius: (d: any) => {
             const sizes: Record<string, number> = { critical: 70000, high: 50000, medium: 35000, low: 20000 };
-            return (sizes[(d.severity)] ?? 30000) * zoomScale;
+            return (sizes[d.severity] ?? 30000) * zoomScale;
           },
           getFillColor: (d: any) => {
             const cat = d.category || '';
-            if (cat === 'volcanoes') return [255, 60, 20, 230] as [number, number, number, number];
+            if (cat === 'volcanoes')    return [255, 60, 20, 230] as [number, number, number, number];
             if (cat === 'severeStorms') return [0, 180, 255, 200] as [number, number, number, number];
-            if (cat === 'floods') return [30, 120, 255, 200] as [number, number, number, number];
+            if (cat === 'floods')       return [30, 120, 255, 200] as [number, number, number, number];
             return [0, 200, 200, 180] as [number, number, number, number];
           },
-          radiusMinPixels: 3,
-          radiusMaxPixels: Math.round(20 * zoomScale),
-          opacity: 0.8,
-          pickable: true,
-          autoHighlight: true,
+          radiusMinPixels: 3, radiusMaxPixels: Math.round(20 * zoomScale),
+          opacity: 0.8, pickable: true, autoHighlight: true,
           highlightColor: [0, 255, 200, 100],
           updateTriggers: { getRadius: [zoomScale] },
         }),
       ] : []),
 
-      // Custom monitor highlight pulse layer (glow ring around matched events)
       ...(visibleLayers.includes('custom') ? [
         new ScatterplotLayer({
           id: 'custom-monitor-glow',
@@ -199,7 +228,7 @@ export const MapContainer = () => {
           getPosition: (d: any) => [d.lng, d.lat],
           getRadius: (d: any) => {
             const base: Record<string, number> = { critical: 110000, high: 90000, medium: 65000, low: 45000 };
-            return (base[(d.severity) ?? 'medium'] ?? 70000) * zoomScale;
+            return (base[d.severity ?? 'medium'] ?? 70000) * zoomScale;
           },
           getFillColor: (d: any) => {
             const c = getCustomColor(d.title || '');
@@ -209,14 +238,10 @@ export const MapContainer = () => {
             const c = getCustomColor(d.title || '');
             return c ? [c[0], c[1], c[2], 180] as [number, number, number, number] : [0, 0, 0, 0];
           },
-          stroked: true,
-          filled: true,
-          getLineWidth: 2,
-          lineWidthMinPixels: 1,
-          radiusMinPixels: 5,
-          radiusMaxPixels: 30,
-          opacity: 0.9,
-          pickable: false,
+          stroked: true, filled: true,
+          getLineWidth: 2, lineWidthMinPixels: 1,
+          radiusMinPixels: 5, radiusMaxPixels: 30,
+          opacity: 0.9, pickable: false,
           updateTriggers: { getFillColor: [customMonitors], getLineColor: [customMonitors], getRadius: [zoomScale] },
         }),
       ] : []),
@@ -243,17 +268,20 @@ export const MapContainer = () => {
   return (
     <div className="absolute inset-0" style={{ background: '#000' }}>
       <DeckGL
+        views={deckView}
         viewState={effectiveViewState}
         onViewStateChange={onViewStateChange}
         controller={true}
         layers={layers}
         getCursor={() => 'default'}
       >
-        <Map mapStyle={MAP_STYLE} attributionControl={false} />
+        <Map
+          mapStyle={resolvedStyle as any}
+          attributionControl={false}
+          projection={mapView === '3d' ? ({ name: 'globe' } as any) : undefined}
+        />
       </DeckGL>
     </div>
   );
 };
-
-
 

@@ -134,6 +134,25 @@ class SystemMonitor:
             battery = psutil.sensors_battery() if hasattr(psutil, 'sensors_battery') else None
             battery_pct = battery.percent if battery else 100
             charging = battery.power_plugged if battery else True
+
+            # CPU temperature (Linux/macOS; graceful fallback on Windows)
+            cpu_temp = None
+            try:
+                if hasattr(psutil, 'sensors_temperatures'):
+                    all_temps = psutil.sensors_temperatures()
+                    if all_temps:
+                        for sensor_name in ('coretemp', 'cpu_thermal', 'k10temp', 'acpitz', 'zenpower'):
+                            entries = all_temps.get(sensor_name)
+                            if entries:
+                                cpu_temp = entries[0].current
+                                break
+                        if cpu_temp is None:
+                            # Fallback: use first available sensor
+                            first = next(iter(all_temps.values()), [])
+                            if first:
+                                cpu_temp = first[0].current
+            except Exception:
+                pass  # Windows may not support sensors_temperatures
             
             # Network throughput mapped to 0-100% scale (rough approximation)
             network_pct = 0
@@ -169,6 +188,7 @@ class SystemMonitor:
                 "network": network_pct,
                 "battery": battery_pct,
                 "charging": charging,
+                "temperature": cpu_temp,
                 "timestamp": int(time.time()),
             }
             unified_state.update("metrics", payload)
