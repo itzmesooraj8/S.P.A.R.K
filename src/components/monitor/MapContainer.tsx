@@ -283,7 +283,7 @@ export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number;
         <Map
           mapStyle={resolvedStyle as any}
           attributionControl={false}
-          projection={mapView === '3d' ? ({ name: 'globe' } as any) : undefined}
+          projection={mapView === '3d' ? ({ type: 'globe' } as any) : ({ type: 'mercator' } as any)}
         />
       </DeckGL>
     </div>
