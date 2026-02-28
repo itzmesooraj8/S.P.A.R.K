@@ -207,14 +207,32 @@ async def fetch_cached(
     params: dict | None = None,
     headers: dict | None = None,
     ttl: int = 120,
+async def fetch_cached(
+    url: str,
+    params: dict | None = None,
+    headers: dict | None = None,
+    ttl: int = 300,
 ) -> dict | list:
     key = url + str(sorted((params or {}).items()))
     now = time.monotonic()
     if key in _cache and now - _cache[key]["ts"] < ttl:
         return _cache[key]["data"]
-    data = await _fetch_json(url, params, headers)
-    _cache[key] = {"data": data, "ts": now}
-    return data
+    try:
+        data = await _fetch_json(url, params, headers)
+        _cache[key] = {"data": data, "ts": now}
+        return data
+    except httpx.HTTPStatusError as exc:
+        if exc.response.status_code == 429:
+            # Rate-limited — serve stale cache if available, else re-raise
+            if key in _cache:
+                print(f"[Globe API] 429 from {url[:60]} — serving stale cache")
+                return _cache[key]["data"]
+        raise
+    except Exception:
+        # Network error — serve stale cache if available, else re-raise
+        if key in _cache:
+            return _cache[key]["data"]
+        raise
 
 
 async def guarded_fetch(
@@ -222,7 +240,7 @@ async def guarded_fetch(
     url: str,
     params: dict | None = None,
     headers: dict | None = None,
-    ttl: int = 120,
+    ttl: int = 300,
 ) -> dict | list | None:
     """Fetch with circuit-breaker guard. Returns None if circuit open."""
     cb = _CB[cb_name]
@@ -232,6 +250,14 @@ async def guarded_fetch(
         data = await fetch_cached(url, params, headers, ttl)
         cb.success()
         return data
+    except httpx.HTTPStatusError as exc:
+        # 429 rate-limit: record as soft degraded but don't open circuit immediately
+        if exc.response.status_code == 429:
+            cb.last_error = "429 Too Many Requests"
+            cb.status = "degraded"
+            return None
+        cb.failure(str(exc))
+        return None
     except Exception as exc:
         cb.failure(str(exc))
         return None
@@ -346,7 +372,7 @@ class GlobeSocketBroadcaster:
                 "https://api.gdeltproject.org/api/v2/doc/doc",
                 params={"query": "conflict war explosion attack", "mode": "artgeo",
                         "format": "json", "maxrecords": "40", "timespan": "24h", "sort": "ToneDesc"},
-                ttl=180,
+                ttl=300,
             )
             if cf_data:
                 events = []
@@ -629,7 +655,7 @@ async def list_conflict_events(request: Request):
             "timespan":   "24h",
             "sort":       "ToneDesc",
         },
-        ttl=180,
+        ttl=300,
     )
     if data is None:
         return JSONResponse({
@@ -954,7 +980,7 @@ async def search_gdelt_documents(request: Request):
             "timespan":   "24h",
             "sort":       "DateDesc",
         },
-        ttl=180,
+        ttl=300,
     )
     if data is None:
         return JSONResponse({
@@ -1009,7 +1035,7 @@ async def list_news_articles(request: Request):
             "timespan":   "3h",
             "sort":       "DateDesc",
         },
-        ttl=120,
+        ttl=300,
     )
     if data is None:
         return JSONResponse({
@@ -1067,7 +1093,7 @@ async def list_news_geo(request: Request):
             "timespan":   "6h",
             "sort":       "ToneDesc",
         },
-        ttl=120,
+        ttl=300,
     )
     if data is None:
         return JSONResponse({

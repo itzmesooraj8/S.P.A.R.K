@@ -529,22 +529,28 @@ export const useMonitorStore = create<MonitorState>()(
       fetchRealTimeData: async () => {
         set({ dataLoading: true });
         const now = Date.now();
-        // Pass active layers so backend skips disabled layer fetches
         const { visibleLayers } = get();
         const layers = visibleLayers as string[];
+        const delay = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
         try {
-          const [eqData, flightsData, conflictData, cyberData, financeData, marketData, firesData, climateData, newsGeoData] =
+          // Batch 1: non-GDELT sources (parallel, fast)
+          const [eqData, flightsData, marketData, firesData, climateData] =
             await Promise.all([
-              safeFetch('/api/seismology/v1/listEarthquakes',     POST_JSON({ layers })),
-              safeFetch('/api/military/v1/listMilitaryFlights',   POST_JSON({ layers })),
-              safeFetch('/api/conflict/v1/listConflictEvents',    POST_JSON({ layers })),
-              safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'cyber',      maxRecords: 20 })),
-              safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'sanctions',  maxRecords: 20 })),
-              safeFetch('/api/market/v1/getTicker',               POST_JSON({ layers })),
-              safeFetch('/api/wildfire/v1/listFireDetections',    POST_JSON({ layers })),
-              safeFetch('/api/climate/v1/listClimateAnomalies',   POST_JSON({ layers })),
-              safeFetch('/api/news/v1/listNewsGeo',               POST_JSON({ mode: get().mode })),
+              safeFetch('/api/seismology/v1/listEarthquakes',   POST_JSON({ layers })),
+              safeFetch('/api/military/v1/listMilitaryFlights', POST_JSON({ layers })),
+              safeFetch('/api/market/v1/getTicker',             POST_JSON({ layers })),
+              safeFetch('/api/wildfire/v1/listFireDetections',  POST_JSON({ layers })),
+              safeFetch('/api/climate/v1/listClimateAnomalies', POST_JSON({ layers })),
             ]);
+
+          // Batch 2: GDELT sources — staggered by 250ms to avoid 429 on cold cache
+          const conflictData = await safeFetch('/api/conflict/v1/listConflictEvents', POST_JSON({ layers }));
+          await delay(250);
+          const cyberData    = await safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'cyber',     maxRecords: 20 }));
+          await delay(250);
+          const financeData  = await safeFetch('/api/intelligence/v1/searchGdeltDocuments', POST_JSON({ topic: 'sanctions', maxRecords: 20 }));
+          await delay(250);
+          const newsGeoData  = await safeFetch('/api/news/v1/listNewsGeo', POST_JSON({ mode: get().mode }));
 
           const realEarthquakes: RealEvent[] = (eqData.earthquakes || []).map((eq: any) => ({
             id: eq.id,
