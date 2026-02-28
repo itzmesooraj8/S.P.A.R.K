@@ -14,7 +14,6 @@ import DataStreamModule from './modules/DataStreamModule';
 import SatelliteModule from './modules/SatelliteModule';
 import ReasoningLogModule from './modules/ReasoningLogModule';
 import TacticalModule from './modules/TacticalModule';
-import GlobeVisualization from './GlobeVisualization';
 import DevGraphModule from './modules/DevGraphModule';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
@@ -134,7 +133,6 @@ export default function HudLayout() {
                 </div>
                 <div className="h-[calc(100%-36px)] overflow-hidden relative">
                   {activeModule === 'security' && <SecurityModule />}
-                  {activeModule === 'globe' && <GlobeVisualization />}
                   {activeModule === 'analytics' && <AnalyticsModule metrics={metrics} />}
                   {activeModule === 'agent' && <AgentModule />}
                   {activeModule === 'datastream' && <DataStreamModule />}
