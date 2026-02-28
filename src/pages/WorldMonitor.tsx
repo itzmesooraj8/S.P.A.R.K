@@ -26,6 +26,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useMonitorStore } from '@/store/useMonitorStore';
 import { useUrlState } from '@/hooks/useUrlState';
+import { useGlobeSocket } from '@/hooks/useGlobeSocket';
 import { MapContainer } from '@/components/monitor/MapContainer';
 import { TopBar } from '@/components/monitor/TopBar';
 import { ThreatMatrix } from '@/components/monitor/ThreatMatrix';
@@ -38,6 +39,7 @@ import { CustomMonitorPanel } from '@/components/monitor/CustomMonitorPanel';
 import { SnapshotPlayback } from '@/components/monitor/SnapshotPlayback';
 import { CaseDrawer } from '@/components/monitor/CaseDrawer';
 import ProviderHealthPanel from '@/components/monitor/ProviderHealthPanel';
+import { LayerTogglePanel } from '@/components/monitor/LayerTogglePanel';
 import { AICore } from '@/components/monitor/AICore';
 
 /* Per-mode accent colors (shared with TopBar) */
@@ -57,7 +59,12 @@ const WorldMonitor = () => {
   const lastFetch      = useMonitorStore((s) => s.lastFetch);
 
   const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
+  // ── WebSocket real-time push (Globe /ws/globe) ──────────────────
+  useGlobeSocket();
 
+  // ── Layer toggle panel state ───────────────────────────────
+  const [layerPanelOpen, setLayerPanelOpen] = useState(false);
+  const wsConnected = useMonitorStore((s) => s.wsConnected);
   // ── URL state sync ───────────────────────────────────────────────────────
   // Reads initial URL hash into store + keeps URL in sync with store changes
   useUrlState();
@@ -195,6 +202,23 @@ const WorldMonitor = () => {
       {/* ── RIGHT EDGE: Case Drawer (investigation mode) ──────────── */}
       <CaseDrawer accentColor={accentColor} />
 
+      {/* ── LAYER TOGGLE BUTTON (top-right floating) ─────────────── */}
+      <button
+        onClick={() => setLayerPanelOpen((v) => !v)}
+        className="fixed top-16 right-4 z-40 pointer-events-auto
+                   flex items-center gap-1.5 rounded-lg px-3 py-2
+                   border border-white/20 bg-gray-900/80 backdrop-blur-sm
+                   text-xs font-semibold text-white hover:bg-white/10
+                   transition-colors duration-150"
+        title="Toggle layer visibility"
+      >
+        <span>⊞</span>
+        <span>Layers</span>
+      </button>
+
+      {/* ── LAYER TOGGLE PANEL ────────────────────────────────────── */}
+      <LayerTogglePanel open={layerPanelOpen} onClose={() => setLayerPanelOpen(false)} />
+
       {/* ── STATUS BAR ───────────────────────────────────────────── */}
       <div className="hud-status-bar">
         <span
@@ -203,6 +227,17 @@ const WorldMonitor = () => {
         />
         <span style={{ color: dataLoading ? '#fbbf24' : accentColor, opacity: 0.7 }}>
           {dataLoading ? 'SYNCING DATA…' : 'ALL FEEDS NOMINAL'}
+        </span>
+        {/* WebSocket push indicator */}
+        <span
+          className="ml-2 flex items-center gap-1 text-[10px] opacity-70"
+          title={wsConnected ? 'Globe WS push active' : 'Globe WS disconnected'}
+        >
+          <span
+            className="inline-block w-1.5 h-1.5 rounded-full"
+            style={{ background: wsConnected ? '#34d399' : '#6b7280' }}
+          />
+          {wsConnected ? 'WS' : 'REST'}
         </span>
         <span className="ml-auto opacity-50">© CARTO · © OpenStreetMap contributors</span>
         {lastFetch > 0 && (

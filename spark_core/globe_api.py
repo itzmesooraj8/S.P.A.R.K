@@ -29,6 +29,7 @@ import asyncio
 import math
 import os
 import time
+import xml.etree.ElementTree as ET
 from typing import Any
 
 import httpx
@@ -115,10 +116,35 @@ class CircuitBreaker:
 # ── Register all providers ─────────────────────────────────────
 _CB: dict[str, CircuitBreaker] = {
     name: CircuitBreaker(name) for name in [
+        # Free providers
         "usgs", "opensky", "eonet", "gdelt_conflict",
         "gdelt_intel", "gdelt_news", "coingecko", "frankfurter",
+        # Free new providers
+        "who_rss", "waqi", "ripe_bgp", "meteoalarm",
+        # Keyed providers
         "acled", "finnhub", "eia", "nasa_firms", "cloudflare",
     ]
+}
+
+# Source metadata for provenance stamping
+_PROVIDER_META: dict[str, dict] = {
+    "usgs":         {"name": "USGS GeoJSON Feed",       "url": "https://earthquake.usgs.gov/"},
+    "opensky":      {"name": "OpenSky Network",          "url": "https://opensky-network.org/"},
+    "eonet":        {"name": "NASA EONET",               "url": "https://eonet.gsfc.nasa.gov/"},
+    "gdelt_conflict":{"name": "GDELT Document API v2",  "url": "https://api.gdeltproject.org/"},
+    "gdelt_intel":  {"name": "GDELT Document API v2",   "url": "https://api.gdeltproject.org/"},
+    "gdelt_news":   {"name": "GDELT Document API v2",   "url": "https://api.gdeltproject.org/"},
+    "coingecko":    {"name": "CoinGecko API",            "url": "https://api.coingecko.com/"},
+    "frankfurter":  {"name": "Frankfurter FX API",      "url": "https://api.frankfurter.app/"},
+    "acled":        {"name": "ACLED Data",               "url": "https://api.acleddata.com/"},
+    "finnhub":      {"name": "Finnhub Financial API",   "url": "https://finnhub.io/"},
+    "eia":          {"name": "EIA Energy API",           "url": "https://api.eia.gov/"},
+    "nasa_firms":   {"name": "NASA FIRMS",               "url": "https://firms.modaps.eosdis.nasa.gov/"},
+    "cloudflare":   {"name": "Cloudflare Radar API",    "url": "https://api.cloudflare.com/"},
+    "who_rss":      {"name": "WHO Disease Outbreak News","url": "https://www.who.int/rss-feeds/"},
+    "waqi":         {"name": "WAQI Air Quality Index",  "url": "https://waqi.info/"},
+    "ripe_bgp":     {"name": "RIPE NCC BGP Data",       "url": "https://stat.ripe.net/"},
+    "meteoalarm":   {"name": "Meteoalarm / NOAA",       "url": "https://www.meteoalarm.org/"},
 }
 
 # Mark key-required providers immediately
@@ -180,6 +206,198 @@ async def guarded_fetch(
     except Exception as exc:
         cb.failure(str(exc))
         return None
+
+
+# ──────────────────────────────────────────────────────────────
+# Provenance stamping
+# ──────────────────────────────────────────────────────────────
+def _provenance(provider: str, cached: bool = True) -> dict:
+    """Build a _provenance block for an event or batch."""
+    now_ms = int(time.time() * 1000)
+    meta   = _PROVIDER_META.get(provider, {"name": provider, "url": ""})
+    cache_info = _cache.get(meta.get("url", provider), {})
+    cache_age  = int(time.monotonic() - cache_info["ts"]) if cache_info else 0
+    return {
+        "provider":        provider,
+        "source":          meta["name"],
+        "sourceUrl":       meta["url"],
+        "retrievedAt":     now_ms,
+        "cacheAge":        cache_age,
+        "retrievalMethod": "http_cached" if cached else "http_live",
+    }
+
+
+def _stamp(events: list[dict], provider: str) -> list[dict]:
+    """Attach _provenance to a list of event dicts in-place."""
+    prov = _provenance(provider)
+    for e in events:
+        e["_provenance"] = prov
+    return events
+
+
+# ──────────────────────────────────────────────────────────────
+# WebSocket broadcaster
+# ──────────────────────────────────────────────────────────────
+class GlobeSocketBroadcaster:
+    """Manages connected /ws/globe clients and background fetch-push loop."""
+
+    def __init__(self) -> None:
+        self._clients: list = []          # WebSocket objects
+        self._task: asyncio.Task | None = None
+        self._last_event_ids: dict[str, set[str]] = {}  # layer → set of IDs
+
+    def add_client(self, ws: Any) -> None:
+        self._clients.append(ws)
+        print(f"[Globe WS] Client connected. Total: {len(self._clients)}")
+
+    def remove_client(self, ws: Any) -> None:
+        self._clients = [c for c in self._clients if c is not ws]
+        print(f"[Globe WS] Client disconnected. Total: {len(self._clients)}")
+
+    async def _broadcast(self, payload: dict) -> None:
+        if not self._clients:
+            return
+        import json as _json
+        msg = _json.dumps(payload)
+        dead: list = []
+        for ws in list(self._clients):
+            try:
+                await ws.send_text(msg)
+            except Exception:
+                dead.append(ws)
+        for ws in dead:
+            self.remove_client(ws)
+
+    def _delta(self, layer: str, events: list[dict]) -> list[dict]:
+        """Return only events whose ID hasn't been seen for this layer."""
+        seen = self._last_event_ids.setdefault(layer, set())
+        new_events = [e for e in events if e.get("id") not in seen]
+        # Update seen set; cap at 1 000 IDs
+        for e in events:
+            seen.add(e.get("id", ""))
+        if len(seen) > 1000:
+            self._last_event_ids[layer] = set(list(seen)[-500:])
+        return new_events
+
+    async def _push_cycle(self) -> None:
+        """One full fetch-and-push cycle for all layers."""
+        now = int(time.time() * 1000)
+
+        # ── Earthquakes ────────────────────────────────────────
+        try:
+            eq_data = await guarded_fetch(
+                "usgs",
+                "https://earthquake.usgs.gov/earthquakes/feed/v1.0/summary/4.5_day.geojson",
+                ttl=120,
+            )
+            if eq_data:
+                events = []
+                for f in eq_data.get("features", []):
+                    p = f.get("properties", {})
+                    g = f.get("geometry", {}).get("coordinates", [0, 0, 0])
+                    mag = p.get("mag", 0) or 0
+                    events.append({
+                        "id":       f.get("id", ""),
+                        "title":    f"M{mag:.1f} — {p.get('place', 'Unknown')}",
+                        "lat":      g[1], "lng": g[0],
+                        "severity": "critical" if mag >= 7 else "high" if mag >= 6 else "medium" if mag >= 5 else "low",
+                        "category": "earthquake",
+                    })
+                _stamp(events, "usgs")
+                delta = self._delta("earthquake", events)
+                if delta:
+                    await self._broadcast({"type": "GLOBE_DELTA", "layer": "earthquake", "events": delta, "timestamp": now})
+        except Exception as exc:
+            print(f"[Globe WS] EQ push error: {exc}")
+
+        # ── Conflict ───────────────────────────────────────────
+        try:
+            cf_data = await guarded_fetch(
+                "gdelt_conflict",
+                "https://api.gdeltproject.org/api/v2/doc/doc",
+                params={"query": "conflict war explosion attack", "mode": "artgeo",
+                        "format": "json", "maxrecords": "40", "timespan": "24h", "sort": "ToneDesc"},
+                ttl=180,
+            )
+            if cf_data:
+                events = []
+                for a in (cf_data.get("articles", []) or [])[:40]:
+                    lat = a.get("actiongeo_lat")
+                    lon = a.get("actiongeo_long")
+                    if not lat or not lon:
+                        continue
+                    try:
+                        lat, lon = float(lat), float(lon)
+                    except (ValueError, TypeError):
+                        continue
+                    tone = float(a.get("tone", 0) or 0)
+                    events.append({
+                        "id":       (a.get("url") or "")[:64],
+                        "title":    (a.get("title") or "")[:120],
+                        "lat":      lat, "lng": lon,
+                        "severity": "critical" if tone < -10 else "high" if tone < -5 else "medium",
+                        "category": "conflict",
+                    })
+                _stamp(events, "gdelt_conflict")
+                delta = self._delta("conflict", events)
+                if delta:
+                    await self._broadcast({"type": "GLOBE_DELTA", "layer": "conflict", "events": delta, "timestamp": now})
+        except Exception as exc:
+            print(f"[Globe WS] Conflict push error: {exc}")
+
+        # ── Market tickers ─────────────────────────────────────
+        try:
+            cg = await guarded_fetch(
+                "coingecko",
+                "https://api.coingecko.com/api/v3/simple/price",
+                params={"ids": "bitcoin,ethereum,solana", "vs_currencies": "usd",
+                        "include_24hr_change": "true"},
+                ttl=60,
+            )
+            if cg:
+                tickers = []
+                for coin_id, vals in cg.items():
+                    sym = {"bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL"}.get(coin_id, coin_id.upper()[:4])
+                    price  = vals.get("usd", 0)
+                    change = vals.get("usd_24h_change", 0) or 0
+                    tickers.append({"symbol": sym, "value": round(price, 2),
+                                    "delta": round(change * price / 100, 2),
+                                    "deltaPercent": round(change, 2), "source": "coingecko"})
+                await self._broadcast({"type": "GLOBE_TICKER", "tickers": tickers, "timestamp": now})
+        except Exception as exc:
+            print(f"[Globe WS] Market push error: {exc}")
+
+        # ── Provider health ────────────────────────────────────
+        try:
+            providers = [cb.to_dict() for cb in _CB.values()]
+            summary = {
+                "ok":           sum(1 for p in providers if p["status"] == "ok"),
+                "degraded":     sum(1 for p in providers if p["status"] == "degraded"),
+                "down":         sum(1 for p in providers if p["status"] == "down"),
+                "key_required": sum(1 for p in providers if p["status"] == "key_required"),
+                "total":        len(providers),
+            }
+            await self._broadcast({"type": "GLOBE_HEALTH", "providers": providers,
+                                   "summary": summary, "timestamp": now})
+        except Exception as exc:
+            print(f"[Globe WS] Health push error: {exc}")
+
+    async def run_loop(self, interval_s: float = 30.0) -> None:
+        """Background loop: push data to all connected clients every interval_s."""
+        print("[Globe WS] Background push loop started")
+        while True:
+            if self._clients:
+                await self._push_cycle()
+            await asyncio.sleep(interval_s)
+
+    def start(self) -> None:
+        """Launch the background loop as an asyncio task."""
+        if self._task is None or self._task.done():
+            self._task = asyncio.create_task(self.run_loop(), name="globe_ws_broadcaster")
+
+
+# ── Singleton broadcaster (imported by main.py) ───────────────
+globe_broadcaster = GlobeSocketBroadcaster()
 
 
 # ──────────────────────────────────────────────────────────────
@@ -1154,6 +1372,293 @@ async def get_fusion_summary(request: Request):
     except Exception as e:
         import traceback; traceback.print_exc()
         return JSONResponse({"items": [], "generatedAt": int(time.time() * 1000), "sourceCounts": {}})
+
+
+# ──────────────────────────────────────────────────────────────
+# NEW FREE LAYERS — V4
+# ──────────────────────────────────────────────────────────────
+
+# ── Layer 14: Disease Alerts (WHO Disease Outbreak News RSS) ──
+@router.api_route("/api/health/v1/listDiseaseAlerts", methods=["POST", "GET", "OPTIONS"])
+async def list_disease_alerts(request: Request):
+    if request.method == "OPTIONS":
+        return _options_response()
+    URL = "https://www.who.int/rss-feeds/news-english.xml"
+    try:
+        async with httpx.AsyncClient(timeout=12) as client:
+            r = await client.get(URL)
+            r.raise_for_status()
+        root  = ET.fromstring(r.text)
+        items = root.findall(".//item")
+        alerts: list[dict] = []
+        for it in items[:30]:
+            title = (it.findtext("title") or "").strip()
+            link  = (it.findtext("link")  or "").strip()
+            desc  = (it.findtext("description") or "").strip()[:200]
+            # Simple geo heuristic: look for known disease/outbreak keywords
+            kw = title.lower()
+            if not any(w in kw for w in ["outbreak", "disease", "virus", "fever", "cholera",
+                                          "ebola", "mpox", "dengue", "malaria", "polio", "alert",
+                                          "emergency", "epidemic", "pandemic"]):
+                continue
+            alerts.append({
+                "id":       link[:64] or title[:40],
+                "title":    title,
+                "summary":  desc,
+                "category": "disease",
+                "severity": "high" if any(w in kw for w in ["outbreak", "epidemic", "emergency"]) else "medium",
+                "lat":      0.0, "lng": 0.0,  # WHO RSS has no geo; FE uses heatmap
+                "url":      link,
+            })
+        _stamp(alerts, "who_rss")
+        return JSONResponse({"alerts": alerts, "total": len(alerts),
+                             "degraded": False, "_provenance": _provenance("who_rss")})
+    except Exception as exc:
+        print(f"[WHO RSS] {exc}")
+        _CB["who_rss"].failure(str(exc))
+        return JSONResponse({"alerts": [], "total": 0, "degraded": True,
+                             "error": str(exc), "_provenance": _provenance("who_rss")})
+
+
+# ── Layer 15: Air Quality Alerts (OpenAQ free API) ──
+@router.api_route("/api/airquality/v1/listAirQualityAlerts", methods=["POST", "GET", "OPTIONS"])
+async def list_air_quality_alerts(request: Request):
+    if request.method == "OPTIONS":
+        return _options_response()
+    # OpenAQ v3 — completely free, no key required
+    URL = "https://api.openaq.org/v3/locations"
+    data = await guarded_fetch(
+        "waqi", URL,
+        params={"limit": 100, "order_by": "lastUpdated", "sort": "desc",
+                "parameters_id": "2"},  # pm25 = parameter id 2
+        headers={"Accept": "application/json"},
+        ttl=300,
+    )
+    if data is None:
+        return JSONResponse({"alerts": [], "degraded": True, "_provenance": _provenance("waqi")})
+    alerts: list[dict] = []
+    for loc in (data.get("results") or [])[:60]:
+        coords = loc.get("coordinates") or {}
+        lat = coords.get("latitude")
+        lng = coords.get("longitude")
+        if lat is None or lng is None:
+            continue
+        sensors = loc.get("sensors") or []
+        aqi_val = None
+        for s in sensors:
+            last = (s.get("latest") or {}).get("value")
+            if last is not None:
+                aqi_val = last
+                break
+        if aqi_val is None:
+            continue
+        aqi_val = round(float(aqi_val), 1)
+        severity = ("critical" if aqi_val > 200 else
+                    "high"     if aqi_val > 150 else
+                    "medium"   if aqi_val > 100 else
+                    "low")
+        if severity == "low":
+            continue
+        alerts.append({
+            "id":       str(loc.get("id", "")),
+            "title":    f"PM2.5 AQI {aqi_val} — {loc.get('name','Unknown')}",
+            "lat":      float(lat), "lng": float(lng),
+            "severity": severity,
+            "category": "airquality",
+            "aqi":      aqi_val,
+        })
+    _stamp(alerts, "waqi")
+    return JSONResponse({"alerts": alerts, "total": len(alerts),
+                         "degraded": False, "_provenance": _provenance("waqi")})
+
+
+# ── Layer 16: BGP / Network Alerts (RIPE NCC Routing Info) ──
+@router.api_route("/api/bgp/v1/listNetworkAlerts", methods=["POST", "GET", "OPTIONS"])
+async def list_network_alerts(request: Request):
+    if request.method == "OPTIONS":
+        return _options_response()
+    URL = "https://stat.ripe.net/data/country-routing-stats/data.json"
+    # Fetch top 5 countries routing stats as a proxy for BGP anomalies
+    countries = ["US", "RU", "CN", "IR", "KP"]
+    alerts: list[dict] = []
+    country_coords = {
+        "US": (37.09, -95.71), "RU": (61.52, 105.31),
+        "CN": (35.86, 104.19), "IR": (32.42, 53.68),
+        "KP": (40.33, 127.51),
+    }
+    cc_data = await guarded_fetch(
+        "ripe_bgp",
+        "https://stat.ripe.net/data/rir-stats-country/data.json",
+        params={"resource": "world"},
+        ttl=600,
+    )
+    # Fall back to per-country routing stats
+    try:
+        for cc in countries:
+            d = await guarded_fetch(
+                "ripe_bgp", URL,
+                params={"resource": cc, "starttime": "now-1d"},
+                ttl=600,
+            )
+            if not d:
+                continue
+            result = (d.get("data") or {})
+            origs  = result.get("originating_asns", 0) or 0
+            pfs    = result.get("prefixes",          0) or 0
+            lat, lng = country_coords.get(cc, (0.0, 0.0))
+            alerts.append({
+                "id":          f"bgp-{cc}",
+                "title":       f"BGP Routing — {cc}: {origs} ASNs, {pfs} prefixes",
+                "lat":         lat, "lng": lng,
+                "severity":    "low",
+                "category":    "network",
+                "asn_count":   origs,
+                "prefix_count": pfs,
+                "country":     cc,
+            })
+    except Exception as exc:
+        print(f"[RIPE BGP] {exc}")
+    _stamp(alerts, "ripe_bgp")
+    return JSONResponse({"alerts": alerts, "total": len(alerts),
+                         "degraded": len(alerts) == 0,
+                         "_provenance": _provenance("ripe_bgp")})
+
+
+# ── Layer 17: Displacement Events (UNHCR Operational Data Portal) ──
+@router.api_route("/api/displacement/v1/listDisplacementEvents", methods=["POST", "GET", "OPTIONS"])
+async def list_displacement_events(request: Request):
+    if request.method == "OPTIONS":
+        return _options_response()
+    # UNHCR PopStats — free, no key
+    URL = "https://api.unhcr.org/population/v1/population/"
+    data = await guarded_fetch(
+        "who_rss",   # reuse who_rss CB for humanitarian data
+        URL,
+        params={"limit": 50, "yearFrom": "2023", "CF_STATUS": "1",
+                "page": "1", "sortBy": "refugees+desc"},
+        headers={"Accept": "application/json"},
+        ttl=3600,
+    )
+    if data is None:
+        return JSONResponse({"events": [], "degraded": True, "_provenance": _provenance("who_rss")})
+
+    # Country code → rough centroid
+    _CC_LAT: dict[str, tuple[float, float]] = {
+        "SY": (34.8, 38.9), "AF": (33.9, 67.7), "SS": (6.9, 31.3),
+        "SO": (5.1, 46.2),  "UA": (48.4, 31.2), "CD": (-4.0, 21.8),
+        "MM": (17.1, 96.7), "VE": (8.0, -66.6), "ET": (9.1, 40.5),
+        "SD": (12.8, 30.2),
+    }
+    events: list[dict] = []
+    for row in (data.get("items") or [])[:40]:
+        cc = (row.get("coo_iso") or "").upper()
+        refugees = int(row.get("refugees", 0) or 0)
+        if refugees < 1000:
+            continue
+        lat, lng = _CC_LAT.get(cc, (0.0, 0.0))
+        events.append({
+            "id":        f"disp-{cc}-{row.get('year', 0)}",
+            "title":     f"Displacement — {row.get('coo_name', cc)}: {refugees:,} refugees",
+            "lat":       lat, "lng": lng,
+            "severity":  "critical" if refugees > 1_000_000 else "high" if refugees > 100_000 else "medium",
+            "category":  "displacement",
+            "count":     refugees,
+            "year":      row.get("year"),
+            "origin":    row.get("coo_name", cc),
+        })
+    _stamp(events, "who_rss")
+    return JSONResponse({"events": events, "total": len(events),
+                         "degraded": False, "_provenance": _provenance("who_rss")})
+
+
+# ── Layer 18: Economic Indicators (World Bank Open API — free) ──
+@router.api_route("/api/economy/v1/getEconomicIndicators", methods=["POST", "GET", "OPTIONS"])
+async def get_economic_indicators(request: Request):
+    if request.method == "OPTIONS":
+        return _options_response()
+    # World Bank — GDP growth rate, no key needed
+    WB_URL = "https://api.worldbank.org/v2/country/all/indicator/NY.GDP.MKTP.KD.ZG"
+    data = await guarded_fetch(
+        "frankfurter",   # reuse FX CB for economic data
+        WB_URL,
+        params={"format": "json", "mrv": "1", "per_page": "30",
+                "source": "2"},
+        ttl=3600,
+    )
+    _CC_COORD: dict[str, tuple[float, float]] = {
+        "US": (37.1, -95.7), "CN": (35.8, 104.2), "RU": (61.5, 105.3),
+        "DE": (51.2, 10.4),  "JP": (36.2, 138.2), "GB": (55.4, -3.4),
+        "FR": (46.2, 2.2),   "IN": (20.6, 78.9),  "BR": (-14.2, -51.9),
+        "CA": (56.1, -106.3), "AU": (-25.3, 133.8), "ZA": (-30.6, 22.9),
+        "NG": (9.1, 8.7),    "MX": (23.6, -102.5), "AR": (-38.4, -63.6),
+        "TK": (38.9, 35.2),  "SA": (23.9, 45.1),  "EG": (26.8, 30.8),
+        "ID": (-0.8, 113.9), "PK": (30.4, 69.3),
+    }
+    indicators: list[dict] = []
+    if data and isinstance(data, list) and len(data) > 1:
+        for row in (data[1] or [])[:40]:
+            val = row.get("value")
+            if val is None:
+                continue
+            cc  = (row.get("countryiso3code") or row.get("country", {}).get("id", "")).upper()
+            if cc not in _CC_COORD:
+                continue
+            val = round(float(val), 2)
+            lat, lng = _CC_COORD[cc]
+            indicators.append({
+                "id":        f"gdp-{cc}-{row.get('date','')}",
+                "title":     f"GDP Growth {cc}: {val:+.1f}%",
+                "lat":       lat, "lng": lng,
+                "severity":  "critical" if val < -5 else "high" if val < 0 else "low",
+                "category":  "economy",
+                "value":     val,
+                "indicator": "GDP Growth (% annual)",
+                "country":   (row.get("country") or {}).get("value", cc),
+                "year":      row.get("date"),
+            })
+    _stamp(indicators, "frankfurter")
+    return JSONResponse({"indicators": indicators, "total": len(indicators),
+                         "degraded": len(indicators) == 0,
+                         "_provenance": _provenance("frankfurter")})
+
+
+# ── Layer 19: Vessel / Maritime Alerts (GDELT maritime query) ──
+@router.api_route("/api/shipping/v1/listVesselAlerts", methods=["POST", "GET", "OPTIONS"])
+async def list_vessel_alerts(request: Request):
+    if request.method == "OPTIONS":
+        return _options_response()
+    data = await guarded_fetch(
+        "gdelt_conflict",
+        "https://api.gdeltproject.org/api/v2/doc/doc",
+        params={"query": "ship tanker vessel maritime piracy drone attack sea",
+                "mode": "artgeo", "format": "json",
+                "maxrecords": "25", "timespan": "24h", "sort": "ToneDesc"},
+        ttl=300,
+    )
+    alerts: list[dict] = []
+    if data:
+        for a in (data.get("articles") or [])[:25]:
+            lat = a.get("actiongeo_lat")
+            lon = a.get("actiongeo_long")
+            if not lat or not lon:
+                continue
+            try:
+                lat, lon = float(lat), float(lon)
+            except (ValueError, TypeError):
+                continue
+            tone  = float(a.get("tone", 0) or 0)
+            alerts.append({
+                "id":       (a.get("url") or "")[:64],
+                "title":    (a.get("title") or "")[:120],
+                "lat":      lat, "lng": lon,
+                "severity": "critical" if tone < -10 else "high" if tone < -5 else "medium",
+                "category": "shipping",
+                "url":      a.get("url", ""),
+            })
+    _stamp(alerts, "gdelt_conflict")
+    return JSONResponse({"alerts": alerts, "total": len(alerts),
+                         "degraded": len(alerts) == 0,
+                         "_provenance": _provenance("gdelt_conflict")})
 
 
 # ──────────────────────────────────────────────────────────────

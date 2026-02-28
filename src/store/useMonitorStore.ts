@@ -18,13 +18,34 @@ export type MonitorMode = 'world' | 'tech' | 'finance' | 'happy';
 export type Severity = 'low' | 'medium' | 'high' | 'critical';
 export type TimeWindow = '1h' | '6h' | '24h' | '48h' | '7d';
 
-// ── Layer catalog (20+ layers) ───────────────────────────────────────────────
+// ── Layer catalog (expanded — 36 layers) ────────────────────────────────────
 export const ALL_LAYERS = [
-  'conflict', 'earthquake', 'wildfire', 'climate', 'flights',
-  'cyber', 'finance', 'infrastructure', 'cables', 'pipelines',
-  'displacement', 'datacenter', 'custom',
+  // Geopolitical
+  'conflict', 'displacement', 'cyber', 'government',
+  // Natural hazards
+  'earthquake', 'wildfire', 'climate', 'volcano', 'flood', 'storm', 'disease',
+  // Infrastructure
+  'flights', 'shipping', 'cables', 'pipelines', 'datacenter', 'infrastructure', 'power',
+  // Economic
+  'finance', 'crypto', 'energy', 'economy',
+  // Environmental
+  'airquality', 'radiation', 'deforestation',
+  // Intelligence feeds
+  'network', 'bgp', 'leaks', 'custom',
+  // Space / special
+  'satellites', 'solar',
 ] as const;
 export type LayerId = (typeof ALL_LAYERS)[number];
+
+// ── Provenance metadata ─────────────────────────────────────────────────────
+export interface Provenance {
+  provider: string;       // Circuit-breaker key, e.g. "usgs"
+  source: string;         // Human-readable name, e.g. "USGS GeoJSON Feed"
+  sourceUrl: string;      // Canonical source URL
+  retrievedAt: number;    // Unix milliseconds
+  cacheAge: number;       // Seconds since last cache refresh
+  retrievalMethod: string;// "http_cached" | "http_live" | "ws_push"
+}
 
 // ── Data interfaces ─────────────────────────────────────────────────────────
 export interface ViewState {
@@ -48,6 +69,7 @@ export interface RealEvent {
   timestamp: 'today' | 'yesterday' | 'this_week';
   description: string;
   fetchedAt?: number; // unix ms — for time-window filtering
+  _provenance?: Provenance;
 }
 
 export interface RealFireEvent {
@@ -58,6 +80,7 @@ export interface RealFireEvent {
   brightness: number;
   frp: number;
   fetchedAt?: number;
+  _provenance?: Provenance;
 }
 
 export interface RealTicker {
@@ -200,6 +223,13 @@ export interface MonitorState {
   providerHealth: ProviderHealth[];
   providerHealthSummary: { ok: number; degraded: number; down: number; key_required: number; total: number } | null;
   fetchProviderHealth: () => Promise<void>;
+
+  // ── WebSocket push (Globe /ws/globe)
+  wsConnected: boolean;
+  wsLastPush: number | null;
+  setWsConnected: (connected: boolean) => void;
+  mergeGlobeDelta: (layer: string, events: RealEvent[]) => void;
+  setGlobeTickers: (tickers: RealTicker[]) => void;
 
   // ── Signal Fusion
   fusionItems: FusionItem[];
@@ -379,6 +409,31 @@ export const useMonitorStore = create<MonitorState>()(
           providerHealthSummary: data.summary || null,
         });
       },
+
+      // ── WebSocket push state
+      wsConnected: false,
+      wsLastPush: null,
+      setWsConnected: (connected) => set({ wsConnected: connected }),
+      mergeGlobeDelta: (layer, events) =>
+        set((s) => {
+          const now = Date.now();
+          const incoming = events.map((e) => ({
+            ...e,
+            fetchedAt: e.fetchedAt ?? now,
+            location:  e.location ?? '',
+            timestamp: 'today' as const,
+            description: e.description ?? '',
+          }));
+          const incoming_ids = new Set(incoming.map((e) => e.id));
+          const existing = s.realEvents.filter(
+            (e) => e.category !== layer || !incoming_ids.has(e.id)
+          );
+          return {
+            realEvents: [...incoming, ...existing].slice(0, 500),
+            wsLastPush: now,
+          };
+        }),
+      setGlobeTickers: (tickers) => set({ realMarketTickers: tickers }),
 
       // ── Signal Fusion
       fusionItems: [],

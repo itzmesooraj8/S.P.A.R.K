@@ -1,3 +1,1 @@
-[submodule "external/worldmonitor"]
-	path = external/worldmonitor
-	url = https://github.com/koala73/worldmonitor.git
+# No active submodules — worldmonitor dependency removed (SPARK Globe self-contained)

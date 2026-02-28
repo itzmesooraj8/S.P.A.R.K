@@ -19,7 +19,7 @@ from intelligence.cross_analyzer import cross_analyzer
 from intelligence.pattern_memory import pattern_store
 from intelligence.optimizer import optimizer
 from intelligence.trust_layer import trust_store
-from globe_api import router as globe_api_router
+from globe_api import router as globe_api_router, globe_broadcaster
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -58,6 +58,9 @@ async def lifespan(app: FastAPI):
     # Start background intelligence loop
     asyncio.create_task(sys_monitor.start_monitoring(ws_manager))
     print("✅ [SPARK] Background monitor started.")
+    # Start Globe WebSocket push broadcaster (every 30s)
+    globe_broadcaster.start()
+    print("🌍 [SPARK] Globe WS broadcaster started.")
     
     yield
     
@@ -160,6 +163,31 @@ async def websocket_system(websocket: WebSocket):
             await websocket.receive_text()
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "system")
+
+@app.websocket("/ws/globe")
+async def websocket_globe(websocket: WebSocket):
+    """Real-time Globe Intelligence push channel.
+    Server messages:
+      GLOBE_DELTA   — new/updated events for a specific layer
+      GLOBE_TICKER  — market/financial tick updates
+      GLOBE_FUSION  — Signal Fusion alerts
+      GLOBE_HEALTH  — provider health summary
+    """
+    await websocket.accept()
+    globe_broadcaster.add_client(websocket)
+    try:
+        # Trigger an immediate push cycle so the client gets data on connect
+        await globe_broadcaster._push_cycle()
+        while True:
+            # Keep the connection alive; client may send ping or layer-toggle messages
+            data = await websocket.receive_text()
+            # Honour explicit client ping
+            if data.strip() == "ping":
+                await websocket.send_text('{"type":"pong"}')
+    except WebSocketDisconnect:
+        globe_broadcaster.remove_client(websocket)
+    except Exception:
+        globe_broadcaster.remove_client(websocket)
 
 # EventBus subscribers to handle outward flow (Forward response_token back)
 @event_bus.subscribe("response_token")
