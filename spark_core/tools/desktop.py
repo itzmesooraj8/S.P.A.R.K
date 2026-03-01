@@ -15,6 +15,9 @@ from typing import Any, Dict
 
 from security.policy import ToolDefinition, RiskLevel, RequiresConfirmationError
 
+# Alias for readability in this module (AMBER risk = requires confirmation)
+_AMBER = RiskLevel.YELLOW
+
 # ── App name → executable mapping (Windows-first) ─────────────────────────
 
 _APP_ALIASES: Dict[str, str] = {
@@ -158,7 +161,7 @@ desktop_tools = [
     ToolDefinition(
         name="run_command",
         handler=run_command,
-        risk_level=RiskLevel.AMBER,
+        risk_level=_AMBER,
         description="Execute a shell command on the host OS. Requires confirmation.",
     ),
 ]

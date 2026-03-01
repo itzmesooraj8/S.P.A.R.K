@@ -16,6 +16,7 @@ class ToolDefinition:
     required_capabilities: List[str] = field(default_factory=list)
     timeout_sec: float = 30.0
     retries: int = 0
+    description: str = ""
 
 class AuthorizationResult:
     def __init__(self, allowed: bool, requires_confirmation: bool = False, reason: str = ""):

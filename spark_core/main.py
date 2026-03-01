@@ -23,7 +23,7 @@ from intelligence.trust_layer import trust_store
 from globe_api import router as globe_api_router, globe_broadcaster
 
 # ── SPARK OS — New Systems ─────────────────────────────────────────────────────
-from auth.jwt_handler import create_token_pair, refresh_access_token, require_auth
+from auth.jwt_handler import create_token_pair, refresh_access_token, require_auth, ACCESS_TOKEN_TTL
 from auth.user_store import authenticate, list_users, create_user
 from llm.model_router import model_router
 from agents.commander import commander
@@ -401,6 +401,10 @@ async def login(req: AuthRequest):
         from fastapi import HTTPException
         raise HTTPException(status_code=401, detail="Invalid credentials")
     tokens = create_token_pair(user["sub"], user["role"])
+    raw_role = user["role"].upper()
+    fe_role = "admin" if raw_role in ("ROOT", "ADMIN") else ("viewer" if raw_role == "VIEWER" else "operator")
+    tokens["expires_in"] = ACCESS_TOKEN_TTL
+    tokens["user"] = {"username": user["sub"], "role": fe_role}
     return tokens
 
 @app.post("/api/auth/refresh")
@@ -410,6 +414,7 @@ async def refresh_token(req: RefreshRequest):
     if not result:
         from fastapi import HTTPException
         raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    result["expires_in"] = ACCESS_TOKEN_TTL
     return result
 
 @app.post("/api/auth/logout")
