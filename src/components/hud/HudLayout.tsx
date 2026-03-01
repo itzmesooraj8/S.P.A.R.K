@@ -23,6 +23,7 @@ import PluginsModule from './modules/PluginsModule';
 import SchedulerModule from './modules/SchedulerModule';
 import BrowserModule from './modules/BrowserModule';
 import NeuralSearchModule from './modules/NeuralSearchModule';
+import MusicModule from './modules/MusicModule';
 import SparkAlertToast from './SparkAlertToast';
 import AgentConfirmModal from './AgentConfirmModal';
 import CommandBar from './CommandBar';
@@ -35,7 +36,7 @@ import { useCommanderContext } from '@/hooks/useCommanderContext';
 import { useFxStore } from '@/store/useFxStore';
 import { Brain } from 'lucide-react';
 
-type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'scheduler' | 'browser' | 'neuralsearch';
+type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'scheduler' | 'browser' | 'neuralsearch' | 'music';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
   security:  '🔐 SECURITY MODE',
@@ -54,6 +55,7 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
   scheduler:   '⏰ SCHEDULER & REMINDERS',
   browser:     '🌐 BROWSER AGENT',
   neuralsearch:'🧠 NEURAL SEARCH · CHROMADB',
+  music:       '🎵 MUSIC PLAYER',
 };
 
 export default function HudLayout() {
@@ -239,6 +241,7 @@ export default function HudLayout() {
                   {activeModule === 'scheduler'   && <SchedulerModule />}
                   {activeModule === 'browser'     && <BrowserModule />}
                   {activeModule === 'neuralsearch'&& <NeuralSearchModule />}
+                  {activeModule === 'music'        && <MusicModule />}
                 </div>
               </motion.div>
             )}

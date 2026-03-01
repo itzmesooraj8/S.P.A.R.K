@@ -48,7 +48,7 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     { icon: <Lock size={16} />, label: 'LOCK', action: () => { }, color: 'hud-amber' },
     { icon: <Rocket size={16} />, label: 'LAUNCH', action: () => { } },
     { icon: <Activity size={16} />, label: 'SCAN', action: () => onOpenModule('analytics') },
-    { icon: <Music size={16} />, label: 'MUSIC', action: () => { } },
+    { icon: <Music size={16} />, label: 'MUSIC', action: () => onOpenModule('music'), color: 'hud-cyan' },
     { icon: <Globe size={16} />, label: 'GLOBE', action: () => onOpenModule('globe') },
   ];
 

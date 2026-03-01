@@ -39,6 +39,8 @@ from neural_search.search import neural_router
 from plugins.manager import plugins_router
 from scheduler_service import scheduler_router, init_scheduler
 from agents.browser_agent import browser_router
+from security.firewall_router import router as security_router  # /api/security/*
+from music.router import router as music_router                  # /api/music/*
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -238,11 +240,13 @@ app.add_middleware(
 app.include_router(globe_api_router)
 
 # ── New SPARK Feature Routers ─────────────────────────────────────────────────
-app.include_router(tts_router)      # /api/voice/*   — TTS + WS audio
-app.include_router(neural_router)   # /api/neural-search/* — ChromaDB semantic search
-app.include_router(plugins_router)  # /api/plugins/*  — plugin enable/disable
-app.include_router(scheduler_router)# /api/scheduler/* — reminders + cron jobs
-app.include_router(browser_router)  # /api/browser/*  — Playwright web agent
+app.include_router(tts_router)       # /api/voice/*   — TTS + WS audio
+app.include_router(neural_router)    # /api/neural-search/* — ChromaDB semantic search
+app.include_router(plugins_router)   # /api/plugins/*  — plugin enable/disable
+app.include_router(scheduler_router) # /api/scheduler/* — reminders + cron jobs
+app.include_router(browser_router)   # /api/browser/*  — Playwright web agent
+app.include_router(security_router)  # /api/security/* — firewall + network telemetry
+app.include_router(music_router)     # /api/music/*    — local audio file browser
 
 # -----------------
 # API ENDPOINTS

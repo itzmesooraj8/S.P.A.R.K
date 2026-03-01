@@ -1,6 +1,16 @@
 import { useState, useEffect, useRef } from 'react';
-import { Shield, Eye, Fingerprint, Lock, AlertTriangle, CheckCircle, XCircle, Search } from 'lucide-react';
+import { Shield, Eye, Fingerprint, Lock, AlertTriangle, CheckCircle, XCircle, Search, Wifi, Activity } from 'lucide-react';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
+
+const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+
+interface SecurityStatus {
+  listening_ports: { port: number; process: string }[];
+  connections: { total: number; established: number; external_hosts: string[] };
+  threat_level: string;
+  net_io: { bytes_sent_mb: number; bytes_recv_mb: number };
+  top_processes: { name: string; cpu: number; mem: number; risk: string }[];
+}
 
 export default function SecurityModule() {
   const { auditMeta, threatLevel } = useSystemMetrics();
@@ -9,6 +19,23 @@ export default function SecurityModule() {
   const [fingerProgress, setFingerProgress] = useState(0);
   const [threatAlert, setThreatAlert] = useState(false);
   const [biometricStatus, setBiometricStatus] = useState<'scanning' | 'verified' | 'denied'>('scanning');
+  const [secStatus, setSecStatus] = useState<SecurityStatus | null>(null);
+  const [secLoading, setSecLoading] = useState(false);
+
+  // Fetch real security data
+  useEffect(() => {
+    const fetchSec = async () => {
+      setSecLoading(true);
+      try {
+        const r = await fetch(`${API}/api/security/status`);
+        if (r.ok) setSecStatus(await r.json());
+      } catch { /* silently skip if backend offline */ }
+      finally { setSecLoading(false); }
+    };
+    fetchSec();
+    const iv = setInterval(fetchSec, 15_000); // refresh every 15s
+    return () => clearInterval(iv);
+  }, []);
 
   useEffect(() => {
     const interval = setInterval(() => {
@@ -175,6 +202,81 @@ export default function SecurityModule() {
             </div>
           ))}
         </div>
+      </div>
+
+      {/* Real-time Network Status */}
+      <div className="hud-panel rounded p-3">
+        <div className="flex items-center justify-between mb-2">
+          <div className="flex items-center gap-2">
+            <Wifi size={11} className="text-hud-cyan" />
+            <span className="font-orbitron text-[9px] text-hud-cyan/60">NETWORK TELEMETRY</span>
+          </div>
+          {secStatus && (
+            <span className={`text-[8px] font-orbitron px-1.5 py-0.5 rounded border ${
+              secStatus.threat_level === 'CRITICAL' ? 'text-hud-red border-hud-red/40 animate-pulse' :
+              secStatus.threat_level === 'HIGH'     ? 'text-hud-amber border-hud-amber/40' :
+              secStatus.threat_level === 'MEDIUM'   ? 'text-hud-amber border-hud-amber/20' :
+              'text-hud-green border-hud-green/30'
+            }`}>{secStatus.threat_level}</span>
+          )}
+        </div>
+        {secLoading && !secStatus && (
+          <div className="text-[9px] text-hud-cyan/30 font-mono-tech text-center py-2 animate-pulse">SCANNING NETWORK...</div>
+        )}
+        {secStatus && (
+          <div className="space-y-2">
+            {/* Connection counts */}
+            <div className="grid grid-cols-3 gap-1">
+              {[
+                { label: 'TOTAL', value: secStatus.connections.total },
+                { label: 'ACTIVE', value: secStatus.connections.established },
+                { label: 'EXTERNAL', value: secStatus.connections.external_hosts.length },
+              ].map(c => (
+                <div key={c.label} className="bg-black/40 rounded p-1.5 text-center border border-hud-cyan/10">
+                  <div className="text-[8px] text-hud-cyan/40 font-orbitron">{c.label}</div>
+                  <div className="text-[11px] font-mono-tech text-hud-cyan">{c.value}</div>
+                </div>
+              ))}
+            </div>
+            {/* Net I/O */}
+            <div className="grid grid-cols-2 gap-1">
+              <div className="bg-black/40 rounded p-1.5 border border-hud-cyan/10">
+                <div className="text-[8px] text-hud-cyan/40 font-orbitron">↑ SENT</div>
+                <div className="text-[10px] font-mono-tech text-hud-green">{secStatus.net_io.bytes_sent_mb} MB</div>
+              </div>
+              <div className="bg-black/40 rounded p-1.5 border border-hud-cyan/10">
+                <div className="text-[8px] text-hud-cyan/40 font-orbitron">↓ RECV</div>
+                <div className="text-[10px] font-mono-tech text-hud-cyan">{secStatus.net_io.bytes_recv_mb} MB</div>
+              </div>
+            </div>
+            {/* Listening ports */}
+            {secStatus.listening_ports.length > 0 && (
+              <div>
+                <div className="text-[8px] text-hud-cyan/40 font-orbitron mb-1">LISTENING PORTS</div>
+                <div className="flex flex-wrap gap-1">
+                  {secStatus.listening_ports.slice(0, 10).map(p => (
+                    <span key={p.port} className="text-[8px] font-mono-tech text-hud-cyan/70 bg-black/30 px-1.5 py-0.5 rounded border border-hud-cyan/15"
+                      title={p.process}>:{p.port}</span>
+                  ))}
+                  {secStatus.listening_ports.length > 10 && (
+                    <span className="text-[8px] text-hud-cyan/30 font-mono-tech">+{secStatus.listening_ports.length - 10}</span>
+                  )}
+                </div>
+              </div>
+            )}
+            {/* Top processes by CPU */}
+            <div>
+              <div className="text-[8px] text-hud-cyan/40 font-orbitron mb-1">TOP PROCESSES</div>
+              {secStatus.top_processes.slice(0, 4).map((p, i) => (
+                <div key={i} className="flex items-center gap-2 mb-0.5">
+                  <span className={`text-[7px] font-orbitron px-1 rounded ${p.risk === 'CRITICAL' ? 'text-hud-red bg-hud-red/10' : p.risk === 'HIGH' ? 'text-hud-amber bg-hud-amber/10' : 'text-hud-cyan/30 bg-transparent'}`}>{p.risk}</span>
+                  <span className="flex-1 text-[9px] font-mono-tech text-hud-cyan/70 truncate">{p.name}</span>
+                  <span className="text-[8px] font-mono-tech text-hud-cyan/50">{p.cpu}%</span>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
       </div>
 
       {/* Threat map */}
