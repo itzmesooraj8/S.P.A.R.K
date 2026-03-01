@@ -63,7 +63,12 @@ class BaseAgent(ABC):
         print(f"🤖 [Agent:{self.name}] Initialized")
 
     def start(self):
-        """Start the agent's processing loop as a background asyncio task."""
+        """Start the agent — safe to call at import time (no event loop needed)."""
+        # No-op here; actual task creation is deferred to ensure_started()
+        pass
+
+    async def ensure_started(self):
+        """Create the asyncio background task. Must be called inside a running loop."""
         if not self._started:
             asyncio.create_task(self._run_loop())
             self._started = True

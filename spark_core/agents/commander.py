@@ -51,11 +51,17 @@ class Commander:
 
         # Subscribe to agent results
         event_bus.subscribe("agent_result")(self._handle_result)
-        print(f"🎖️  [Commander] {len(self._agents)} agents online: {list(self._agents.keys())}")
+        print(f"🎖️  [Commander] {len(self._agents)} agents registered: {list(self._agents.keys())}")
 
     def _register(self, agent: BaseAgent):
-        agent.start()
+        # Don't start here — deferred to startup() called from FastAPI lifespan
         self._agents[agent.name] = agent
+
+    async def startup(self):
+        """Start all agent loops — call this from inside the running event loop."""
+        for agent in self._agents.values():
+            await agent.ensure_started()
+        print(f"🎖️  [Commander] All {len(self._agents)} agents started")
 
     # ── Task routing ──────────────────────────────────────────────────────────
 

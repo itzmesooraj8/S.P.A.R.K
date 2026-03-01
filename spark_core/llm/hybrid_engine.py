@@ -1,20 +1,39 @@
 import asyncio
 import os
+import pathlib
 import httpx
 from typing import Optional
 
 # Model can be overridden via env var (loaded from .env by run_server.py)
 _DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3:8b")
+_GEMINI_FALLBACK_MODEL = "gemini-2.0-flash"
+
+
+def _load_google_key() -> str:
+    """Load Google Gemini API key from env var or secrets.yaml."""
+    val = os.getenv("GOOGLE_GEMINI_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+    if not val:
+        try:
+            import yaml
+            p = pathlib.Path(__file__).parent.parent.parent / "config" / "secrets.yaml"
+            if p.exists():
+                data = yaml.safe_load(p.read_text()) or {}
+                val = data.get("keys", {}).get("google_gemini", "")
+        except Exception:
+            pass
+    return val or ""
+
 
 class HybridLLM:
     """
     Hybrid LLM engine to call Local Ollama as primary.
-    If it fails or input is too large, fallback to Cloud (Gemini/Claude/OpenAI).
+    If it fails or input is too large, fallback to Cloud (Gemini).
     """
     def __init__(self, model: str = _DEFAULT_MODEL, ollama_host: str = "http://127.0.0.1:11434"):
         self.model = model
         self.host = ollama_host
-        print(f"🧬 [LLM] Engine Booting. Primary: Local ({model}) | Fallback: Cloud")
+        self._google_api_key = _load_google_key()
+        print(f"🧬 [LLM] Engine Booting. Primary: Local ({model}) | Fallback: Gemini ({_GEMINI_FALLBACK_MODEL})")
 
     async def is_local_available(self) -> bool:
         try:
@@ -70,7 +89,33 @@ class HybridLLM:
             yield await self.call_cloud_fallback(system_prompt, user_text)
 
     async def call_cloud_fallback(self, system_prompt: str, user_text: str) -> str:
-        # Implement provider logic later (e.g. Gemini via google-genai)
-        print("☁️ [LLM-CLOUD] Processing via cloud fallback...")
-        await asyncio.sleep(1) # simulate call
-        return "I am processing this via cloud fallback due to local memory constraints or unavailability."
+        """Call Gemini via google-generativeai as cloud fallback."""
+        print(f"☁️ [LLM-CLOUD] Routing to Gemini ({_GEMINI_FALLBACK_MODEL})...")
+        if not self._google_api_key:
+            return "[SPARK] Cloud fallback unavailable: no Google API key configured in config/secrets.yaml."
+        try:
+            import google.generativeai as genai
+            genai.configure(api_key=self._google_api_key)
+            model = genai.GenerativeModel(
+                _GEMINI_FALLBACK_MODEL,
+                system_instruction=system_prompt,
+            )
+            response = await asyncio.to_thread(
+                model.generate_content, user_text
+            )
+            result = response.text if hasattr(response, "text") else str(response)
+            print(f"☁️ [LLM-CLOUD] Gemini response received ({len(result)} chars).")
+            return result
+        except Exception as e:
+            err_str = str(e)
+            # Detect quota / rate-limit errors and return a clean user-facing message
+            if any(kw in err_str for kw in ("429", "RESOURCE_EXHAUSTED", "quota", "rate", "FreeTier")):
+                wait_hint = ""
+                import re
+                m = re.search(r'seconds: (\d+)', err_str)
+                if m:
+                    wait_hint = f" Please wait ~{m.group(1)}s and try again."
+                print(f"⚠️ [LLM-CLOUD] Gemini rate limit hit.{wait_hint}")
+                return f"I'm temporarily rate-limited by the cloud API (free tier).{wait_hint} Please try again in a moment."
+            print(f"⚠️ [LLM-CLOUD] Gemini call failed: {repr(e)}")
+            return f"[SPARK] Cloud LLM unavailable: {type(e).__name__}."

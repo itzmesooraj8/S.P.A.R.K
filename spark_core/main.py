@@ -95,6 +95,10 @@ async def lifespan(app: FastAPI):
     init_scheduler()
     print("⏰ [SPARK] Task scheduler initialized.")
 
+    # ── Start all registered agents (deferred from import time) ─────────────
+    await commander.startup()
+    print("🎖️  [SPARK] Commander agents online.")
+
     # ── Auto-index knowledge base into ChromaDB ─────────────────────────────
     try:
         from neural_search.search import get_collection

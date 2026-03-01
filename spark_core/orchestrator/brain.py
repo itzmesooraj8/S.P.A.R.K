@@ -172,10 +172,13 @@ class AIOrchestrator:
                             buffer_mode = True
                             event_bus.publish("brain_decision", {"action": "parse_json_buffer"})
                         else:
-                            # Flush whatever natural string we accumulated and resume normal streaming
+                            # Flush whatever natural string we accumulated as word-sized chunks
+                            # (char-by-char floods the WS queue when cloud LLMs return a full blob)
                             event_bus.publish("brain_decision", {"action": "stream_natural_text", "session_id": session_id})
-                            for char in full_response:
-                                event_bus.publish("response_token", {"token": char, "session_id": session_id})
+                            words = full_response.split(" ")
+                            for i, word in enumerate(words):
+                                chunk = word if i == len(words) - 1 else word + " "
+                                event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
                 elif not buffer_mode:
                     # Normal Stream
                     event_bus.publish("response_token", {"token": token, "session_id": session_id})
@@ -224,8 +227,10 @@ class AIOrchestrator:
                 else:
                     # It started with '{' but wasn't a valid tool call JSON. Flush buffer intact.
                     event_bus.publish("brain_decision", {"action": "invalid_tool_json_fallback", "session_id": session_id})
-                    for char in full_response:
-                        event_bus.publish("response_token", {"token": char, "session_id": session_id})
+                    words = full_response.split(" ")
+                    for i, word in enumerate(words):
+                        chunk = word if i == len(words) - 1 else word + " "
+                        event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
                     if full_response:
                         self.memory.add_ai_message(full_response.strip())
             else:

@@ -6,7 +6,9 @@ from system.state import unified_state
 from intelligence.registry import project_registry
 
 # Max outbound messages buffered per session before backpressure drops oldest.
-_SESSION_QUEUE_MAXSIZE = 256
+_SESSION_QUEUE_MAXSIZE = 1024
+# Only log WS drop warnings once every N drops to avoid terminal flood.
+_DROP_LOG_INTERVAL = 50
 
 class WebSocketManager:
     def __init__(self):
@@ -118,8 +120,11 @@ class WebSocketManager:
             # Drop oldest item to make room (maintain freshness, not completeness)
             try:
                 queue.get_nowait()
-                self._session_dropped[session_id] = self._session_dropped.get(session_id, 0) + 1
-                print(f"⚠️ [WS] Session queue full for {session_id[:8]}; dropped oldest frame.")
+                dropped = self._session_dropped.get(session_id, 0) + 1
+                self._session_dropped[session_id] = dropped
+                # Only log every _DROP_LOG_INTERVAL drops to prevent terminal flood
+                if dropped % _DROP_LOG_INTERVAL == 1:
+                    print(f"⚠️ [WS] Session queue pressure for {session_id[:8]}; drop #{dropped} (logged every {_DROP_LOG_INTERVAL}).")
             except asyncio.QueueEmpty:
                 pass
         try:
