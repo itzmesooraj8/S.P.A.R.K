@@ -174,37 +174,82 @@ app.include_router(globe_api_router)
 # API ENDPOINTS
 # -----------------
 
-@app.get("/api/tools")
-async def list_tools():
-    """Returns a registry of available tools with their names and risk levels."""
-    tools = []
-    # Orchestrator lazy loads router, ensure initialized if needed?
-    # Or orchestrator.router is always available?
-    # Assuming orchestrator.router.registry exists.
-    registry = orchestrator.router.registry
-    for name, tool_def in registry.tools.items():
-        tools.append({
-            "name": name,
-            "description": tool_def.handler.__doc__ or "No description provided.",
-            "risk_level": tool_def.risk_level.name,
-            # "parameters": inspect.signature(tool_def.handler).parameters # simplified
-        })
-    return {"tools": tools}
-
 from system.event_bus import event_bus
 
 # -----------------
-# WEBSOCKET NAMESPACES
+# VERSION & CONFIG
+# -----------------
+
+@app.get("/api/version")
+async def api_version():
+    """Return SPARK version and build info."""
+    return {
+        "version": "3.0.0",
+        "codename": "SOVEREIGN",
+        "api_schema_version": 1,
+        "build_date": "2026-03-01",
+    }
+
+@app.get("/api/config/status")
+async def api_config_status():
+    """Which providers are configured, key presence, degraded-mode flags."""
+    import os as _os
+    def _key_present(env: str) -> bool:
+        return bool(_os.getenv(env))
+
+    # Load secrets.yaml for key detection without exposing values
+    yaml_keys: dict = {}
+    try:
+        import yaml as _yaml
+        _cfg_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "config", "secrets.yaml")
+        if _os.path.exists(_cfg_path):
+            with open(_cfg_path) as _f:
+                yaml_keys = _yaml.safe_load(_f) or {}
+    except Exception:
+        pass
+
+    def _yaml_key(k: str) -> bool:
+        return bool(yaml_keys.get(k))
+
+    providers = {
+        "ollama": {
+            "enabled": True,  # always available locally
+            "base_url": _os.getenv("OLLAMA_HOST", "http://localhost:11434"),
+        },
+        "openai": {
+            "key_set": _key_present("OPENAI_API_KEY") or _yaml_key("openai_api_key"),
+            "degraded": not (_key_present("OPENAI_API_KEY") or _yaml_key("openai_api_key")),
+        },
+        "anthropic": {
+            "key_set": _key_present("ANTHROPIC_API_KEY") or _yaml_key("anthropic_api_key"),
+            "degraded": not (_key_present("ANTHROPIC_API_KEY") or _yaml_key("anthropic_api_key")),
+        },
+        "google": {
+            "key_set": _key_present("GOOGLE_API_KEY") or _yaml_key("google_api_key"),
+            "degraded": not (_key_present("GOOGLE_API_KEY") or _yaml_key("google_api_key")),
+        },
+        "nasa_firms": {
+            "key_set": _key_present("NASA_FIRMS_API_KEY") or _yaml_key("nasa_firms_api_key"),
+        },
+    }
+
+    degraded = [k for k, v in providers.items() if v.get("degraded")]
+
+    return {
+        "providers": providers,
+        "degraded_providers": degraded,
+        "degraded_mode": len(degraded) > 0,
+        "jwt_secret_from_env": _key_present("SPARK_JWT_SECRET"),
+    }
+
+# -----------------
+# TOOLS REGISTRY
 # -----------------
 
 @app.get("/api/tools")
 async def list_tools():
-    """Returns a registry of available tools with their names, descriptions, and risk levels."""
+    """Returns the registry of available tools with names, descriptions, and risk levels."""
     try:
-        if not hasattr(orchestrator, 'router') or not orchestrator.router:
-            # Force initialization if needed, though typically done in lifespan
-            pass
-            
         registry = orchestrator.router.registry
         tool_list = []
         for name, tool_def in registry.tools.items():
@@ -212,11 +257,14 @@ async def list_tools():
                 "name": name,
                 "description": tool_def.description or (tool_def.handler.__doc__ if tool_def.handler else "No description"),
                 "risk_level": tool_def.risk_level.name,
-                # "schema": ... (could extract signature here)
             })
-        return {"tools": tool_list}
+        return {"tools": tool_list, "count": len(tool_list)}
     except Exception as e:
-        return {"error": str(e), "tools": []}
+        return {"error": str(e), "tools": [], "count": 0}
+
+# -----------------
+# WEBSOCKET NAMESPACES
+# -----------------
 
 @app.websocket("/ws/ai")
 async def websocket_ai(websocket: WebSocket):
@@ -248,7 +296,14 @@ async def websocket_system(websocket: WebSocket):
     await ws_manager.connect(websocket, "system")
     try:
         while True:
-            await websocket.receive_text()
+            raw = await websocket.receive_text()
+            # Respond to ping frames to keep connection alive
+            try:
+                frame = json.loads(raw)
+                if frame.get("type") == "PING":
+                    await websocket.send_text(json.dumps({"v": 1, "type": "PONG", "ts": time.time() * 1000}))
+            except (json.JSONDecodeError, Exception):
+                pass
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "system")
 
@@ -305,6 +360,20 @@ async def handle_confirm_tool(payload):
     await ws_manager.broadcast_json({
         "type": "CONFIRM_TOOL",
         **payload
+    }, "system")
+
+
+@event_bus.subscribe("spark_alert")
+async def handle_spark_alert(payload):
+    """Forward cognitive loop alerts to all connected /ws/system clients."""
+    await ws_manager.broadcast_json({
+        "v": 1,
+        "type": "ALERT",
+        "ts": time.time() * 1000,
+        "severity": payload.get("severity", "info"),
+        "title": payload.get("title", "SPARK Alert"),
+        "body": payload.get("body", payload.get("message", "")),
+        "source": payload.get("source", "cognitive_loop"),
     }, "system")
 
 
@@ -603,8 +672,84 @@ async def evolution_analyze():
     }
 
 
+from globe.cases import create_case, list_cases, get_case, update_case, delete_case
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# COGNITIVE DASHBOARD — SPARK OS Self-Intelligence State
+# CASES — Incident / Case Persistence
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+from contracts.models import CaseItem as CaseItemModel
+
+class CaseCreateRequest(BaseModel):
+    title: str
+    description: str = ""
+    severity: str = "medium"
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    layer: Optional[str] = None
+    tags: List[str] = []
+    meta: dict = {}
+
+class CasePatchRequest(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    severity: Optional[str] = None
+    lat: Optional[float] = None
+    lng: Optional[float] = None
+    layer: Optional[str] = None
+    tags: Optional[List[str]] = None
+    meta: Optional[dict] = None
+
+@app.get("/api/globe/cases")
+async def cases_list(
+    severity: Optional[str] = None,
+    layer: Optional[str] = None,
+    limit: int = 100,
+    offset: int = 0,
+):
+    """List saved incident cases, optionally filtered by severity or layer."""
+    cases, total = await list_cases(severity=severity, layer=layer, limit=limit, offset=offset)
+    return {"cases": cases, "total": total}
+
+@app.post("/api/globe/cases", status_code=201)
+async def cases_create(req: CaseCreateRequest):
+    """Create a new incident case."""
+    case = await create_case(
+        title=req.title,
+        description=req.description,
+        severity=req.severity,
+        lat=req.lat,
+        lng=req.lng,
+        layer=req.layer,
+        tags=req.tags,
+        meta=req.meta,
+    )
+    return case
+
+@app.get("/api/globe/cases/{case_id}")
+async def cases_get(case_id: str):
+    from fastapi import HTTPException
+    case = await get_case(case_id)
+    if not case:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return case
+
+@app.patch("/api/globe/cases/{case_id}")
+async def cases_update(case_id: str, req: CasePatchRequest):
+    from fastapi import HTTPException
+    updated = await update_case(case_id, **req.model_dump(exclude_none=True))
+    if not updated:
+        raise HTTPException(status_code=404, detail="Case not found")
+    return updated
+
+@app.delete("/api/globe/cases/{case_id}", status_code=204)
+async def cases_delete(case_id: str):
+    from fastapi import HTTPException
+    deleted = await delete_case(case_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Case not found")
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 @app.get("/api/os/status")

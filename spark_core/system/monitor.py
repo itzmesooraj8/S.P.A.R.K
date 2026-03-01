@@ -180,7 +180,19 @@ class SystemMonitor:
             else:
                 gpu_pct = disk # fallback visualization if GPUtil not found
 
+            net_io = psutil.net_io_counters()
             payload = {
+                # Contract-aligned keys (v1)
+                "cpu_percent": cpu,
+                "memory_percent": ram,
+                "disk_usage": disk,
+                "net_io": {
+                    "bytes_sent": net_io.bytes_sent,
+                    "bytes_recv": net_io.bytes_recv,
+                },
+                "gpu_stats": {"load": gpu_pct, "memory_used": 0.0, "temperature": cpu_temp or 0.0},
+                "process_count": len(psutil.pids()),
+                # Legacy aliases kept for backward compat
                 "cpu": cpu,
                 "ram": ram,
                 "disk": disk,
