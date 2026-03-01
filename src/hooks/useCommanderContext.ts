@@ -15,6 +15,7 @@
  *   ts              — timestamp
  */
 
+import { useMemo } from 'react';
 import { useLocation } from 'react-router-dom';
 import { useAlertStore } from '@/store/useAlertStore';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
@@ -28,7 +29,6 @@ export interface CommanderContext {
   threat_level:   string;
   last_alert?:    { title: string; severity: string } | null;
   running_tools:  string[];
-  ts:             number;
 }
 
 export function useCommanderContext(
@@ -37,14 +37,17 @@ export function useCommanderContext(
 ): CommanderContext {
   const location = useLocation();
 
-  const lastAlert = useAlertStore((s) => {
-    const active = s.alerts.filter((a) => !a.dismissed);
-    return active.length > 0 ? active[0] : null;
-  });
-
-  const runningTools = useToolActivityStore((s) =>
-    Array.from(s.pendingTools),
+  // Use .find() — returns the same object reference if the alert didn't change.
+  // NEVER call .filter() inside a selector; it creates a new array on every snapshot check.
+  const lastAlert = useAlertStore((s) =>
+    s.alerts.find((a) => !a.dismissed) ?? null,
   );
+
+  // Select the Set reference directly (stable between renders when unchanged).
+  // Convert to array OUTSIDE the selector with useMemo to avoid creating a new
+  // array on every Zustand snapshot check, which causes an infinite re-render loop.
+  const pendingToolsSet = useToolActivityStore((s) => s.pendingTools);
+  const runningTools = useMemo(() => Array.from(pendingToolsSet), [pendingToolsSet]);
 
   return {
     current_page:  location.pathname,
@@ -57,6 +60,5 @@ export function useCommanderContext(
       ? { title: lastAlert.title, severity: lastAlert.severity }
       : null,
     running_tools: runningTools,
-    ts:            Date.now(),
   };
 }
