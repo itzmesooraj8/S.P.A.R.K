@@ -3,7 +3,7 @@ import {
   Globe, Chrome, Terminal, Power, Lock, Rocket,
   Shield, Music, ChevronUp, ChevronDown, Cpu,
   Activity, Wifi, Thermometer, Clock, Network, Brain,
-  Bell, Wrench, Zap
+  Bell, Wrench, Zap, Puzzle, Globe2
 } from 'lucide-react';
 import { useAlertStore } from '@/store/useAlertStore';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
@@ -63,6 +63,10 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     { icon: <Bell size={14} />,  label: 'ALERTS',      action: () => onOpenModule('alertlog'),    color: alertCount > 0  ? 'hud-amber' : undefined },
     { icon: <Wrench size={14} />,label: 'TOOLS',       action: () => onOpenModule('tools'),       color: pendingTools > 0 ? 'hud-cyan'  : undefined },
     { icon: <Zap size={14} />,   label: 'ACTION FEED', action: () => onOpenModule('actionfeed'),  color: activePlans > 0  ? 'hud-cyan'  : undefined },
+    { icon: <Puzzle size={14} />,label: 'PLUGINS',     action: () => onOpenModule('plugins'),     color: 'hud-purple' },
+    { icon: <Clock size={14} />, label: 'SCHEDULER',   action: () => onOpenModule('scheduler'),   color: 'hud-amber'  },
+    { icon: <Globe2 size={14} />,label: 'BROWSER',     action: () => onOpenModule('browser'),     color: 'hud-cyan'   },
+    { icon: <Brain size={14} />, label: 'NEURAL SEARCH',action: () => onOpenModule('neuralsearch'),color: 'hud-green'  },
   ];
 
   const handleBtn = (btn: QuickButton) => {

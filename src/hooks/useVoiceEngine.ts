@@ -6,6 +6,8 @@ const wsLog  = (...a: unknown[]) => VERBOSE_WS && console.log('[VoiceEngine WS]'
 const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[VoiceEngine WS]', ...a);
 const wsErr  = (...a: unknown[]) => VERBOSE_WS && console.error('[VoiceEngine WS]', ...a);
 
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
+
 export type AiStatus = 'idle' | 'listening' | 'thinking' | 'responding';
 
 export interface CommandEntry {
@@ -15,12 +17,67 @@ export interface CommandEntry {
   timestamp: Date;
 }
 
+// ── TTS Helper ─────────────────────────────────────────────────────────────────
+let _currentAudio: HTMLAudioElement | null = null;
+
+async function speakText(text: string): Promise<void> {
+  // Stop any currently playing TTS
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio = null;
+  }
+
+  // Limit text length for TTS to avoid very long responses
+  const ttsText = text.slice(0, 800);
+  if (!ttsText.trim()) return;
+
+  try {
+    const response = await fetch(`${API_BASE}/api/voice/speak`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: ttsText,
+        voice: 'en-US-GuyNeural',
+        rate: '+5%',
+        pitch: '-10Hz',
+      }),
+    });
+
+    if (!response.ok) return;
+
+    const blob = await response.blob();
+    const url  = URL.createObjectURL(blob);
+    const audio = new Audio(url);
+    _currentAudio = audio;
+
+    audio.onended = () => {
+      URL.revokeObjectURL(url);
+      _currentAudio = null;
+    };
+    audio.onerror = () => {
+      URL.revokeObjectURL(url);
+      _currentAudio = null;
+    };
+    audio.play().catch(() => {});
+  } catch (err) {
+    wsWarn('TTS error:', err);
+  }
+}
+
+export function stopTTS() {
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio = null;
+  }
+}
+
 export function useVoiceEngine() {
   const [status, setStatus] = useState<AiStatus>('idle');
   const [isListening, setIsListening] = useState(false);
   const [isOnline, setIsOnline] = useState(false);
   const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
+  const [ttsEnabled, setTtsEnabled] = useState(true); // SPARK speaks by default
   const [commandHistory, setCommandHistory] = useState<CommandEntry[]>([
     { id: '0', type: 'ai', text: 'SPARK v4.1 Sovereign Core initialized. Awaiting input.', timestamp: new Date() },
   ]);
@@ -81,9 +138,36 @@ export function useVoiceEngine() {
                     timestamp: new Date(),
                   },
                 ]);
+
+                // ── SPARK SPEAKS BACK ─────────────────────────────────
+                if (ttsEnabled) {
+                  speakText(finalMessage).catch(() => {});
+                }
               }
 
               return ''; // Clear the streaming buffer
+            });
+
+          } else if (data.type === 'TOKEN') {
+            // Alternative token frame format
+            setStatus('responding');
+            setAiResponse((prev) => prev + (data.content || ""));
+          } else if (data.type === 'DONE') {
+            setStatus('idle');
+            setAiResponse((prev) => {
+              const finalMessage = prev;
+              if (finalMessage.trim()) {
+                setCommandHistory((h) => [...h.slice(-49), {
+                  id: Date.now().toString(),
+                  type: 'ai',
+                  text: finalMessage,
+                  timestamp: new Date(),
+                }]);
+                if (ttsEnabled) {
+                  speakText(finalMessage).catch(() => {});
+                }
+              }
+              return '';
             });
           } else if (data.type === 'tool_execute') {
              addEntry('ai', `[TOOL] Executing ${data.tool || 'unknown'}...`);
@@ -114,7 +198,8 @@ export function useVoiceEngine() {
       clearTimeout(reconnectTimeout);
       if (wsRef.current) wsRef.current.close();
     };
-  }, []);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [ttsEnabled]);
 
   const processInput = useCallback((input: string) => {
     if (!input.trim()) return;
@@ -247,6 +332,7 @@ export function useVoiceEngine() {
   return {
     status, isListening, isOnline, transcript,
     aiResponse, commandHistory, amplitude,
+    ttsEnabled, setTtsEnabled,
     toggleMic, processInput, cancelGeneration
   };
 }

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
-import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff } from 'lucide-react';
+import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff, Volume2, VolumeX } from 'lucide-react';
 import { useDevState } from '@/hooks/useDevState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConnectionStore } from '@/store/useConnectionStore';
@@ -24,7 +24,7 @@ function FlipDigits({ value }: { value: string }) {
   );
 }
 
-export default function TopBar() {
+export default function TopBar({ ttsEnabled, onToggleTts }: { ttsEnabled?: boolean; onToggleTts?: () => void } = {}) {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
   const { user, isAuthenticated, logout } = useAuth();
   const coreOnline  = useConnectionStore((s) => s.coreOnline);
@@ -357,6 +357,24 @@ export default function TopBar() {
             <span className="font-mono-tech text-[8px] text-hud-cyan/40">12km/h</span>
           </div>
         </div>
+
+        {/* TTS toggle */}
+        {onToggleTts !== undefined && (
+          <button
+            onClick={onToggleTts}
+            title={ttsEnabled ? 'TTS ON — Click to mute' : 'TTS OFF — Click to enable'}
+            className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-all duration-200 ${
+              ttsEnabled
+                ? 'border-hud-green/40 text-hud-green hover:border-hud-green'
+                : 'border-hud-cyan/20 text-hud-cyan/30 hover:border-hud-cyan/50 hover:text-hud-cyan/60'
+            }`}
+          >
+            {ttsEnabled ? <Volume2 size={11} /> : <VolumeX size={11} />}
+            <span className="font-orbitron text-[8px] tracking-wider">
+              {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
+            </span>
+          </button>
+        )}
 
         {/* Theme selector */}
         <div className="flex gap-1">

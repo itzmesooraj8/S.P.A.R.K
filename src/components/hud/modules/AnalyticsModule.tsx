@@ -1,16 +1,7 @@
+import { useMemo } from 'react';
 import { AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { BarChart2 } from 'lucide-react';
-
-const MOCK_WEEKLY = [
-  { day: 'MON', cpu: 45, ram: 62, net: 30 },
-  { day: 'TUE', cpu: 78, ram: 71, net: 55 },
-  { day: 'WED', cpu: 52, ram: 68, net: 42 },
-  { day: 'THU', cpu: 89, ram: 75, net: 78 },
-  { day: 'FRI', cpu: 63, ram: 69, net: 61 },
-  { day: 'SAT', cpu: 34, ram: 55, net: 25 },
-  { day: 'SUN', cpu: 41, ram: 58, net: 33 },
-];
 
 const RADAR_DATA = [
   { subject: 'CPU', A: 72 }, { subject: 'RAM', A: 68 },
@@ -19,6 +10,23 @@ const RADAR_DATA = [
 ];
 
 export default function AnalyticsModule({ metrics }: { metrics: ReturnType<typeof useSystemMetrics> }) {
+  // Derive a "recent activity" chart from the live rolling CPU history.
+  // Sample every ~7 equally-spaced points from the available history.
+  const recentLoad = useMemo(() => {
+    const history = metrics.cpuHistory ?? [];
+    if (history.length === 0) return [];
+    const step = Math.max(1, Math.floor(history.length / 7));
+    return Array.from({ length: 7 }, (_, i) => {
+      const entry = history[Math.min(i * step, history.length - 1)];
+      const label = `T-${(6 - i) * step}`;
+      return {
+        day: label,
+        cpu: Math.round(entry?.value ?? 0),
+        ram: Math.round(metrics.ram),
+        net: Math.round(metrics.network ?? 0),
+      };
+    });
+  }, [metrics.cpuHistory, metrics.ram, metrics.networkRx]);
   return (
     <div className="flex flex-col gap-4 p-4 h-full overflow-y-auto scrollbar-hud">
       <div className="flex items-center gap-2 pb-2 border-b border-hud-cyan/20">
@@ -52,11 +60,11 @@ export default function AnalyticsModule({ metrics }: { metrics: ReturnType<typeo
         </ResponsiveContainer>
       </div>
 
-      {/* Weekly bar chart */}
+      {/* Recent load bar chart */}
       <div className="hud-panel rounded p-3">
-        <div className="font-orbitron text-[9px] text-hud-cyan/60 mb-2">WEEKLY LOAD ANALYSIS</div>
+        <div className="font-orbitron text-[9px] text-hud-cyan/60 mb-2">RECENT LOAD ANALYSIS (LIVE)</div>
         <ResponsiveContainer width="100%" height={100}>
-          <BarChart data={MOCK_WEEKLY} barCategoryGap="30%">
+          <BarChart data={recentLoad} barCategoryGap="30%">
             <XAxis dataKey="day" tick={{ fill: '#00f5ff', fontSize: 8, fontFamily: 'Orbitron' }} axisLine={false} tickLine={false} />
             <YAxis hide domain={[0, 100]} />
             <Tooltip

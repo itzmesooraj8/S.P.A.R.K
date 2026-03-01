@@ -33,6 +33,13 @@ from cognitive.self_optimizer import self_evolution
 from memory.graph_memory import knowledge_graph
 from globe.predictor import threat_predictor
 
+# ── NEW SPARK FEATURE MODULES ──────────────────────────────────────────────────
+from voice.tts_router import tts_router
+from neural_search.search import neural_router
+from plugins.manager import plugins_router
+from scheduler_service import scheduler_router, init_scheduler
+from agents.browser_agent import browser_router
+
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -84,6 +91,27 @@ async def lifespan(app: FastAPI):
     cognitive_loop.start()
     print("🔮 [SPARK] Cognitive loop started.")
 
+    # ── Start APScheduler for reminders/tasks ───────────────────────────────
+    init_scheduler()
+    print("⏰ [SPARK] Task scheduler initialized.")
+
+    # ── Auto-index knowledge base into ChromaDB ─────────────────────────────
+    try:
+        from neural_search.search import get_collection
+        import os as _os
+        kb_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "knowledge_base")
+        if _os.path.exists(kb_path):
+            collection = get_collection("spark_knowledge")
+            count = collection.count()
+            if count == 0:
+                print("🧠 [NeuralSearch] Knowledge base not yet indexed — running auto-index...")
+                import asyncio as _asyncio
+                _asyncio.create_task(_auto_index_kb())
+            else:
+                print(f"🧠 [NeuralSearch] ChromaDB ready — {count} docs in spark_knowledge.")
+    except Exception as e:
+        print(f"⚠️ [NeuralSearch] ChromaDB init warning: {e}")
+
     # Start threat predictor feed task (polls globe data every 5 min)
     asyncio.create_task(_threat_feed_loop())
     print("⚠️  [SPARK] Threat predictor feed started.")
@@ -109,6 +137,40 @@ async def _log_model_status():
         print(f"🧬 [ModelRouter] Available models: {available}")
     except Exception:
         pass
+
+
+async def _auto_index_kb():
+    """Auto-index knowledge base documents into ChromaDB on first boot."""
+    await asyncio.sleep(10)  # Let everything else start first
+    try:
+        import os as _os, time as _time, uuid as _uuid
+        from neural_search.search import get_collection
+        kb_path = _os.path.join(_os.path.dirname(_os.path.dirname(__file__)), "knowledge_base")
+        if not _os.path.exists(kb_path):
+            return
+        collection = get_collection("spark_knowledge")
+        indexed = 0
+        for fname in _os.listdir(kb_path):
+            fpath = _os.path.join(kb_path, fname)
+            if not _os.path.isfile(fpath):
+                continue
+            try:
+                with open(fpath, "r", encoding="utf-8", errors="ignore") as f:
+                    text = f.read().strip()
+                if not text:
+                    continue
+                doc_id = f"kb:{fname}"
+                collection.upsert(
+                    ids=[doc_id],
+                    documents=[text],
+                    metadatas=[{"source": "knowledge_base", "filename": fname, "indexed_at": _time.time()}],
+                )
+                indexed += 1
+            except Exception as e:
+                print(f"⚠️ [NeuralSearch] Failed to index {fname}: {e}")
+        print(f"🧠 [NeuralSearch] Auto-indexed {indexed} knowledge base documents.")
+    except Exception as e:
+        print(f"⚠️ [NeuralSearch] Auto-index failed: {e}")
 
 
 async def _threat_feed_loop():
@@ -170,6 +232,13 @@ app.add_middleware(
 # Globe Intelligence API (handles /api/seismology, /api/conflict, /api/market, etc.)
 # Must be registered BEFORE the static-file catch-all.
 app.include_router(globe_api_router)
+
+# ── New SPARK Feature Routers ─────────────────────────────────────────────────
+app.include_router(tts_router)      # /api/voice/*   — TTS + WS audio
+app.include_router(neural_router)   # /api/neural-search/* — ChromaDB semantic search
+app.include_router(plugins_router)  # /api/plugins/*  — plugin enable/disable
+app.include_router(scheduler_router)# /api/scheduler/* — reminders + cron jobs
+app.include_router(browser_router)  # /api/browser/*  — Playwright web agent
 
 # -----------------
 # API ENDPOINTS

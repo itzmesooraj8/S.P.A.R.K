@@ -16,6 +16,7 @@ from intelligence.graph import CodeGraph
 from intelligence.analyzer import run_flake8, run_mypy, run_bandit, run_complexity
 from intelligence.pattern_memory import pattern_store
 from ws.manager import ws_manager
+from system.datastream import broadcast_datastream_tick
 
 class SystemMonitor:
     def __init__(self, interval: int = 2):
@@ -204,6 +205,13 @@ class SystemMonitor:
                 "timestamp": int(time.time()),
             }
             unified_state.update("metrics", payload)
+
+            # ── DataStream real-time broadcast (every tick) ─────────────────
+            try:
+                spark_state = unified_state.get_state()
+                await broadcast_datastream_tick(ws_manager_instance, spark_state)
+            except Exception:
+                pass
             
             # Hybrid Continuous Audit
             for pid, ctx in list(project_registry.active_projects.items()):

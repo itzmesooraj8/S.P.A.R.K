@@ -6,3 +6,10 @@ psutil
 PyJWT
 pydantic
 python-dotenv
+edge-tts
+apscheduler
+playwright
+chromadb
+ollama
+python-multipart
+aiofiles
