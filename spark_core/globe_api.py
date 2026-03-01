@@ -68,6 +68,7 @@ _KEYS = {
     "finnhub":     _key("FINNHUB_API_KEY",       "finnhub_api_key"),
     "eia":         _key("EIA_API_KEY",           "eia_api_key"),
     "nasa_firms":  _key("NASA_FIRMS_API_KEY",    "nasa_firms_api_key"),
+    "newsdata":    _key("NEWSDATA_API_KEY",      "newsdata_api_key"),
     "cloudflare":  _key("CLOUDFLARE_API_TOKEN",  "cloudflare_api_token"),
     "opensky_id":  _key("OPENSKY_CLIENT_ID",     "opensky_client_id"),
     "opensky_sec": _key("OPENSKY_CLIENT_SECRET", "opensky_client_secret"),
@@ -144,7 +145,7 @@ _CB: dict[str, CircuitBreaker] = {
         # Free new providers
         "who_rss", "waqi", "ripe_bgp", "meteoalarm",
         # Keyed providers
-        "acled", "finnhub", "eia", "nasa_firms", "cloudflare",
+        "acled", "finnhub", "eia", "nasa_firms", "newsdata", "cloudflare",
     ]
 }
 
@@ -162,6 +163,7 @@ _PROVIDER_META: dict[str, dict] = {
     "finnhub":      {"name": "Finnhub Financial API",   "url": "https://finnhub.io/"},
     "eia":          {"name": "EIA Energy API",           "url": "https://api.eia.gov/"},
     "nasa_firms":   {"name": "NASA FIRMS",               "url": "https://firms.modaps.eosdis.nasa.gov/"},
+    "newsdata":     {"name": "NewsData.io",              "url": "https://newsdata.io/"},
     "cloudflare":   {"name": "Cloudflare Radar API",    "url": "https://api.cloudflare.com/"},
     "who_rss":      {"name": "WHO Disease Outbreak News","url": "https://www.who.int/rss-feeds/"},
     "waqi":         {"name": "WAQI Air Quality Index",  "url": "https://waqi.info/"},
@@ -175,9 +177,10 @@ if not _KEYS["finnhub"]:     _CB["finnhub"].set_key_required()
 if not _KEYS["eia"]:         _CB["eia"].set_key_required()
 if not _KEYS["nasa_firms"]:  _CB["nasa_firms"].set_key_required()
 if not _KEYS["cloudflare"]:  _CB["cloudflare"].set_key_required()
+# newsdata is optional: no key = graceful GDELT fallback, so don't set key_required
 
 # Log which keyed providers are active
-_active = [k for k in ["acled","finnhub","eia","nasa_firms","cloudflare"] if _KEYS.get(k)]
+_active = [k for k in ["acled","finnhub","eia","nasa_firms","newsdata","cloudflare"] if _KEYS.get(k)]
 if _active:
     print(f"[Globe API] Keyed providers active: {', '.join(_active)}")
 else:
@@ -202,11 +205,6 @@ async def _fetch_json(
         return resp.json()
 
 
-async def fetch_cached(
-    url: str,
-    params: dict | None = None,
-    headers: dict | None = None,
-    ttl: int = 120,
 async def fetch_cached(
     url: str,
     params: dict | None = None,
@@ -1013,6 +1011,14 @@ _MODE_QUERIES: dict[str, str] = {
     "happy":   "breakthrough innovation progress science",
 }
 
+# NewsData.io category map (used when key is present)
+_NEWSDATA_CATEGORIES: dict[str, str] = {
+    "world":   "world,politics",
+    "tech":    "technology,science",
+    "finance": "business",
+    "happy":   "science,health",
+}
+
 @router.api_route("/api/news/v1/listNewsArticles", methods=["POST", "OPTIONS"])
 async def list_news_articles(request: Request):
     if request.method == "OPTIONS":
@@ -1024,6 +1030,40 @@ async def list_news_articles(request: Request):
     mode  = body.get("mode", "world")
     query = _MODE_QUERIES.get(mode, "world news")
 
+    # ── Primary: NewsData.io (when key is available) ──────────────────────
+    if _KEYS["newsdata"] and not _CB["newsdata"].is_open():
+        data = await guarded_fetch(
+            "newsdata",
+            "https://newsdata.io/api/1/latest",
+            params={
+                "apikey":         _KEYS["newsdata"],
+                "q":              query,
+                "language":       "en",
+                "category":       _NEWSDATA_CATEGORIES.get(mode, "world"),
+                "size":           "15",
+                "prioritydomain": "top",
+            },
+            ttl=300,
+        )
+        if data is not None and data.get("status") == "success":
+            articles = []
+            for a in (data.get("results") or [])[:15]:
+                articles.append({
+                    "title":       (a.get("title")       or "")[:160],
+                    "url":         a.get("link")          or "",
+                    "source":      a.get("source_name")   or a.get("source_id") or "",
+                    "date":        a.get("pubDate")       or "",
+                    "image":       a.get("image_url")     or "",
+                    "language":    a.get("language")      or "en",
+                    "tone":        0.0,  # NewsData.io doesn't provide tone scores
+                    "description": (a.get("description") or "")[:300],
+                    "category":    (a.get("category")    or [None])[0],
+                    "country":     (a.get("country")     or [None])[0],
+                    "provider":    "newsdata",
+                })
+            return JSONResponse({"articles": articles, "degraded": False, "source": "newsdata.io"})
+
+    # ── Fallback: GDELT (free, no key) ────────────────────────────────────
     data = await guarded_fetch(
         "gdelt_news",
         "https://api.gdeltproject.org/api/v2/doc/doc",
@@ -1054,8 +1094,9 @@ async def list_news_articles(request: Request):
             "image":    a.get("socialimage") or "",
             "language": a.get("language")  or "English",
             "tone":     round(float(a.get("tone", 0) or 0), 2),
+            "provider": "gdelt",
         })
-    return JSONResponse({"articles": articles, "degraded": False})
+    return JSONResponse({"articles": articles, "degraded": False, "source": "gdelt"})
 
 
 # ──────────────────────────────────────────────────────────────
