@@ -23,7 +23,7 @@ interface Props {
   contextSnapshot?: Record<string, unknown>;
 }
 
-type IntentHint = 'CHAT' | 'TASK' | 'GLOBE_QUERY' | 'SYSTEM_QUERY' | 'CREATE_CASE' | 'RESEARCH' | 'CODE';
+type IntentHint = 'CHAT' | 'TASK' | 'GLOBE_QUERY' | 'SYSTEM_QUERY' | 'CREATE_CASE' | 'RESEARCH' | 'CODE' | 'ROUTINE';
 
 const INTENT_META: Record<IntentHint, { label: string; color: string }> = {
   CHAT:         { label: 'CHAT',    color: '#00f5ff' },
@@ -33,12 +33,18 @@ const INTENT_META: Record<IntentHint, { label: string; color: string }> = {
   CREATE_CASE:  { label: 'CASE',    color: '#ff453a' },
   RESEARCH:     { label: 'RSRCH',   color: '#64d2ff' },
   CODE:         { label: 'CODE',    color: '#ffd60a' },
+  ROUTINE:      { label: 'ROUTINE', color: '#bf5af2' },
 };
 
 // Lightweight client-side heuristic for instant badge preview
 function previewIntent(text: string): IntentHint {
   const tl = text.toLowerCase().trim();
   if (!tl) return 'CHAT';
+
+  // ROUTINE: named operating modes
+  if (/(dev mode|activate dev|start dev|developer mode|dev routine)/.test(tl)) return 'ROUTINE';
+  if (/(monitor mode|globe monitor|threat monitor|activate monitor)/.test(tl)) return 'ROUTINE';
+  if (/(focus mode|enable focus|crit only|focus session|activate focus)/.test(tl)) return 'ROUTINE';
 
   const taskVerbs = ['open ', 'launch ', 'start ', 'run ', 'execute ', 'go to ', 'navigate ', 'browse '];
   if (taskVerbs.some(v => tl.startsWith(v))) return 'TASK';
@@ -53,6 +59,15 @@ function previewIntent(text: string): IntentHint {
   if (/(research|find|search|look up|what is|explain|summarize|who is|where is)/.test(tl)) return 'RESEARCH';
 
   return 'CHAT';
+}
+
+/** Maps a user command to a routine key (dev | monitor | focus), or null. */
+function detectRoutine(text: string): string | null {
+  const tl = text.toLowerCase().trim();
+  if (/(dev mode|activate dev|start dev|developer mode|dev routine)/.test(tl)) return 'dev';
+  if (/(monitor mode|globe monitor|threat monitor|activate monitor)/.test(tl)) return 'monitor';
+  if (/(focus mode|enable focus|crit only|focus session|activate focus)/.test(tl)) return 'focus';
+  return null;
 }
 
 const BACKEND_PORT = import.meta.env.VITE_BACKEND_PORT ?? '8000';
@@ -129,24 +144,34 @@ export default function CommandBar({ open, onClose, contextSnapshot }: Props) {
     setResultText('');
 
     try {
-      const res = await fetch(`${BASE_URL}/api/commander/run`, {
+      // Detect routine commands and route directly to the routine endpoint
+      const routineName = detectRoutine(text);
+      let url: string;
+      let body: string;
+
+      if (routineName) {
+        url  = `${BASE_URL}/api/commander/routine/${routineName}`;
+        body = JSON.stringify({});
+      } else {
+        url  = `${BASE_URL}/api/commander/run`;
+        body = JSON.stringify({ text, context_snapshot: contextSnapshot ?? {} });
+      }
+
+      const res = await fetch(url, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          text,
-          context_snapshot: contextSnapshot ?? {},
-        }),
+        body,
       });
 
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       const data = await res.json();
-      setResultText(data.result ?? 'Done.');
+      setResultText(data.result ?? (routineName ? `${data.name ?? routineName} activated.` : 'Done.'));
       setSubmitState('done');
       setValue('');
 
-      // Close after a short display window for non-TASK intents
+      // Close after a short display window for non-TASK/non-ROUTINE intents
       const intent = data.intent as IntentHint;
-      const autoCloseMs = intent === 'TASK' ? 1500 : 3000;
+      const autoCloseMs = (intent === 'TASK' || routineName) ? 1500 : 3000;
       setTimeout(onClose, autoCloseMs);
     } catch (err) {
       setResultText(`Error: ${err instanceof Error ? err.message : String(err)}`);
@@ -157,9 +182,15 @@ export default function CommandBar({ open, onClose, contextSnapshot }: Props) {
   const meta = INTENT_META[intentHint];
 
   const suggestions = [
+    // ― Routines ―
+    'dev mode',
+    'monitor mode',
+    'focus mode',
+    // ― Quick tasks ―
     'open vscode',
     'open chrome',
     'run ipconfig',
+    // ― Intelligence ―
     'what is the CPU load?',
     'latest conflict briefing',
     'create case: network anomaly',

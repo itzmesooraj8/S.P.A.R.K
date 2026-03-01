@@ -28,6 +28,7 @@ import { useHudTheme } from '@/contexts/ThemeContext';
 import { useAIEvents } from '@/hooks/useAIEvents';
 import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 import { useCommanderContext } from '@/hooks/useCommanderContext';
+import { useFxStore } from '@/store/useFxStore';
 import { Brain } from 'lucide-react';
 
 type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed';
@@ -65,7 +66,25 @@ export default function HudLayout() {
   // ── Global event listeners ───────────────────────────────────────────────
   useAIEvents();                                   // listens to /ws/ai → tool store
   const { pendingRequest, setPending } = useAgentConfirmStore();
+  // ── SPARK FX queue consumer ───────────────────────────────────────
+  const fxQueue      = useFxStore((s) => s.queue);
+  const consumeFx    = useFxStore((s) => s.consumeFx);
+  const setFocusMode = useFxStore((s) => s.setFocusMode);
+  const focusMode    = useFxStore((s) => s.focusMode);
 
+  useEffect(() => {
+    if (!fxQueue.length) return;
+    const item = fxQueue[0];
+    switch (item.fx) {
+      case 'NAVIGATE_GLOBE':      navigate('/globe-monitor'); break;
+      case 'NAVIGATE_ALERTS':     setActiveModule('alertlog'); setIsMaximized(false); break;
+      case 'NAVIGATE_TOOLS':      setActiveModule('tools');    setIsMaximized(false); break;
+      case 'NAVIGATE_ACTIONFEED': setActiveModule('actionfeed'); setIsMaximized(false); break;
+      case 'FOCUS_MODE_ON':       setFocusMode(true);  break;
+      case 'FOCUS_MODE_OFF':      setFocusMode(false); break;
+    }
+    consumeFx(item.id);
+  }, [fxQueue, consumeFx, setFocusMode, navigate]);
   // ── Ctrl+Space → CommandBar ──────────────────────────────────────────────
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
@@ -106,6 +125,23 @@ export default function HudLayout() {
       {isShuttingDown && (
         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center animate-pulse">
           <div className="font-orbitron text-hud-red text-2xl tracking-widest">SYSTEM SHUTDOWN</div>
+        </div>
+      )}
+
+      {/* Focus Mode banner */}
+      {focusMode && (
+        <div
+          className="fixed top-10 left-1/2 -translate-x-1/2 z-[90] flex items-center gap-2 px-3 py-1 rounded border"
+          style={{ background: '#1a0f00', borderColor: '#ff9f0a40', boxShadow: '0 0 20px #ff9f0a18' }}
+        >
+          <span className="font-orbitron text-[8px] text-hud-amber tracking-widest">FOCUS MODE</span>
+          <span className="font-mono-tech text-[8px] text-hud-amber/50">· CRIT ONLY</span>
+          <button
+            onClick={() => setFocusMode(false)}
+            className="font-orbitron text-[7px] text-hud-amber/40 hover:text-hud-amber/80 ml-1 transition-colors"
+          >
+            ✕
+          </button>
         </div>
       )}
 

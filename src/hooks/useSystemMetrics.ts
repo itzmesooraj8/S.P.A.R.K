@@ -4,6 +4,7 @@ import { useAlertStore } from '@/store/useAlertStore';
 import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 import { useActionFeedStore } from '@/store/useActionFeedStore';
 import { useConnectionStore } from '@/store/useConnectionStore';
+import { useFxStore } from '@/store/useFxStore';
 
 // Only log WS noise when explicitly opted-in (prevents console spam when backend is offline)
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
@@ -49,6 +50,7 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
   const mountedRef = useRef(true);
 
   const [isOnline, setIsOnline] = useState(false);
+  const retryNonce = useConnectionStore((s) => s.retryNonce);
 
   const [metrics, setMetrics] = useState<LegacySystemMetrics>({
     cpu: 0, cpuHistory: [],
@@ -79,7 +81,7 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
     socket.onopen = () => {
       if (!mountedRef.current) { socket.close(); return; }
       setIsOnline(true);
-      useConnectionStore.getState().setCoreOnline(true);
+      useConnectionStore.getState().setCoreStatus('connected');
       retryDelay.current = RECONNECT_BASE_MS;
       wsLog('connected');
 
@@ -145,6 +147,12 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
           });
           return;
         }
+
+        // ── ROUTINE_FX frames → frontend FX queue (HudLayout consumer) ──────
+        if (msg.type === 'ROUTINE_FX') {
+          useFxStore.getState().pushFx(msg.fx as string, msg.args as Record<string, unknown>);
+          return;
+        }
         if (msg.type === 'STATE_UPDATE' && msg.state?.metrics) {
           const p: ContractMetrics & Record<string, unknown> = msg.state.metrics;
 
@@ -179,10 +187,10 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
       }
     };
 
-    socket.onclose = () => {
+    socket.onclose = (event: CloseEvent) => {
       stopPing();
       setIsOnline(false);
-      useConnectionStore.getState().setCoreOnline(false);
+      useConnectionStore.getState().setCoreStatus('reconnecting', event.code);
       if (!mountedRef.current) return;
       const delay = Math.min(retryDelay.current, RECONNECT_MAX_MS);
       retryDelay.current = Math.min(retryDelay.current * 1.5, RECONNECT_MAX_MS);
@@ -205,6 +213,12 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
       ws.current?.close(1000, 'component unmount');
     };
   }, [connect, stopPing]);
+
+  // Manual retry: close current socket (onclose will start reconnect cycle)
+  useEffect(() => {
+    if (retryNonce === 0) return;  // skip initial mount
+    ws.current?.close(1000, 'manual retry');
+  }, [retryNonce]);
 
   return { ...metrics, isOnline };
 }

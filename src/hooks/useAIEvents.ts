@@ -29,6 +29,7 @@ export function useAIEvents() {
   const retryDelay = useRef(RECONNECT_BASE_MS);
   const mountedRef = useRef(true);
   const { addExecute, addResult } = useToolActivityStore();
+  const retryNonce = useConnectionStore((s) => s.retryNonce);
 
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
@@ -52,12 +53,13 @@ export function useAIEvents() {
     };
 
     socket.onopen = () => {
+      if (!mountedRef.current) { socket.close(); return; }
       retryDelay.current = RECONNECT_BASE_MS;
-      useConnectionStore.getState().setAiOnline(true);
+      useConnectionStore.getState().setAiStatus('connected');
     };
 
-    socket.onclose = () => {
-      useConnectionStore.getState().setAiOnline(false);
+    socket.onclose = (event: CloseEvent) => {
+      useConnectionStore.getState().setAiStatus('reconnecting', event.code);
       if (!mountedRef.current) return;
       const delay = Math.min(retryDelay.current, RECONNECT_MAX_MS);
       retryDelay.current = Math.min(retryDelay.current * 1.5, RECONNECT_MAX_MS);
@@ -76,4 +78,10 @@ export function useAIEvents() {
       ws.current?.close(1000, 'unmount');
     };
   }, [connect]);
+
+  // Manual retry: close current socket (onclose will start reconnect cycle)
+  useEffect(() => {
+    if (retryNonce === 0) return;
+    ws.current?.close(1000, 'manual retry');
+  }, [retryNonce]);
 }

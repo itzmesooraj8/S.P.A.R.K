@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
 const wsErr = (...a: unknown[]) => VERBOSE_WS && console.error('[DevState WS]', ...a);
@@ -71,57 +71,70 @@ export function useDevState(): DevState {
         history: undefined // Initialized history
     });
 
-    useEffect(() => {
-        let ws: WebSocket;
-        let reconnectTimeout: NodeJS.Timeout;
+    // ── Ghost-listener prevention: stable refs so cleanup always sees latest ──
+    const wsRef              = useRef<WebSocket | null>(null);
+    const mountedRef         = useRef(true);
+    const reconnectTimerRef  = useRef<NodeJS.Timeout | null>(null);
 
-        const connect = () => {
-            ws = new WebSocket("ws://localhost:8000/ws/system");
+    const connect = useCallback(() => {
+        if (!mountedRef.current) return;
+        // Guard: never open a second socket while one is connecting or open
+        if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
-            ws.onmessage = (event) => {
-                try {
-                    const data = JSON.parse(event.data);
+        const socket = new WebSocket("ws://localhost:8000/ws/system");
+        wsRef.current = socket;
 
-                    if (data.type === "STATE_UPDATE" && data.state && typeof data.version === 'number') {
-                        setDevState(prev => {
-                            if (data.version <= prev.version) {
-                                return prev; // Ignore stale frames
-                            }
-                            return {
-                                ...prev,
-                                version: data.version,
-                                code_graph: data.state.code_graph || prev.code_graph,
-                                context_map: data.state.context_map || prev.context_map,
-                                mutation_log: data.state.mutation_log || prev.mutation_log,
-                                history: data.state.history || prev.history,
-                                sandbox_state: data.state.sandbox_state || prev.sandbox_state,
-                                project_focus: data.state.project_focus || prev.project_focus
-                            };
-                        });
-                    }
-                } catch (error) {
-                    wsErr('Failed to parse payload:', error);
-                }
-            };
-
-            ws.onclose = () => {
-                reconnectTimeout = setTimeout(connect, 2000);
-            };
-
-            ws.onerror = (error) => {
-                ws.close();
-            };
+        socket.onopen = () => {
+            if (!mountedRef.current) { socket.close(); return; }
         };
 
-        connect();
+        socket.onmessage = (event) => {
+            try {
+                const data = JSON.parse(event.data);
 
-        return () => {
-            clearTimeout(reconnectTimeout);
-            if (ws) {
-                ws.close();
+                if (data.type === "STATE_UPDATE" && data.state && typeof data.version === 'number') {
+                    setDevState(prev => {
+                        if (data.version <= prev.version) {
+                            return prev; // Ignore stale frames
+                        }
+                        return {
+                            ...prev,
+                            version: data.version,
+                            code_graph: data.state.code_graph || prev.code_graph,
+                            context_map: data.state.context_map || prev.context_map,
+                            mutation_log: data.state.mutation_log || prev.mutation_log,
+                            history: data.state.history || prev.history,
+                            sandbox_state: data.state.sandbox_state || prev.sandbox_state,
+                            project_focus: data.state.project_focus || prev.project_focus
+                        };
+                    });
+                }
+            } catch (error) {
+                wsErr('Failed to parse payload:', error);
             }
         };
+
+        socket.onclose = () => {
+            if (!mountedRef.current) return;
+            // Clear any pending timer before scheduling a new one (prevents stacking)
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = setTimeout(connect, 2000);
+        };
+
+        socket.onerror = () => {
+            socket.close();
+        };
     }, []);
+
+    useEffect(() => {
+        mountedRef.current = true;
+        connect();
+        return () => {
+            mountedRef.current = false;
+            if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+            wsRef.current?.close(1000, 'component unmount');
+        };
+    }, [connect]);
 
     return devState;
 }

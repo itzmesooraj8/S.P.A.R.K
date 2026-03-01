@@ -527,6 +527,64 @@ async def commander_context():
     }
 
 
+# ── SPARK Routines — named operating-mode sequences ───────────────────────────
+
+@app.post("/api/commander/routine/{name}")
+async def run_routine(name: str):
+    """
+    Activate a named SPARK routine (dev / monitor / focus).
+    Builds a Plan from the routine's step sequence, emits PLAN/STEP WS frames,
+    executes each step (open_app, open_url, run_command, frontend_fx, emit_alert).
+    """
+    import uuid
+    from agents.routines import get_routine, list_routines
+    from agents.spark_commander_router import (
+        Plan, PlanStep, Intent, execute_plan, emit_plan,
+    )
+
+    routine = get_routine(name)
+    if not routine:
+        raise HTTPException(
+            status_code=404,
+            detail=f"Routine '{name}' not found. Available: {list_routines()}",
+        )
+
+    plan = Plan(
+        plan_id=str(uuid.uuid4()),
+        intent=Intent.TASK,
+        query=f"routine:{name}",
+        ts=time.time(),
+    )
+    plan.steps = [
+        PlanStep(
+            idx=i,
+            label=s["label"],
+            tool=s.get("tool"),
+            args=s.get("args", {}),
+        )
+        for i, s in enumerate(routine.steps)
+    ]
+
+    await emit_plan(plan)
+    result = await execute_plan(plan)
+
+    return {
+        "routine":  name,
+        "name":     routine.name,
+        "plan_id":  plan.plan_id,
+        "steps":    [{"idx": s.idx, "label": s.label, "status": s.status.value, "result": s.result}
+                     for s in plan.steps],
+        "result":   result,
+    }
+
+
+@app.get("/api/commander/routines")
+async def list_available_routines():
+    """Returns all registered SPARK routines with their names and descriptions."""
+    from agents.routines import ROUTINES
+    return {k: {"name": v.name, "description": v.description} for k, v in ROUTINES.items()}
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # MODEL ROUTER — Intelligence Model Management
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

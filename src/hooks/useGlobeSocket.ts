@@ -12,6 +12,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useMonitorStore } from '../store/useMonitorStore';
 
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsLog  = (...a: unknown[]) => VERBOSE_WS && console.log('[Globe WS]',  ...a);
 const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[Globe WS]', ...a);
 
 const WS_URL = (() => {
@@ -51,7 +52,7 @@ export function useGlobeSocket() {
 
     socket.onopen = () => {
       if (!mountedRef.current) { socket.close(); return; }
-      console.info('[Globe WS] Connected');
+      wsLog('Connected');
       setWsConnected(true);
       retryDelay.current = RECONNECT_BASE_MS;
 
@@ -102,7 +103,7 @@ export function useGlobeSocket() {
       if (!mountedRef.current) return;
       const delay = Math.min(retryDelay.current, RECONNECT_MAX_MS);
       retryDelay.current = Math.min(retryDelay.current * 1.5, RECONNECT_MAX_MS);
-      console.info(`[Globe WS] Reconnecting in ${Math.round(delay / 1000)}s…`);
+      wsLog(`Reconnecting in ${Math.round(delay / 1000)}s…`);
       setTimeout(connect, delay);
     };
   }, [mergeGlobeDelta, setGlobeTickers, setWsConnected, stopPing]);

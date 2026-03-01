@@ -1,9 +1,10 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useRef, useCallback } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
 import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff } from 'lucide-react';
 import { useDevState } from '@/hooks/useDevState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConnectionStore } from '@/store/useConnectionStore';
+import type { WsStatus } from '@/store/useConnectionStore';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -26,9 +27,88 @@ function FlipDigits({ value }: { value: string }) {
 export default function TopBar() {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
   const { user, isAuthenticated, logout } = useAuth();
-  const coreOnline = useConnectionStore((s) => s.coreOnline);
-  const aiOnline   = useConnectionStore((s) => s.aiOnline);
-  const backendOnline = coreOnline || aiOnline;
+  const coreOnline  = useConnectionStore((s) => s.coreOnline);
+  const aiOnline    = useConnectionStore((s) => s.aiOnline);
+  const coreStatus  = useConnectionStore((s) => s.coreStatus);
+  const aiStatus    = useConnectionStore((s) => s.aiStatus);
+  const coreLast    = useConnectionStore((s) => s.coreLastConnected);
+  const aiLast      = useConnectionStore((s) => s.aiLastConnected);
+  const coreCode    = useConnectionStore((s) => s.coreLastCloseCode);
+  const aiCode      = useConnectionStore((s) => s.aiLastCloseCode);
+  const bumpRetry   = useConnectionStore((s) => s.bumpRetry);
+
+  // ── Badge state derivation ────────────────────────────────────────────────
+  const bothOnline       = coreOnline && aiOnline;
+  const backendOnline    = coreOnline || aiOnline;
+  const partial          = coreOnline !== aiOnline;    // exactly one is online
+  const bothIdle         = coreStatus === 'idle' && aiStatus === 'idle';
+  const anyReconnecting  = coreStatus === 'reconnecting' || aiStatus === 'reconnecting';
+
+  const badgeLabel = bothOnline     ? 'ONLINE'
+    : bothIdle       ? 'STANDBY'
+    : !backendOnline && anyReconnecting ? 'RECONNECTING'
+    : !backendOnline ? 'OFFLINE'
+    : !aiOnline      ? 'AI DEGRADED'
+    :                  'CORE DEGRADED';
+
+  const badgeColor = bothOnline     ? '#30d158'
+    : bothIdle       ? '#636366'
+    : partial        ? '#ff9f0a'
+    : anyReconnecting ? '#ff9f0a'
+    :                   '#ff453a';
+
+  // Only pulse when something is actively wrong (not idle)
+  const badgePulse = !bothOnline && !bothIdle;
+
+  // ── Flyout state ──────────────────────────────────────────────────────────
+  const [showConnFlyout, setShowConnFlyout] = useState(false);
+  const flyoutRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!showConnFlyout) return;
+    const handler = (e: MouseEvent) => {
+      if (flyoutRef.current && !flyoutRef.current.contains(e.target as Node)) {
+        setShowConnFlyout(false);
+      }
+    };
+    document.addEventListener('mousedown', handler);
+    return () => document.removeEventListener('mousedown', handler);
+  }, [showConnFlyout]);
+
+  const fmtTime = useCallback((ms: number | null) => {
+    if (!ms) return '—';
+    return new Date(ms).toTimeString().slice(0, 8);
+  }, []);
+
+  const statusColor = (s: WsStatus) =>
+    s === 'connected'    ? '#30d158'
+    : s === 'reconnecting' ? '#ff9f0a'
+    : s === 'idle'         ? '#636366'
+    :                        '#ff453a';
+
+  /** Human-readable WebSocket close code label. */
+  const closeCodeLabel = useCallback((code: number | null): string | null => {
+    if (code === null) return null;
+    const labels: Record<number, string> = {
+      1000: 'Normal',
+      1001: 'Going Away',
+      1006: 'Abnormal',
+      1011: 'Server Error',
+      1012: 'Service Restart',
+      1013: 'Try Again Later',
+    };
+    return `${code}${labels[code] ? ` · ${labels[code]}` : ''}`;
+  }, []);
+
+  const copyDiagnostics = useCallback(() => {
+    const diag = {
+      ts:   new Date().toISOString(),
+      core: { status: coreStatus, lastConnected: coreLast, lastCloseCode: coreCode },
+      ai:   { status: aiStatus,   lastConnected: aiLast,   lastCloseCode: aiCode },
+    };
+    navigator.clipboard.writeText(JSON.stringify(diag, null, 2)).catch(() => {});
+    setShowConnFlyout(false);
+  }, [coreStatus, aiStatus, coreLast, aiLast, coreCode, aiCode]);
   const [now, setNow] = useState(new Date());
 
   const [projects, setProjects] = useState<string[]>([]);
@@ -119,16 +199,91 @@ export default function TopBar() {
               >
                 v4.1 · {backendOnline ? 'ONLINE' : 'OFFLINE'}
               </div>
-              {!backendOnline && (
-                <span
-                  title="Backend unreachable — reconnecting…"
-                  className="flex items-center gap-0.5 font-orbitron text-[7px] px-1 py-px rounded border animate-pulse"
-                  style={{ color: '#ff453a', borderColor: '#ff453a50', background: '#ff453a10' }}
-                >
-                  <WifiOff size={7} />
-                  OFFLINE
-                </span>
-              )}
+
+              {/* ── Connection badge (clickable whenever not fully online) ── */}
+              <div className="relative" ref={flyoutRef}>
+                {!bothOnline && (
+                  <button
+                    onClick={() => setShowConnFlyout(v => !v)}
+                    title="Click for connection details"
+                    className={`flex items-center gap-0.5 font-orbitron text-[7px] px-1 py-px rounded border cursor-pointer transition-opacity hover:opacity-80${badgePulse ? ' animate-pulse' : ''}`}
+                    style={{ color: badgeColor, borderColor: `${badgeColor}50`, background: `${badgeColor}10` }}
+                  >
+                    {!backendOnline && !bothIdle && <WifiOff size={7} />}
+                    {badgeLabel}
+                  </button>
+                )}
+
+                {/* ── Flyout panel ── */}
+                {showConnFlyout && (
+                  <div
+                    className="absolute left-0 top-full mt-1 z-50 rounded border p-3 min-w-[240px]"
+                    style={{
+                      background: 'rgba(0,5,20,0.97)',
+                      borderColor: 'hsl(186 100% 50% / 0.25)',
+                      boxShadow: '0 8px 32px rgba(0,0,0,0.6)',
+                    }}
+                  >
+                    <div className="font-orbitron text-[9px] text-hud-cyan/60 tracking-widest mb-2">CONNECTION DETAILS</div>
+
+                    {/* Core row */}
+                    <div className="flex items-center justify-between mb-1.5">
+                      <span className="font-mono-tech text-[9px] text-hud-cyan/50">/ws/system</span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-orbitron text-[7px] px-1 py-px rounded"
+                          style={{ color: statusColor(coreStatus), background: `${statusColor(coreStatus)}18` }}
+                        >{coreStatus.toUpperCase()}</span>
+                        <span className="font-mono-tech text-[8px] text-hud-cyan/40">{fmtTime(coreLast)}</span>
+                        {coreCode !== null && (
+                          <span
+                            className="font-mono-tech text-[7px]"
+                            style={{ color: coreCode === 1000 ? '#636366' : '#ff453a80' }}
+                          >
+                            {closeCodeLabel(coreCode)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* AI row */}
+                    <div className="flex items-center justify-between mb-3">
+                      <span className="font-mono-tech text-[9px] text-hud-cyan/50">/ws/ai</span>
+                      <div className="flex items-center gap-2">
+                        <span
+                          className="font-orbitron text-[7px] px-1 py-px rounded"
+                          style={{ color: statusColor(aiStatus), background: `${statusColor(aiStatus)}18` }}
+                        >{aiStatus.toUpperCase()}</span>
+                        <span className="font-mono-tech text-[8px] text-hud-cyan/40">{fmtTime(aiLast)}</span>
+                        {aiCode !== null && (
+                          <span
+                            className="font-mono-tech text-[7px]"
+                            style={{ color: aiCode === 1000 ? '#636366' : '#ff453a80' }}
+                          >
+                            {closeCodeLabel(aiCode)}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => { bumpRetry(); setShowConnFlyout(false); }}
+                        className="flex-1 font-orbitron text-[8px] px-2 py-1 rounded border border-hud-cyan/30 text-hud-cyan/70 hover:border-hud-cyan/60 hover:text-hud-cyan transition-colors"
+                      >
+                        ↺ RETRY
+                      </button>
+                      <button
+                        onClick={copyDiagnostics}
+                        className="flex-1 font-orbitron text-[8px] px-2 py-1 rounded border border-hud-cyan/20 text-hud-cyan/50 hover:border-hud-cyan/40 hover:text-hud-cyan/80 transition-colors"
+                      >
+                        ⎘ COPY DIAG
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         </div>

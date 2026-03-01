@@ -293,10 +293,39 @@ async def execute_plan(plan: Plan) -> str:
     """
     from tools.desktop import open_app, open_url, run_command
 
+    # ── Built-in virtual tools ─────────────────────────────────────────────
+
+    async def _frontend_fx(args: Dict[str, Any]) -> str:
+        """Emit a ROUTINE_FX frame so the HUD can navigate/change state."""
+        fx = args.get("fx", "")
+        await _emit({
+            "v":    1,
+            "type": "ROUTINE_FX",
+            "fx":   fx,
+            "args": args,
+            "ts":   time.time(),
+        })
+        return f"✅ FX:{fx}"
+
+    async def _emit_alert_step(args: Dict[str, Any]) -> str:
+        """Emit an ALERT frame into the HUD alert log."""
+        await _emit({
+            "v":        1,
+            "type":     "ALERT",
+            "severity": args.get("severity", "info"),
+            "title":    args.get("title", "SPARK"),
+            "body":     args.get("body", ""),
+            "source":   args.get("source", "spark-routine"),
+            "ts":       time.time(),
+        })
+        return "✅ Alert emitted"
+
     _DESKTOP_TOOLS = {
         "open_app":    open_app,
         "open_url":    open_url,
         "run_command": run_command,
+        "frontend_fx": _frontend_fx,
+        "emit_alert":  _emit_alert_step,
     }
 
     results: List[str] = []
