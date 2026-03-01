@@ -9,6 +9,7 @@ import time
 import sys
 import json
 from contextlib import asynccontextmanager
+from typing import Optional, List
 
 from ws.manager import ws_manager
 from orchestrator.brain import AIOrchestrator
@@ -21,6 +22,16 @@ from intelligence.optimizer import optimizer
 from intelligence.trust_layer import trust_store
 from globe_api import router as globe_api_router, globe_broadcaster
 
+# ── SPARK OS — New Systems ─────────────────────────────────────────────────────
+from auth.jwt_handler import create_token_pair, refresh_access_token, require_auth
+from auth.user_store import authenticate, list_users, create_user
+from llm.model_router import model_router
+from agents.commander import commander
+from cognitive.loop import cognitive_loop
+from cognitive.self_optimizer import self_evolution
+from memory.graph_memory import knowledge_graph
+from globe.predictor import threat_predictor
+
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -30,15 +41,14 @@ sys_monitor = SystemMonitor()
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    print("🛸 [SPARK] Core Node Initializing...")
-    
+    print("🛸 [SPARK] Sovereign AI OS Initializing...")
+
     # Auto-Bootstrap Single Root Workspace
     workspace_root = os.path.dirname(os.path.dirname(__file__))
     project_registry.load_project("workspace", workspace_root)
     project_registry.switch_focus("workspace")
-    
+
     # Log the exact workspace path that will be used for scanning:
-    # SPARK_WORKSPACE_DIR env var > /workspace (if container) > project root
     from pathlib import Path as _Path
     _container_ws = "/workspace" if _Path("/workspace").exists() else None
     effective_workspace = os.getenv("SPARK_WORKSPACE_DIR", _container_ws or workspace_root)
@@ -50,22 +60,100 @@ async def lifespan(app: FastAPI):
         print(f"📂 [SPARK] Source: /workspace container mount")
     else:
         print(f"📂 [SPARK] Source: project root (host mode)")
-    
-    # Initialize the sandbox isolated execution environment for the legacy fallback/active focus
+
+    # Initialize the sandbox isolated execution environment
     from tools.sandbox import sandbox
     sandbox.host_workspace_dir = effective_workspace
     await init_sandbox()
+
+    # ── Boot SPARK OS systems ──────────────────────────────────────────────
+    # Knowledge Graph Memory
+    await knowledge_graph.init()
+    print("🧠 [SPARK] Knowledge graph memory online.")
+
     # Start background intelligence loop
     asyncio.create_task(sys_monitor.start_monitoring(ws_manager))
     print("✅ [SPARK] Background monitor started.")
+
     # Start Globe WebSocket push broadcaster (every 30s)
     globe_broadcaster.start()
     print("🌍 [SPARK] Globe WS broadcaster started.")
-    
+
+    # Start Autonomous Cognitive Loop
+    cognitive_loop.start()
+    print("🔮 [SPARK] Cognitive loop started.")
+
+    # Start threat predictor feed task (polls globe data every 5 min)
+    asyncio.create_task(_threat_feed_loop())
+    print("⚠️  [SPARK] Threat predictor feed started.")
+
+    # Log active models
+    asyncio.create_task(_log_model_status())
+
+    print("🛸 [SPARK] All systems online. Sovereign AI OS ready.")
+
     yield
-    
+
     print("🛸 [SPARK] Core Node Shutting Down...")
+    cognitive_loop.stop()
     await teardown_sandbox()
+
+
+async def _log_model_status():
+    """Log available models at startup (non-blocking)."""
+    await asyncio.sleep(5)
+    try:
+        status = await model_router.get_status()
+        available = [m["name"] for m in status["models"] if m["available"]]
+        print(f"🧬 [ModelRouter] Available models: {available}")
+    except Exception:
+        pass
+
+
+async def _threat_feed_loop():
+    """
+    Background task: fetch globe events every 5 minutes
+    and feed them to the threat predictor for risk analysis.
+    """
+    await asyncio.sleep(60)  # Wait for globe broadcaster to warm up
+    while True:
+        try:
+            async with __import__("httpx").AsyncClient(timeout=15.0) as c:
+                # Feed earthquake data
+                eq_r = await c.get("http://localhost:8000/api/seismology/v1/listEarthquakes",
+                                   json={"layers": ["earthquake"]}, timeout=15.0)
+                if eq_r.status_code == 200:
+                    events = eq_r.json().get("events", [])
+                    threat_predictor.ingest(events, "earthquake")
+
+                # Feed conflict data
+                cf_r = await c.post("http://localhost:8000/api/conflict/v1/listConflictEvents",
+                                    json={"layers": ["conflict"]}, timeout=15.0)
+                if cf_r.status_code == 200:
+                    events = cf_r.json().get("events", [])
+                    threat_predictor.ingest(events, "conflict")
+
+                # Feed wildfire data
+                wf_r = await c.post("http://localhost:8000/api/wildfire/v1/listFireDetections",
+                                    json={"layers": ["fires"]}, timeout=15.0)
+                if wf_r.status_code == 200:
+                    events = wf_r.json().get("detections", [])
+                    threat_predictor.ingest(events, "fire")
+
+            # Inject threat summary into cognitive loop for awareness
+            summary = threat_predictor.get_global_threat_summary()
+            cognitive_loop.inject_observation({
+                "globe_threat_summary": summary,
+                "global_risk_score": summary.get("global_risk_score", 0),
+                "global_risk_level": summary.get("global_risk_level", "LOW"),
+                "hotspots": summary.get("hotspots", 0),
+            })
+
+        except Exception as exc:
+            print(f"⚠️  [ThreatFeed] Error: {exc}")
+
+        await asyncio.sleep(300)  # 5 minutes
+
 
 app = FastAPI(title="SPARK AI Core v2", version="2.0.0", lifespan=lifespan)
 
@@ -227,21 +315,321 @@ class AuthRequest(BaseModel):
     username: str
     password: str
 
+class RefreshRequest(BaseModel):
+    refresh_token: str
+
+class CreateUserRequest(BaseModel):
+    username: str
+    password: str
+    role: str = "OPERATOR"
+
 @app.post("/api/auth/login")
 async def login(req: AuthRequest):
-    from auth.jwt_handler import create_access_token
-    # Placeholder simple auth for Phase 1
-    if req.username == "root" and req.password == "sparkadmin":
-        return {"access_token": create_access_token({"sub": req.username, "role": "ROOT"}), "type": "bearer"}
-    return {"error": "Unauthorized"}
+    """Authenticate and return access + refresh token pair."""
+    user = authenticate(req.username, req.password)
+    if not user:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid credentials")
+    tokens = create_token_pair(user["sub"], user["role"])
+    return tokens
+
+@app.post("/api/auth/refresh")
+async def refresh_token(req: RefreshRequest):
+    """Exchange refresh token for a new access token."""
+    result = refresh_access_token(req.refresh_token)
+    if not result:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=401, detail="Invalid or expired refresh token")
+    return result
+
+@app.post("/api/auth/logout")
+async def logout(req: RefreshRequest):
+    """Revoke refresh token."""
+    from auth.jwt_handler import revoke_refresh_token
+    revoked = revoke_refresh_token(req.refresh_token)
+    return {"status": "ok" if revoked else "not_found"}
+
+@app.get("/api/auth/users", dependencies=[Depends(require_auth("ADMIN"))])
+async def get_users():
+    """List all users (admin only)."""
+    return {"users": list_users()}
+
+@app.post("/api/auth/users", dependencies=[Depends(require_auth("ROOT"))])
+async def add_user(req: CreateUserRequest):
+    """Create a new user (root only)."""
+    success = create_user(req.username, req.password, req.role)
+    if not success:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=409, detail="Username already exists")
+    return {"status": "created", "username": req.username, "role": req.role}
 
 @app.get("/api/state")
 async def get_state():
     return orchestrator.get_state()
 
-# -----------------
-# HEALTH ENDPOINTS
-# -----------------
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# AGENT ENDPOINTS — Multi-agent Command & Control
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class AgentDispatchRequest(BaseModel):
+    task_type: str
+    payload: dict
+    session_id: Optional[str] = None
+    wait: bool = False
+    timeout: float = 30.0
+
+@app.get("/api/agents/status")
+async def agents_status():
+    """Live status of all SPARK sub-agents."""
+    return commander.get_status()
+
+@app.post("/api/agents/dispatch")
+async def agents_dispatch(req: AgentDispatchRequest):
+    """Dispatch a task to a specific agent and optionally await result."""
+    result = await commander.dispatch(
+        task_type=req.task_type,
+        payload=req.payload,
+        session_id=req.session_id,
+        wait=req.wait,
+        timeout=req.timeout,
+    )
+    if result:
+        return {"success": result.success, "output": result.output,
+                "agent": result.agent_name, "confidence": result.confidence,
+                "error": result.error}
+    return {"status": "queued", "task_type": req.task_type}
+
+class AskRequest(BaseModel):
+    text: str
+    session_id: Optional[str] = None
+    wait: bool = False
+
+@app.post("/api/agents/ask")
+async def agents_ask(req: AskRequest):
+    """Natural-language task routing through Commander."""
+    result = await commander.ask(req.text, session_id=req.session_id, wait=req.wait)
+    if result:
+        return {"success": result.success, "output": result.output,
+                "agent": result.agent_name, "confidence": result.confidence}
+    return {"status": "queued"}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# MODEL ROUTER — Intelligence Model Management
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/models/status")
+async def models_status():
+    """Live status of all connected LLM providers."""
+    return await model_router.get_status()
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# COGNITIVE ENGINE — Autonomous Reasoning Loop
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/cognitive/status")
+async def cognitive_status():
+    """Current state of the autonomous cognitive loop."""
+    return cognitive_loop.get_status()
+
+@app.post("/api/cognitive/inject")
+async def cognitive_inject(data: dict):
+    """Inject an external observation into the cognitive loop."""
+    cognitive_loop.inject_observation(data)
+    return {"status": "injected"}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# KNOWLEDGE GRAPH — Long-Term Strategic Memory
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class EntityRequest(BaseModel):
+    type: str
+    name: str
+    properties: dict = {}
+    importance: float = 1.0
+
+class RelationRequest(BaseModel):
+    source_id: str
+    target_id: str
+    relation_type: str
+    weight: float = 1.0
+    properties: dict = {}
+
+class ObservationRequest(BaseModel):
+    content: str
+    entity_id: Optional[str] = None
+    session_id: Optional[str] = None
+    importance: float = 1.0
+    tags: List[str] = []
+
+@app.get("/api/memory/stats")
+async def memory_stats():
+    """Knowledge graph statistics."""
+    stats = await knowledge_graph.get_stats()
+    return stats
+
+@app.get("/api/memory/search")
+async def memory_search(q: str, type: Optional[str] = None, limit: int = 20):
+    """Search entities in the knowledge graph."""
+    return {"results": await knowledge_graph.search_entities(q, entity_type=type, limit=limit)}
+
+@app.post("/api/memory/entity")
+async def memory_add_entity(req: EntityRequest):
+    eid = await knowledge_graph.upsert_entity(req.type, req.name, req.properties, req.importance)
+    return {"entity_id": eid}
+
+@app.post("/api/memory/relation")
+async def memory_add_relation(req: RelationRequest):
+    rid = await knowledge_graph.add_relation(
+        req.source_id, req.target_id, req.relation_type, req.weight, req.properties
+    )
+    return {"relation_id": rid}
+
+@app.post("/api/memory/observation")
+async def memory_add_observation(req: ObservationRequest):
+    oid = await knowledge_graph.add_observation(
+        req.content, req.entity_id, req.session_id, req.importance, req.tags
+    )
+    return {"observation_id": oid}
+
+@app.get("/api/memory/observations")
+async def memory_recent_observations(
+    session_id: Optional[str] = None,
+    limit: int = 50,
+    min_importance: float = 0.0,
+):
+    return {"observations": await knowledge_graph.get_recent_observations(
+        session_id=session_id, limit=limit, min_importance=min_importance
+    )}
+
+@app.get("/api/memory/objectives")
+async def memory_objectives(status: str = "active"):
+    return {"objectives": await knowledge_graph.get_objectives(status)}
+
+class ObjectiveRequest(BaseModel):
+    title: str
+    description: str = ""
+    priority: int = 5
+
+@app.post("/api/memory/objectives")
+async def memory_add_objective(req: ObjectiveRequest):
+    oid = await knowledge_graph.upsert_objective(req.title, req.description, req.priority)
+    return {"objective_id": oid}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# GLOBE THREAT PREDICTOR — Predictive Intelligence
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/threat/summary")
+async def threat_summary():
+    """Global threat assessment powered by the predictive risk engine."""
+    return threat_predictor.get_global_threat_summary()
+
+@app.get("/api/threat/regions")
+async def threat_regions():
+    """Per-region risk scores with escalation vectors."""
+    risks = threat_predictor.get_region_risks()
+    return {
+        "regions": [
+            {
+                "id": r.region_id, "risk_score": r.risk_score, "risk_level": r.risk_level,
+                "dominant_threat": r.dominant_threat, "event_count": r.event_count,
+                "trend": r.trend, "hotspot": r.hotspot,
+                "escalation_vectors": r.escalation_vectors,
+                "lat": r.lat, "lng": r.lng,
+            }
+            for r in sorted(risks, key=lambda r: r.risk_score, reverse=True)
+        ],
+        "stats": threat_predictor.get_stats(),
+    }
+
+class IngestEventsRequest(BaseModel):
+    events: List[dict]
+    event_type: str = "conflict"
+
+@app.post("/api/threat/ingest")
+async def threat_ingest(req: IngestEventsRequest):
+    """Feed events into the threat prediction engine."""
+    threat_predictor.ingest(req.events, req.event_type)
+    return {"status": "ingested", "count": len(req.events)}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# SELF-EVOLUTION — Bounded Self-Improvement Engine
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/evolution/proposals")
+async def evolution_proposals(status: Optional[str] = None):
+    """List all self-improvement proposals."""
+    from cognitive.self_optimizer import ChangeStatus
+    status_enum = ChangeStatus(status) if status else None
+    return {"proposals": self_evolution.get_proposals(status_enum)}
+
+@app.post("/api/evolution/proposals/{proposal_id}/approve")
+async def evolution_approve(proposal_id: str, payload: dict = Depends(require_auth("ADMIN"))):
+    """Approve a self-improvement proposal (admin only)."""
+    p = self_evolution.approve(proposal_id, approver=payload.get("sub", "admin"))
+    if not p:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Proposal not found or not PROPOSED")
+    return {"status": "approved", "proposal_id": proposal_id}
+
+@app.post("/api/evolution/proposals/{proposal_id}/reject")
+async def evolution_reject(proposal_id: str, payload: dict = Depends(require_auth("ADMIN"))):
+    """Reject a self-improvement proposal (admin only)."""
+    p = self_evolution.reject(proposal_id, rejector=payload.get("sub", "admin"))
+    if not p:
+        from fastapi import HTTPException
+        raise HTTPException(status_code=404, detail="Proposal not found or not PROPOSED")
+    return {"status": "rejected", "proposal_id": proposal_id}
+
+@app.post("/api/evolution/analyze")
+async def evolution_analyze():
+    """Trigger self-analysis and generate improvement proposals."""
+    import psutil
+    metrics = {
+        "memory_percent": psutil.virtual_memory().percent,
+        "cpu_percent": psutil.cpu_percent(interval=0.5),
+        "model_stats": {name: s.__dict__ for name, s in model_router._stats.items()},
+    }
+    proposals = self_evolution.analyze_and_propose(metrics)
+    return {
+        "proposals_generated": len(proposals),
+        "proposals": [p.title for p in proposals],
+    }
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# COGNITIVE DASHBOARD — SPARK OS Self-Intelligence State
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+@app.get("/api/os/status")
+async def os_status():
+    """Full SPARK OS intelligence dashboard snapshot."""
+    import psutil
+    from cognitive.self_optimizer import ChangeStatus
+    cpu = psutil.cpu_percent(interval=0.5)
+    mem = psutil.virtual_memory()
+
+    return {
+        "version": "3.0.0",
+        "codename": "SOVEREIGN",
+        "system": {"cpu_pct": cpu, "mem_pct": mem.percent, "mem_gb": round(mem.used / 1e9, 2)},
+        "cognitive_loop": cognitive_loop.get_status(),
+        "agents": commander.get_status(),
+        "models": await model_router.get_status(),
+        "memory": await knowledge_graph.get_stats(),
+        "threat": threat_predictor.get_global_threat_summary(),
+        "evolution": {
+            "pending_proposals": len(self_evolution.get_proposals(status=ChangeStatus.PROPOSED)),
+        },
+    }
+
+
 @app.get("/api/health")
 async def health_check():
     """Basic liveness probe."""

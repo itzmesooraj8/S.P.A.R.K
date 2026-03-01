@@ -49,6 +49,10 @@ export default function HudLayout() {
       navigate('/globe-monitor');
       return;
     }
+    if (m === 'os') {
+      navigate('/cognitive');
+      return;
+    }
     setActiveModule(m as ModuleKey);
     setIsMaximized(false);
   };

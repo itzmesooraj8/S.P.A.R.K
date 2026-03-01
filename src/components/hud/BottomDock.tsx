@@ -2,7 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Globe, Chrome, Terminal, Power, Lock, Rocket,
   Shield, Music, ChevronUp, ChevronDown, Cpu,
-  Activity, Wifi, Thermometer, Clock, Network
+  Activity, Wifi, Thermometer, Clock, Network, Brain
 } from 'lucide-react';
 
 interface QuickButton {
@@ -49,6 +49,7 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     { icon: <Terminal size={14} />, label: 'AI LOG', action: () => onOpenModule('reasoning') },
     { icon: <Network size={14} />, label: 'DEVGRAPH', action: () => onOpenModule('devgraph'), color: 'hud-purple' },
     { icon: <Shield size={14} />, label: 'TACTICAL', action: () => onOpenModule('tactical'), color: 'hud-red' },
+    { icon: <Brain size={14} />, label: 'OS CORE', action: () => onOpenModule('os'), color: 'hud-cyan' },
   ];
 
   const handleBtn = (btn: QuickButton) => {
