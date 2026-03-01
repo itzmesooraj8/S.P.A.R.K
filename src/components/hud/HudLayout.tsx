@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import ParticleBackground from './ParticleBackground';
@@ -18,16 +18,19 @@ import TacticalModule from './modules/TacticalModule';
 import DevGraphModule from './modules/DevGraphModule';
 import AlertLogPanel from './modules/AlertLogPanel';
 import ToolActivityPanel from './modules/ToolActivityPanel';
+import ActionFeedPanel from './modules/ActionFeedPanel';
 import SparkAlertToast from './SparkAlertToast';
 import AgentConfirmModal from './AgentConfirmModal';
+import CommandBar from './CommandBar';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 import { useHudTheme } from '@/contexts/ThemeContext';
 import { useAIEvents } from '@/hooks/useAIEvents';
 import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
+import { useCommanderContext } from '@/hooks/useCommanderContext';
 import { Brain } from 'lucide-react';
 
-type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools';
+type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
   security:  '🔐 SECURITY MODE',
@@ -39,8 +42,9 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
   reasoning: '🧬 AI REASONING LOG',
   tactical:  '🕶 TACTICAL OVERLAY',
   devgraph:  '🕸️ DEV OS GRAPH',
-  alertlog:  '🔔 SYSTEM ALERTS',
-  tools:     '⚙ TOOL EXECUTION',
+  alertlog:    '🔔 SYSTEM ALERTS',
+  tools:       '⚙ TOOL EXECUTION',
+  actionfeed:  '⚡ ACTION FEED',
 };
 
 export default function HudLayout() {
@@ -50,11 +54,30 @@ export default function HudLayout() {
   const [activeModule, setActiveModule] = useState<ModuleKey | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
+  const [showCommandBar, setShowCommandBar] = useState(false);
   const navigate = useNavigate();
+
+  const commanderCtx = useCommanderContext(
+    { cpu: metrics.cpu, ram: metrics.ram, ping: metrics.ping },
+    activeModule,
+  );
 
   // ── Global event listeners ───────────────────────────────────────────────
   useAIEvents();                                   // listens to /ws/ai → tool store
   const { pendingRequest, setPending } = useAgentConfirmStore();
+
+  // ── Ctrl+Space → CommandBar ──────────────────────────────────────────────
+  useEffect(() => {
+    const handler = (e: KeyboardEvent) => {
+      if (e.code === 'Space' && (e.ctrlKey || e.metaKey)) {
+        e.preventDefault();
+        setShowCommandBar(v => !v);
+      }
+      if (e.key === 'Escape') setShowCommandBar(false);
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const openModule = (m: string) => {
     if (m === 'globe') {
@@ -162,8 +185,9 @@ export default function HudLayout() {
                   {activeModule === 'reasoning' && <ReasoningLogModule />}
                   {activeModule === 'tactical' && <TacticalModule />}
                   {activeModule === 'devgraph' && <DevGraphModule />}
-                  {activeModule === 'alertlog' && <AlertLogPanel />}
-                  {activeModule === 'tools' && <ToolActivityPanel />}
+                  {activeModule === 'alertlog'   && <AlertLogPanel />}
+                  {activeModule === 'tools'      && <ToolActivityPanel />}
+                  {activeModule === 'actionfeed' && <ActionFeedPanel />}
                 </div>
               </motion.div>
             )}
@@ -210,6 +234,13 @@ export default function HudLayout() {
       <AgentConfirmModal
         request={pendingRequest}
         onClose={() => setPending(null)}
+      />
+
+      {/* Global command bar — Ctrl+Space */}
+      <CommandBar
+        open={showCommandBar}
+        onClose={() => setShowCommandBar(false)}
+        contextSnapshot={commanderCtx as Record<string, unknown>}
       />
     </div>
   );

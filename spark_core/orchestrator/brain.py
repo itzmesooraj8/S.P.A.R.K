@@ -12,7 +12,7 @@ from system.event_bus import event_bus
 class AIOrchestrator:
     def __init__(self):
         print("🧠 [SPARK] Initializing Brain...")
-        self.personality = PersonalityEngine(mode="TACTICAL")
+        self.personality = PersonalityEngine(mode="ARCHITECT")
         self.llm = HybridLLM() # model resolved from OLLAMA_MODEL env var (default: llama3:8b)
         self.memory = SessionMemory(max_turns=5)
         self.tool_router = ToolRouter()
@@ -23,7 +23,7 @@ class AIOrchestrator:
         # Inject state metadata.
         unified_state.update_dict({
             "status": "IDLE",
-            "personality": "TACTICAL",
+            "personality": "ARCHITECT",
             "active_tasks": []
         })
         

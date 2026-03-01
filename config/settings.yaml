@@ -1,6 +1,13 @@
 app_name: "S.P.A.R.K."
 version: "2.0.0"
 
+personality:
+  # ARCHITECT  - Strategic co-pilot mode (default, Sooraj Prime directive)
+  # TACTICAL   - Concise operational, high-urgency short commands
+  # FRIENDLY   - Lighter conversational register
+  # OPERATIVE  - Ultra-compressed single-paragraph responses
+  mode: "ARCHITECT"
+
 audio:
   wake_word: "spark"
   voice: "en-US-ChristopherNeural"

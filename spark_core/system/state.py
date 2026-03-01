@@ -9,7 +9,7 @@ class UnifiedState:
     def _init_state(self):
         self._state: Dict[str, Any] = {
             "status": "IDLE",
-            "personality": "TACTICAL",
+            "personality": "ARCHITECT",
             "active_tasks": [],
             "user_state": {},
             "device_state": {},

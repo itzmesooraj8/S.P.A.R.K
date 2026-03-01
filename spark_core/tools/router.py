@@ -13,6 +13,7 @@ from tools.refactor import refactoring_tools
 from tools.memory import memory_tools
 from tools.heuristics import heuristic_tools
 from tools.context import context_tools
+from tools.desktop import desktop_tools
 
 # --- Default Native Tools ---
 
@@ -58,6 +59,8 @@ class ToolRouter:
         for tool in heuristic_tools:
             self.registry.register(tool)
         for tool in context_tools:
+            self.registry.register(tool)
+        for tool in desktop_tools:
             self.registry.register(tool)
         
     def detect_tool_call(self, raw_message: str) -> Optional[Dict[str, Any]]:

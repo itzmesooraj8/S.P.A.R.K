@@ -2,6 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react';
 import { SystemWsMessage, SystemMetrics as ContractMetrics } from '../types/contracts';
 import { useAlertStore } from '@/store/useAlertStore';
 import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
+import { useActionFeedStore } from '@/store/useActionFeedStore';
 
 const MAX_HISTORY = 30;
 
@@ -110,6 +111,28 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
             risk_level:  msg.risk_level ?? 'HIGH',
             description: msg.description,
             arguments:   msg.arguments,
+          });
+          return;
+        }
+
+        // ── PLAN frames → action feed store ─────────────────────────────────
+        if (msg.type === 'PLAN') {
+          useActionFeedStore.getState().addPlan({
+            plan_id: msg.plan_id,
+            intent:  msg.intent   ?? 'CHAT',
+            query:   msg.query    ?? '',
+            steps:   msg.steps    ?? [],
+            ts:      msg.ts       ?? Date.now(),
+          });
+          return;
+        }
+
+        // ── STEP frames → action feed store (update step status) ────────────
+        if (msg.type === 'STEP') {
+          useActionFeedStore.getState().updateStep(msg.plan_id, msg.step_idx, {
+            status: msg.status,
+            result: msg.result ?? null,
+            ts:     msg.ts    ?? Date.now(),
           });
           return;
         }

@@ -27,6 +27,7 @@ from auth.jwt_handler import create_token_pair, refresh_access_token, require_au
 from auth.user_store import authenticate, list_users, create_user
 from llm.model_router import model_router
 from agents.commander import commander
+from agents.spark_commander_router import commander_router, classify_intent
 from cognitive.loop import cognitive_loop
 from cognitive.self_optimizer import self_evolution
 from memory.graph_memory import knowledge_graph
@@ -482,6 +483,48 @@ async def agents_ask(req: AskRequest):
         return {"success": result.success, "output": result.output,
                 "agent": result.agent_name, "confidence": result.confidence}
     return {"status": "queued"}
+
+
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+# COMMANDER ROUTER — JARVIS-style intent routing + Action Feed
+# ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+class CommanderRunRequest(BaseModel):
+    text: str
+    session_id: Optional[str] = None
+    context_snapshot: Optional[dict] = None
+
+@app.post("/api/commander/run")
+async def commander_run(req: CommanderRunRequest):
+    """
+    JARVIS Command entry-point.
+    Classifies intent, builds plan, emits PLAN→STEP WS frames, executes.
+    """
+    result = await commander_router.run(
+        text=req.text,
+        context_snapshot=req.context_snapshot,
+        session_id=req.session_id,
+    )
+    return result
+
+@app.get("/api/commander/context")
+async def commander_context():
+    """Returns current SPARK state snapshot for the frontend to attach to commands."""
+    from system.state import unified_state
+    state = unified_state.get_state()
+    metrics = state.get("metrics", {})
+    return {
+        "spark_version": "2.0.0",
+        "active_agents":  [name for name, ag in commander.get_status().get("agents", {}).items()
+                           if ag.get("queue_size", 0) > 0 or ag.get("status") == "running"],
+        "metrics": {
+            "cpu":     metrics.get("cpu_percent", 0),
+            "ram":     metrics.get("memory_percent", 0),
+            "ping_ms": metrics.get("ping_ms", 0),
+        },
+        "threat_level": state.get("threat_level", "low"),
+        "ts": time.time(),
+    }
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

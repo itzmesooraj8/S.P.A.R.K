@@ -3,10 +3,11 @@ import {
   Globe, Chrome, Terminal, Power, Lock, Rocket,
   Shield, Music, ChevronUp, ChevronDown, Cpu,
   Activity, Wifi, Thermometer, Clock, Network, Brain,
-  Bell, Wrench
+  Bell, Wrench, Zap
 } from 'lucide-react';
 import { useAlertStore } from '@/store/useAlertStore';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
+import { useActionFeedStore } from '@/store/useActionFeedStore';
 
 interface QuickButton {
   icon: React.ReactNode;
@@ -36,6 +37,9 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
 
   const alertCount   = useAlertStore(s => s.alerts.filter(a => !a.dismissed).length);
   const pendingTools = useToolActivityStore(s => s.pendingTools.size);
+  const activePlans  = useActionFeedStore(s =>
+    s.plans.filter(p => p.steps.some(step => step.status === 'running')).length
+  );
 
   const quickButtons: QuickButton[] = [
     { icon: <Globe size={16} />, label: 'BROWSER', action: () => window.open('about:blank') },
@@ -56,8 +60,9 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     { icon: <Network size={14} />, label: 'DEVGRAPH', action: () => onOpenModule('devgraph'), color: 'hud-purple' },
     { icon: <Shield size={14} />, label: 'TACTICAL', action: () => onOpenModule('tactical'), color: 'hud-red' },
     { icon: <Brain size={14} />, label: 'OS CORE', action: () => onOpenModule('os'), color: 'hud-cyan' },
-    { icon: <Bell size={14} />, label: 'ALERTS', action: () => onOpenModule('alertlog'), color: alertCount > 0 ? 'hud-amber' : undefined },
-    { icon: <Wrench size={14} />, label: 'TOOLS', action: () => onOpenModule('tools'), color: pendingTools > 0 ? 'hud-cyan' : undefined },
+    { icon: <Bell size={14} />,  label: 'ALERTS',      action: () => onOpenModule('alertlog'),    color: alertCount > 0  ? 'hud-amber' : undefined },
+    { icon: <Wrench size={14} />,label: 'TOOLS',       action: () => onOpenModule('tools'),       color: pendingTools > 0 ? 'hud-cyan'  : undefined },
+    { icon: <Zap size={14} />,   label: 'ACTION FEED', action: () => onOpenModule('actionfeed'),  color: activePlans > 0  ? 'hud-cyan'  : undefined },
   ];
 
   const handleBtn = (btn: QuickButton) => {
@@ -85,8 +90,9 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
         <div className="flex items-center justify-center gap-3 py-2 px-4">
           {secondaryButtons.map(btn => {
             const badge =
-              btn.label === 'ALERTS'  && alertCount > 0   ? alertCount :
-              btn.label === 'TOOLS'   && pendingTools > 0  ? pendingTools :
+              btn.label === 'ALERTS'       && alertCount > 0   ? alertCount  :
+              btn.label === 'TOOLS'        && pendingTools > 0  ? pendingTools :
+              btn.label === 'ACTION FEED'  && activePlans > 0   ? activePlans  :
               null;
             return (
               <button
