@@ -4,7 +4,9 @@
  *         Threat Intelligence, Self-Evolution proposals.
  */
 import { useEffect, useState, useCallback } from 'react';
-import { useQuery } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { apiPost, apiGet } from '@/lib/api';
+import { CheckCircle, XCircle } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,6 +56,21 @@ interface OsStatus {
     top_threats: Array<{ region: string; score: number; level: string; dominant_threat: string; trend: string }>;
   };
   evolution: { pending_proposals: number };
+}
+
+interface EvolutionProposal {
+  id: string;
+  title: string;
+  description: string;
+  priority: string;         // HIGH / MEDIUM / LOW
+  estimated_impact: string;
+  status: string;           // pending / approved / rejected
+  created_at?: string;
+}
+
+interface ProposalsResponse {
+  proposals: EvolutionProposal[];
+  total: number;
 }
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -141,6 +158,7 @@ function AgentCard({ agent }: { agent: AgentStatus }) {
 
 export default function CognitiveDashboard() {
   const [tick, setTick] = useState(0);
+  const qc = useQueryClient();
 
   const { data: osData, isLoading } = useQuery<OsStatus>({
     queryKey: ['os-status', tick],
@@ -152,7 +170,27 @@ export default function CognitiveDashboard() {
     refetchInterval: 8000,
   });
 
+  // ── Evolution proposals ─────────────────────────────────────────────────
+  const { data: proposalsData, refetch: refetchProposals } = useQuery<ProposalsResponse>({
+    queryKey: ['evolution-proposals'],
+    queryFn: () => apiGet<ProposalsResponse>('/api/evolution/proposals'),
+    refetchInterval: 15_000,
+    retry: 1,
+  });
+
+  const approveMut = useMutation({
+    mutationFn: (id: string) => apiPost(`/api/evolution/proposals/${id}/approve`, {}),
+    onSuccess: () => { refetchProposals(); qc.invalidateQueries({ queryKey: ['os-status'] }); },
+  });
+
+  const rejectMut = useMutation({
+    mutationFn: (id: string) => apiPost(`/api/evolution/proposals/${id}/reject`, {}),
+    onSuccess: () => { refetchProposals(); qc.invalidateQueries({ queryKey: ['os-status'] }); },
+  });
+
   const forceRefresh = useCallback(() => setTick(t => t + 1), []);
+
+  const pendingProposals = proposalsData?.proposals?.filter(p => p.status === 'pending') ?? [];
 
   if (isLoading || !osData) {
     return (
@@ -231,13 +269,68 @@ export default function CognitiveDashboard() {
             <div className="text-[9px] text-white/50 mb-2">
               Human-in-the-loop self-improvement
             </div>
-            {evolution.pending_proposals > 0 ? (
-              <div className="text-center py-2 rounded border border-[#ffd60a40] bg-[#ffd60a10]">
-                <div className="text-[#ffd60a] text-xl font-black">{evolution.pending_proposals}</div>
-                <div className="text-[8px] text-[#ffd60a80]">PENDING PROPOSALS</div>
-                <a href="/evolution" className="text-[8px] text-[#00f5ff] mt-1 block hover:underline">
-                  Review →
-                </a>
+            {pendingProposals.length > 0 ? (
+              <div className="space-y-2">
+                {pendingProposals.slice(0, 3).map(p => {
+                  const priorityColor =
+                    p.priority === 'HIGH'   ? '#ff9f0a' :
+                    p.priority === 'MEDIUM' ? '#ffd60a' : '#30d158';
+                  const isBusy =
+                    (approveMut.isPending && approveMut.variables === p.id) ||
+                    (rejectMut.isPending  && rejectMut.variables  === p.id);
+                  return (
+                    <div
+                      key={p.id}
+                      className="rounded border p-2"
+                      style={{ borderColor: `${priorityColor}30`, background: `${priorityColor}08` }}
+                    >
+                      <div className="flex items-center justify-between gap-1 mb-1">
+                        <span className="font-orbitron text-[9px] text-white/80 leading-tight flex-1 min-w-0 truncate">
+                          {p.title}
+                        </span>
+                        <span
+                          className="font-orbitron text-[7px] px-1 py-0.5 rounded border flex-shrink-0"
+                          style={{ borderColor: `${priorityColor}50`, color: priorityColor }}
+                        >
+                          {p.priority}
+                        </span>
+                      </div>
+                      {p.description && (
+                        <div className="font-mono text-[7px] text-white/35 mb-1.5 leading-3.5 line-clamp-2">
+                          {p.description}
+                        </div>
+                      )}
+                      {p.estimated_impact && (
+                        <div className="font-mono text-[7px] text-white/25 mb-1.5">
+                          Impact: {p.estimated_impact}
+                        </div>
+                      )}
+                      <div className="flex gap-1.5">
+                        <button
+                          onClick={() => approveMut.mutate(p.id)}
+                          disabled={isBusy}
+                          className="flex-1 flex items-center justify-center gap-1 py-1 rounded border border-hud-green/40 text-hud-green/80 hover:bg-hud-green/15 hover:border-hud-green/70 transition-all font-orbitron text-[7px] tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <CheckCircle size={8} />
+                          APPROVE
+                        </button>
+                        <button
+                          onClick={() => rejectMut.mutate(p.id)}
+                          disabled={isBusy}
+                          className="flex-1 flex items-center justify-center gap-1 py-1 rounded border border-hud-red/40 text-hud-red/70 hover:bg-hud-red/10 hover:border-hud-red/60 transition-all font-orbitron text-[7px] tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
+                        >
+                          <XCircle size={8} />
+                          REJECT
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+                {pendingProposals.length > 3 && (
+                  <div className="text-center font-mono text-[8px] text-[#ffd60a80]">
+                    +{pendingProposals.length - 3} more proposals
+                  </div>
+                )}
               </div>
             ) : (
               <div className="text-[9px] text-white/30 text-center py-2">No pending proposals</div>

@@ -1,5 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { SystemWsMessage, SystemMetrics as ContractMetrics } from '../types/contracts';
+import { useAlertStore } from '@/store/useAlertStore';
+import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 
 const MAX_HISTORY = 30;
 
@@ -87,6 +89,30 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
         // Ignore keep-alive replies
         if (msg.type === 'PONG') return;
 
+        // ── ALERT frames → global alert store ───────────────────────────────
+        if (msg.type === 'ALERT') {
+          useAlertStore.getState().addAlert({
+            severity: msg.severity ?? 'info',
+            title:    msg.title   ?? 'System Alert',
+            body:     msg.body    ?? msg.message ?? '',
+            source:   msg.source  ?? 'spark-core',
+            ts:       msg.ts      ?? Date.now(),
+          });
+          return;
+        }
+
+        // ── CONFIRM_TOOL frames → agent confirm store ────────────────────────
+        if (msg.type === 'CONFIRM_TOOL') {
+          useAgentConfirmStore.getState().setPending({
+            token:       msg.token,
+            tool:        msg.tool,
+            command:     msg.command,
+            risk_level:  msg.risk_level ?? 'HIGH',
+            description: msg.description,
+            arguments:   msg.arguments,
+          });
+          return;
+        }
         if (msg.type === 'STATE_UPDATE' && msg.state?.metrics) {
           const p: ContractMetrics & Record<string, unknown> = msg.state.metrics;
 

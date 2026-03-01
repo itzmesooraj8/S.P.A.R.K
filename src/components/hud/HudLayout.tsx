@@ -16,23 +16,31 @@ import SatelliteModule from './modules/SatelliteModule';
 import ReasoningLogModule from './modules/ReasoningLogModule';
 import TacticalModule from './modules/TacticalModule';
 import DevGraphModule from './modules/DevGraphModule';
+import AlertLogPanel from './modules/AlertLogPanel';
+import ToolActivityPanel from './modules/ToolActivityPanel';
+import SparkAlertToast from './SparkAlertToast';
+import AgentConfirmModal from './AgentConfirmModal';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 import { useHudTheme } from '@/contexts/ThemeContext';
+import { useAIEvents } from '@/hooks/useAIEvents';
+import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 import { Brain } from 'lucide-react';
 
-type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph';
+type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
-  security: '🔐 SECURITY MODE',
-  globe: '🌍 GLOBAL MAP',
+  security:  '🔐 SECURITY MODE',
+  globe:     '🌍 GLOBAL MAP',
   analytics: '📊 ANALYTICS',
-  agent: '🤖 AUTONOMOUS AGENT',
-  datastream: '📡 DATA STREAM',
+  agent:     '🤖 AUTONOMOUS AGENT',
+  datastream:'📡 DATA STREAM',
   satellite: '🛰 SATELLITE TRACKER',
   reasoning: '🧬 AI REASONING LOG',
-  tactical: '🕶 TACTICAL OVERLAY',
-  devgraph: '🕸️ DEV OS GRAPH',
+  tactical:  '🕶 TACTICAL OVERLAY',
+  devgraph:  '🕸️ DEV OS GRAPH',
+  alertlog:  '🔔 SYSTEM ALERTS',
+  tools:     '⚙ TOOL EXECUTION',
 };
 
 export default function HudLayout() {
@@ -43,6 +51,10 @@ export default function HudLayout() {
   const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
   const navigate = useNavigate();
+
+  // ── Global event listeners ───────────────────────────────────────────────
+  useAIEvents();                                   // listens to /ws/ai → tool store
+  const { pendingRequest, setPending } = useAgentConfirmStore();
 
   const openModule = (m: string) => {
     if (m === 'globe') {
@@ -150,6 +162,8 @@ export default function HudLayout() {
                   {activeModule === 'reasoning' && <ReasoningLogModule />}
                   {activeModule === 'tactical' && <TacticalModule />}
                   {activeModule === 'devgraph' && <DevGraphModule />}
+                  {activeModule === 'alertlog' && <AlertLogPanel />}
+                  {activeModule === 'tools' && <ToolActivityPanel />}
                 </div>
               </motion.div>
             )}
@@ -187,6 +201,16 @@ export default function HudLayout() {
           </motion.div>
         )}
       </AnimatePresence>
+
+      {/* ── Global overlays ─────────────────────────────────────────────────── */}
+      {/* Alert toasts — always mounted, shows on incoming ALERT frames */}
+      <SparkAlertToast />
+
+      {/* Desktop Agent confirm modal */}
+      <AgentConfirmModal
+        request={pendingRequest}
+        onClose={() => setPending(null)}
+      />
     </div>
   );
 }

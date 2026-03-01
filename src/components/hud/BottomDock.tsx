@@ -2,8 +2,11 @@ import { useState, useEffect, useRef } from 'react';
 import {
   Globe, Chrome, Terminal, Power, Lock, Rocket,
   Shield, Music, ChevronUp, ChevronDown, Cpu,
-  Activity, Wifi, Thermometer, Clock, Network, Brain
+  Activity, Wifi, Thermometer, Clock, Network, Brain,
+  Bell, Wrench
 } from 'lucide-react';
+import { useAlertStore } from '@/store/useAlertStore';
+import { useToolActivityStore } from '@/store/useToolActivityStore';
 
 interface QuickButton {
   icon: React.ReactNode;
@@ -31,6 +34,9 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
   const [expanded, setExpanded] = useState(false);
   const [activeBtn, setActiveBtn] = useState<string | null>(null);
 
+  const alertCount   = useAlertStore(s => s.alerts.filter(a => !a.dismissed).length);
+  const pendingTools = useToolActivityStore(s => s.pendingTools.size);
+
   const quickButtons: QuickButton[] = [
     { icon: <Globe size={16} />, label: 'BROWSER', action: () => window.open('about:blank') },
     { icon: <Terminal size={16} />, label: 'TERMINAL', action: () => { } },
@@ -50,6 +56,8 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     { icon: <Network size={14} />, label: 'DEVGRAPH', action: () => onOpenModule('devgraph'), color: 'hud-purple' },
     { icon: <Shield size={14} />, label: 'TACTICAL', action: () => onOpenModule('tactical'), color: 'hud-red' },
     { icon: <Brain size={14} />, label: 'OS CORE', action: () => onOpenModule('os'), color: 'hud-cyan' },
+    { icon: <Bell size={14} />, label: 'ALERTS', action: () => onOpenModule('alertlog'), color: alertCount > 0 ? 'hud-amber' : undefined },
+    { icon: <Wrench size={14} />, label: 'TOOLS', action: () => onOpenModule('tools'), color: pendingTools > 0 ? 'hud-cyan' : undefined },
   ];
 
   const handleBtn = (btn: QuickButton) => {
@@ -75,16 +83,33 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
         style={{ borderBottom: expanded ? '1px solid hsl(186 100% 50% / 0.2)' : 'none' }}
       >
         <div className="flex items-center justify-center gap-3 py-2 px-4">
-          {secondaryButtons.map(btn => (
-            <button
-              key={btn.label}
-              onClick={() => handleBtn(btn)}
-              className="hud-btn flex-row gap-1.5 px-3 py-1.5"
-            >
-              {btn.icon}
-              <span className="font-orbitron text-[8px] tracking-wider">{btn.label}</span>
-            </button>
-          ))}
+          {secondaryButtons.map(btn => {
+            const badge =
+              btn.label === 'ALERTS'  && alertCount > 0   ? alertCount :
+              btn.label === 'TOOLS'   && pendingTools > 0  ? pendingTools :
+              null;
+            return (
+              <button
+                key={btn.label}
+                onClick={() => handleBtn(btn)}
+                className="hud-btn flex-row gap-1.5 px-3 py-1.5 relative"
+              >
+                {btn.icon}
+                <span className="font-orbitron text-[8px] tracking-wider">{btn.label}</span>
+                {badge !== null && (
+                  <span
+                    className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 rounded-full font-orbitron text-[7px] flex items-center justify-center px-0.5"
+                    style={{
+                      background: btn.label === 'ALERTS' ? '#ff9f0a' : '#00f5ff',
+                      color: '#000',
+                    }}
+                  >
+                    {badge}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
       </div>
 

@@ -1,7 +1,8 @@
 import { useState, useEffect } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
-import { MapPin, Cloud, Sun, CloudRain, Wind, Zap, FolderKey } from 'lucide-react';
+import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User } from 'lucide-react';
 import { useDevState } from '@/hooks/useDevState';
+import { useAuth } from '@/contexts/AuthContext';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -23,6 +24,7 @@ function FlipDigits({ value }: { value: string }) {
 
 export default function TopBar() {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
+  const { user, isAuthenticated, logout } = useAuth();
   const [now, setNow] = useState(new Date());
 
   const [projects, setProjects] = useState<string[]>([]);
@@ -194,6 +196,35 @@ export default function TopBar() {
             </button>
           ))}
         </div>
+
+        {/* User badge + logout */}
+        {isAuthenticated && user && (
+          <div className="flex items-center gap-1.5 pl-3 border-l border-hud-cyan/20">
+            <div className="flex items-center gap-1 px-2 py-0.5 rounded border border-hud-cyan/20 bg-hud-cyan/5">
+              <User size={9} className="text-hud-cyan/60" />
+              <span className="font-orbitron text-[9px] text-hud-cyan/70 tracking-widest uppercase">
+                {user.username}
+              </span>
+              <span
+                className="font-orbitron text-[7px] px-1 rounded border ml-1"
+                style={{
+                  borderColor: user.role === 'admin' ? '#ff9f0a50' : '#00f5ff30',
+                  color:       user.role === 'admin' ? '#ff9f0a'   : '#00f5ff80',
+                  background:  user.role === 'admin' ? '#ff9f0a10' : '#00f5ff08',
+                }}
+              >
+                {user.role.toUpperCase()}
+              </span>
+            </div>
+            <button
+              onClick={logout}
+              title="Logout"
+              className="text-hud-cyan/30 hover:text-hud-red/80 transition-colors p-1 rounded"
+            >
+              <LogOut size={10} />
+            </button>
+          </div>
+        )}
       </div>
     </header>
   );
