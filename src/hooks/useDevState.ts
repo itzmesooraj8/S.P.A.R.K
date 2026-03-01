@@ -1,5 +1,8 @@
 import { useState, useEffect, useRef } from 'react';
 
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsErr = (...a: unknown[]) => VERBOSE_WS && console.error('[DevState WS]', ...a);
+
 export interface CodeNode {
     id: string;
     type: string;
@@ -97,7 +100,7 @@ export function useDevState(): DevState {
                         });
                     }
                 } catch (error) {
-                    console.error("[useDevState] Failed to parse payload:", error);
+                    wsErr('Failed to parse payload:', error);
                 }
             };
 

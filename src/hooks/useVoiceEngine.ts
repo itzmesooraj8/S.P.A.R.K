@@ -1,6 +1,11 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { AiWsMessage } from '../types/contracts';
 
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsLog  = (...a: unknown[]) => VERBOSE_WS && console.log('[VoiceEngine WS]',  ...a);
+const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[VoiceEngine WS]', ...a);
+const wsErr  = (...a: unknown[]) => VERBOSE_WS && console.error('[VoiceEngine WS]', ...a);
+
 export type AiStatus = 'idle' | 'listening' | 'thinking' | 'responding';
 
 export interface CommandEntry {
@@ -47,7 +52,7 @@ export function useVoiceEngine() {
 
       ws.onopen = () => {
         setIsOnline(true);
-        console.log("[useVoiceEngine] AI socket connected.");
+        wsLog('AI socket connected.');
       };
 
       ws.onmessage = (event) => {
@@ -87,18 +92,18 @@ export function useVoiceEngine() {
              setStatus('idle');
           }
         } catch (err) {
-          console.error('[useVoiceEngine] Error parsing WS message:', err);
+          wsErr('Error parsing WS message:', err);
         }
       };
 
       ws.onclose = () => {
-        console.warn("[useVoiceEngine] AI socket closed. Reconnecting...");
+        wsWarn('AI socket closed. Reconnecting...');
         setIsOnline(false);
         reconnectTimeout = setTimeout(connectWS, 3000);
       };
 
       ws.onerror = (e) => {
-        console.error("[useVoiceEngine] WS Error:", e);
+        wsErr('WS Error:', e);
         ws.close();
       };
     };
@@ -125,7 +130,7 @@ export function useVoiceEngine() {
     if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
       wsRef.current.send(input);
     } else {
-      console.warn("WebSocket not connected. Cannot send prompt.");
+      wsWarn('WebSocket not connected. Cannot send prompt.');
       setStatus('idle');
       addEntry('ai', '[ERROR] Sovereign Core disconnected.');
     }

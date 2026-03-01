@@ -11,6 +11,9 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useMonitorStore } from '../store/useMonitorStore';
 
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[Globe WS]', ...a);
+
 const WS_URL = (() => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
   const port  = import.meta.env.VITE_BACKEND_PORT ?? '8000';
@@ -90,7 +93,7 @@ export function useGlobeSocket() {
     };
 
     socket.onerror = () => {
-      console.warn('[Globe WS] Socket error');
+      wsWarn('socket error');
     };
 
     socket.onclose = () => {

@@ -10,6 +10,10 @@
 
 import { useEffect, useRef, useCallback } from 'react';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
+import { useConnectionStore } from '@/store/useConnectionStore';
+
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[AIEvents WS]', ...a);
 
 const WS_URL = (() => {
   const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
@@ -49,12 +53,15 @@ export function useAIEvents() {
 
     socket.onopen = () => {
       retryDelay.current = RECONNECT_BASE_MS;
+      useConnectionStore.getState().setAiOnline(true);
     };
 
     socket.onclose = () => {
+      useConnectionStore.getState().setAiOnline(false);
       if (!mountedRef.current) return;
       const delay = Math.min(retryDelay.current, RECONNECT_MAX_MS);
       retryDelay.current = Math.min(retryDelay.current * 1.5, RECONNECT_MAX_MS);
+      wsWarn(`Reconnecting in ${Math.round(delay / 1000)}s…`);
       setTimeout(connect, delay);
     };
 

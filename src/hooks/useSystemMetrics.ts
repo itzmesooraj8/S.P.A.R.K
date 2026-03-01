@@ -3,6 +3,13 @@ import { SystemWsMessage, SystemMetrics as ContractMetrics } from '../types/cont
 import { useAlertStore } from '@/store/useAlertStore';
 import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 import { useActionFeedStore } from '@/store/useActionFeedStore';
+import { useConnectionStore } from '@/store/useConnectionStore';
+
+// Only log WS noise when explicitly opted-in (prevents console spam when backend is offline)
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsLog  = (...a: unknown[]) => VERBOSE_WS && console.log('[System WS]',  ...a);
+const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[System WS]', ...a);
+const wsErr  = (...a: unknown[]) => VERBOSE_WS && console.error('[System WS]', ...a);
 
 const MAX_HISTORY = 30;
 
@@ -72,7 +79,9 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
     socket.onopen = () => {
       if (!mountedRef.current) { socket.close(); return; }
       setIsOnline(true);
+      useConnectionStore.getState().setCoreOnline(true);
       retryDelay.current = RECONNECT_BASE_MS;
+      wsLog('connected');
 
       // Keep-alive heartbeat
       stopPing();
@@ -166,22 +175,23 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
           }));
         }
       } catch (error) {
-        console.error('[useSystemMetrics] Failed to parse payload:', error);
+        wsErr('Failed to parse payload:', error);
       }
     };
 
     socket.onclose = () => {
       stopPing();
       setIsOnline(false);
+      useConnectionStore.getState().setCoreOnline(false);
       if (!mountedRef.current) return;
       const delay = Math.min(retryDelay.current, RECONNECT_MAX_MS);
       retryDelay.current = Math.min(retryDelay.current * 1.5, RECONNECT_MAX_MS);
-      console.warn(`[System WS] Reconnecting in ${Math.round(delay / 1000)}s…`);
+      wsWarn(`Reconnecting in ${Math.round(delay / 1000)}s…`);
       setTimeout(connect, delay);
     };
 
     socket.onerror = () => {
-      console.error('[System WS] Socket error');
+      wsErr('socket error');
       socket.close();
     };
   }, [stopPing]);  // stable — no state deps

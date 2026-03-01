@@ -1,8 +1,9 @@
 import { useState, useEffect } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
-import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User } from 'lucide-react';
+import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff } from 'lucide-react';
 import { useDevState } from '@/hooks/useDevState';
 import { useAuth } from '@/contexts/AuthContext';
+import { useConnectionStore } from '@/store/useConnectionStore';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
@@ -25,6 +26,9 @@ function FlipDigits({ value }: { value: string }) {
 export default function TopBar() {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
   const { user, isAuthenticated, logout } = useAuth();
+  const coreOnline = useConnectionStore((s) => s.coreOnline);
+  const aiOnline   = useConnectionStore((s) => s.aiOnline);
+  const backendOnline = coreOnline || aiOnline;
   const [now, setNow] = useState(new Date());
 
   const [projects, setProjects] = useState<string[]>([]);
@@ -108,7 +112,24 @@ export default function TopBar() {
           </div>
           <div>
             <div className="font-orbitron text-sm font-bold neon-text tracking-widest">SPARK</div>
-            <div className="font-mono-tech text-[9px] text-hud-cyan/60 tracking-wider">v4.1 · ONLINE</div>
+            <div className="flex items-center gap-1.5">
+              <div
+                className="font-mono-tech text-[9px] tracking-wider"
+                style={{ color: backendOnline ? 'hsl(186 100% 50% / 0.6)' : '#ff453a99' }}
+              >
+                v4.1 · {backendOnline ? 'ONLINE' : 'OFFLINE'}
+              </div>
+              {!backendOnline && (
+                <span
+                  title="Backend unreachable — reconnecting…"
+                  className="flex items-center gap-0.5 font-orbitron text-[7px] px-1 py-px rounded border animate-pulse"
+                  style={{ color: '#ff453a', borderColor: '#ff453a50', background: '#ff453a10' }}
+                >
+                  <WifiOff size={7} />
+                  OFFLINE
+                </span>
+              )}
+            </div>
           </div>
         </div>
 
