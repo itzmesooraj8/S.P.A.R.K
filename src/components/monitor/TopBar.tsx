@@ -18,6 +18,7 @@ import { MarketTicker } from './MarketTicker';
 import { TimeFilterBar } from './TimeFilterBar';
 import { MapControls } from './MapControls';
 import { SystemEnvBar } from './SystemEnvBar';
+import { useCombatStore, COMBAT_ACCENT } from '@/store/useCombatStore';
 
 const MODES: { id: MonitorMode; label: string; icon: typeof Globe; color: string; dimColor: string }[] = [
   { id: 'world',   label: 'WORLD',   icon: Globe,       color: '#00f5ff', dimColor: 'rgba(0,245,255,0.12)' },
@@ -62,6 +63,7 @@ export const TopBar = () => {
   }, []);
 
   const activeMode = MODES.find((m) => m.id === mode) ?? MODES[0];
+  const combatActive = useCombatStore((s) => s.isActive);
 
   return (
     <motion.div
@@ -216,6 +218,26 @@ export const TopBar = () => {
               {newCount} NEW
             </span>
           </motion.button>
+        )}
+
+        {/* ── Combat mode indicator ──────────────────────────────── */}
+        {combatActive && (
+          <motion.div
+            initial={{ opacity: 0, scale: 0.8 }}
+            animate={{ opacity: 1, scale: 1 }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: 5, padding: '3px 10px',
+              background: 'rgba(255,45,85,0.15)', border: `1px solid ${COMBAT_ACCENT}55`,
+              borderRadius: 6, flexShrink: 0,
+            }}
+          >
+            <motion.div
+              animate={{ opacity: [1, 0.3, 1] }}
+              transition={{ duration: 1.2, repeat: Infinity }}
+              style={{ width: 6, height: 6, borderRadius: '50%', background: COMBAT_ACCENT }}
+            />
+            <span style={{ fontSize: 9, letterSpacing: 2, color: COMBAT_ACCENT, fontWeight: 700 }}>COMBAT</span>
+          </motion.div>
         )}
 
         {/* ── Time filter ───────────────────────────────────────── */}

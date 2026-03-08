@@ -13,13 +13,14 @@ _DROP_LOG_INTERVAL = 50
 class WebSocketManager:
     def __init__(self):
         # Store connections by namespace
-        # keys: "ai", "system", "device", "notifications", "admin"
+        # keys: "ai", "system", "device", "notifications", "admin", "combat"
         self.active_connections: Dict[str, List[WebSocket]] = {
             "ai": [],
             "system": [],
             "device": [],
             "notifications": [],
-            "admin": []
+            "admin": [],
+            "combat": [],
         }
         # session_id → websocket for targeted routing
         self.session_connections: Dict[str, WebSocket] = {}

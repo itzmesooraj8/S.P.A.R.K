@@ -33,6 +33,17 @@ import { useFxStore } from '@/store/useFxStore';
 import { useCommandBarStore } from '@/store/commandBarStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
 import { Brain } from 'lucide-react';
+import { useCombatStore, COMBAT_BG } from '@/store/useCombatStore';
+import { useCombatWS } from '@/hooks/useCombatWS';
+import { CombatModeModal } from '@/components/combat/CombatModeModal';
+import { OpSecBanner } from '@/components/combat/OpSecBanner';
+import { ReconPanel } from '@/components/combat/ReconPanel';
+import { SigintPanel } from '@/components/combat/SigintPanel';
+import { TorGateway } from '@/components/combat/TorGateway';
+import { CombatDock } from '@/components/combat/CombatDock';
+import { VaultPanel } from '@/components/combat/VaultPanel';
+import WiFiAuditPanel from '@/components/combat/WiFiAuditPanel';
+import PasswordAuditPanel from '@/components/combat/PasswordAuditPanel';
 
 type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music';
 
@@ -54,7 +65,7 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
 export default function HudLayout() {
   const metrics = useSystemMetrics();
   const voice = useVoiceEngine();
-  const { aiMode, isBooted, isShuttingDown } = useHudTheme();
+  const { aiMode, setAiMode, isBooted, isShuttingDown } = useHudTheme();
   const [activeModule, setActiveModule] = useState<ModuleKey | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -65,6 +76,30 @@ export default function HudLayout() {
     { cpu: metrics.cpu, ram: metrics.ram, ping: metrics.ping },
     activeModule,
   );
+
+  // ── Combat Mode ──────────────────────────────────────────────────────────
+  const [combatModalOpen, setCombatModalOpen] = useState(false);
+  const combatActive      = useCombatStore((s) => s.isActive);
+  const combatActivePanel = useCombatStore((s) => s.activePanel);
+  const setInactive       = useCombatStore((s) => s.setInactive);
+  useCombatWS();
+
+  // When user clicks the COMBAT tab → open gate modal
+  useEffect(() => {
+    if (aiMode === 'COMBAT' && !combatActive) {
+      setCombatModalOpen(true);
+    }
+    if (aiMode !== 'COMBAT' && combatActive) {
+      setInactive();
+    }
+  }, [aiMode]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // If combat deactivated externally, revert mode indicator
+  useEffect(() => {
+    if (!combatActive && aiMode === 'COMBAT') {
+      setAiMode('PASSIVE');
+    }
+  }, [combatActive]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Global event listeners ───────────────────────────────────────────────
   useAIEvents();                                   // listens to /ws/ai → tool store
@@ -163,7 +198,11 @@ export default function HudLayout() {
 
   return (
     <div className="relative w-full h-screen flex flex-col overflow-hidden"
-      style={{ background: 'radial-gradient(ellipse at center, #00022e 0%, #000814 60%, #000000 100%)' }}>
+      style={{ background: combatActive
+        ? 'radial-gradient(ellipse at center, #1a0005 0%, ' + COMBAT_BG + ' 60%, #000000 100%)'
+        : 'radial-gradient(ellipse at center, #00022e 0%, #000814 60%, #000000 100%)',
+        transition: 'background 0.6s',
+      }}>
 
       {isShuttingDown && (
         <div className="fixed inset-0 z-[200] bg-black/80 flex items-center justify-center animate-pulse">
@@ -201,6 +240,7 @@ export default function HudLayout() {
           onToggleTts={() => voice.setTtsEnabled(!voice.ttsEnabled)}
           onMicTranscript={(transcript) => voice.processInput(transcript)}
         />
+        <OpSecBanner />
       </div>
 
       {/* Main content */}
@@ -229,6 +269,12 @@ export default function HudLayout() {
             >
               <Brain size={14} />
             </button>
+            {/* Combat Dock — floats in bottom-right of core module when combat is active */}
+            {combatActive && (
+              <div className="absolute bottom-3 right-3">
+                <CombatDock onOpenModal={() => setCombatModalOpen(true)} />
+              </div>
+            )}
           </div>
 
           {/* Module overlay */}
@@ -322,6 +368,65 @@ export default function HudLayout() {
 
       {/* Global command bar — Ctrl+Space (renders via Zustand store) */}
       <CommandBar />
+
+      {/* ── Combat Mode Modal ─────────────────────────────────────────────── */}
+      <CombatModeModal open={combatModalOpen} onClose={() => {
+        setCombatModalOpen(false);
+        // If user dismissed without activating, revert the mode button
+        if (!combatActive) setAiMode('PASSIVE');
+      }} />
+
+      {/* ── Combat Panels ─────────────────────────────────────────────────── */}
+      <AnimatePresence>
+        {(combatActivePanel === 'identity' || combatActivePanel === 'recon') && (
+          <motion.div key="hud-combat-recon"
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+            className="fixed left-60 z-50 pointer-events-auto"
+            style={{ top: '52px', maxHeight: 'calc(100vh - 72px)', overflowY: 'auto' }}>
+            <ReconPanel />
+          </motion.div>
+        )}
+        {combatActivePanel === 'sigint' && (
+          <motion.div key="hud-combat-sigint"
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+            className="fixed left-60 z-50 pointer-events-auto"
+            style={{ top: '52px', maxHeight: 'calc(100vh - 72px)', overflowY: 'auto' }}>
+            <SigintPanel />
+          </motion.div>
+        )}
+        {combatActivePanel === 'tor' && (
+          <motion.div key="hud-combat-tor"
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+            className="fixed right-60 z-50 pointer-events-auto"
+            style={{ top: '52px', maxHeight: 'calc(100vh - 72px)', overflowY: 'auto' }}>
+            <TorGateway />
+          </motion.div>
+        )}
+        {combatActivePanel === 'vault' && (
+          <motion.div key="hud-combat-vault"
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+            className="fixed right-60 z-50 pointer-events-auto"
+            style={{ top: '52px', maxHeight: 'calc(100vh - 72px)', overflowY: 'auto' }}>
+            <VaultPanel />
+          </motion.div>
+        )}
+        {combatActivePanel === 'wifi' && (
+          <motion.div key="hud-combat-wifi"
+            initial={{ opacity: 0, x: -20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: -20 }}
+            className="fixed left-60 z-50 pointer-events-auto"
+            style={{ top: '52px', maxHeight: 'calc(100vh - 72px)', overflowY: 'auto' }}>
+            <WiFiAuditPanel />
+          </motion.div>
+        )}
+        {combatActivePanel === 'password' && (
+          <motion.div key="hud-combat-password"
+            initial={{ opacity: 0, x: 20 }} animate={{ opacity: 1, x: 0 }} exit={{ opacity: 0, x: 20 }}
+            className="fixed right-60 z-50 pointer-events-auto"
+            style={{ top: '52px', maxHeight: 'calc(100vh - 72px)', overflowY: 'auto' }}>
+            <PasswordAuditPanel />
+          </motion.div>
+        )}
+      </AnimatePresence>
     </div>
   );
 }

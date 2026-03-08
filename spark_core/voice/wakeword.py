@@ -8,7 +8,10 @@ Detects "Hey SPARK" (using 'hey jarvis' as placeholder) and publishes events.
 import threading
 import time
 import numpy as np
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from openwakeword.model import Model as _Model  # noqa: F401
 
 try:
     import sounddevice as sd
@@ -18,11 +21,11 @@ except ImportError:
     sd = None
 
 try:
-    from openwakeword.model import Model
+    from openwakeword.model import Model  # type: ignore[import-untyped]
     OPENWAKEWORD_OK = True
 except ImportError:
     OPENWAKEWORD_OK = False
-    Model = None
+    Model = None  # type: ignore[assignment,misc]
 
 
 class WakeWordListener:
@@ -40,7 +43,7 @@ class WakeWordListener:
     def __init__(self):
         self.running = False
         self.thread: Optional[threading.Thread] = None
-        self.model: Optional[Model] = None
+        self.model: Optional[object] = None  # openwakeword.model.Model when loaded
         self.stream = None
         
         # Model key must match the .onnx filename stem (e.g. hey_jarvis_v0.1.onnx → "hey_jarvis_v0.1")

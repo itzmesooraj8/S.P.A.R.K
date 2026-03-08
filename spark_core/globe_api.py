@@ -141,7 +141,8 @@ _CB: dict[str, CircuitBreaker] = {
     name: CircuitBreaker(name) for name in [
         # Free providers
         "usgs", "opensky", "eonet", "gdelt_conflict",
-        "gdelt_intel", "gdelt_news", "coingecko", "frankfurter",
+        "gdelt_intel", "gdelt_news", "gdelt_cyber", "gdelt_sanctions", "gdelt_news_geo",
+        "coingecko", "frankfurter",
         # Free new providers
         "who_rss", "waqi", "ripe_bgp", "meteoalarm",
         # Keyed providers
@@ -169,6 +170,9 @@ _PROVIDER_META: dict[str, dict] = {
     "waqi":         {"name": "WAQI Air Quality Index",  "url": "https://waqi.info/"},
     "ripe_bgp":     {"name": "RIPE NCC BGP Data",       "url": "https://stat.ripe.net/"},
     "meteoalarm":   {"name": "Meteoalarm / NOAA",       "url": "https://www.meteoalarm.org/"},
+    "gdelt_cyber":  {"name": "GDELT Document API v2",    "url": "https://api.gdeltproject.org/"},
+    "gdelt_sanctions": {"name": "GDELT Document API v2", "url": "https://api.gdeltproject.org/"},
+    "gdelt_news_geo":  {"name": "GDELT Document API v2", "url": "https://api.gdeltproject.org/"},
 }
 
 # Mark key-required providers immediately
@@ -241,6 +245,8 @@ async def guarded_fetch(
     ttl: int = 300,
 ) -> dict | list | None:
     """Fetch with circuit-breaker guard. Returns None if circuit open."""
+    if cb_name not in _CB:
+        _CB[cb_name] = CircuitBreaker(cb_name)
     cb = _CB[cb_name]
     if cb.is_open():
         return None

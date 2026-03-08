@@ -38,6 +38,15 @@ import { LayerTogglePanel } from '@/components/monitor/LayerTogglePanel';
 import { AICore } from '@/components/monitor/AICore';
 import { CommandPalette, useCommandPalette } from '@/components/monitor/CommandPalette';
 import { StreetViewPanel, type StreetViewCoords } from '@/components/monitor/StreetViewPanel';
+import { useCombatStore, COMBAT_BG } from '@/store/useCombatStore';
+import { CombatDock } from '@/components/combat/CombatDock';
+import { CombatModeModal } from '@/components/combat/CombatModeModal';
+import { OpSecBanner } from '@/components/combat/OpSecBanner';
+import { ReconPanel } from '@/components/combat/ReconPanel';
+import { SigintPanel } from '@/components/combat/SigintPanel';
+import { TorGateway } from '@/components/combat/TorGateway';
+import { VaultPanel } from '@/components/combat/VaultPanel';
+import { useCombatWS } from '@/hooks/useCombatWS';
 
 const MODE_COLORS: Record<string, string> = {
   world:   '#00f5ff',
@@ -163,6 +172,10 @@ const GlobeMonitor = () => {
   const [streetViewMode, setStreetViewMode] = useState(false);
   // Mobile: which bottom-tab is open (null = map only)
   const [mobileTab, setMobileTab] = useState<'left' | 'right' | null>(null);
+  const [combatModalOpen, setCombatModalOpen] = useState(false);
+  const combatActive      = useCombatStore((s) => s.isActive);
+  const combatActivePanel = useCombatStore((s) => s.activePanel);
+  useCombatWS();
 
   useGlobeSocket();
   useUrlState();
@@ -188,7 +201,7 @@ const GlobeMonitor = () => {
   }, [selectedEventId, setSelectedItem]); // allRealEvents intentionally omitted to avoid thrash
 
   return (
-    <div className="h-screen w-screen overflow-hidden flex flex-col" style={{ background: '#010812' }}>
+    <div className="h-screen w-screen overflow-hidden flex flex-col" style={{ background: combatActive ? COMBAT_BG : '#010812', transition: 'background 0.5s' }}>
 
       {/* ── Globe base ───────────────────────────────────────────── */}
       <MapContainer
@@ -212,6 +225,7 @@ const GlobeMonitor = () => {
           TOP BAR
       ══════════════════════════════════════════════════════════════ */}
       <TopBar />
+      <OpSecBanner />
 
       {/* ══════════════════════════════════════════════════════════════
           MAIN HUD LAYER  (below TopBar, above status bar)
@@ -363,6 +377,8 @@ const GlobeMonitor = () => {
           accentColor={accentColor}
           onClick={() => setCmdOpen(true)}
         />
+        {/* Combat dock */}
+        <CombatDock onOpenModal={() => setCombatModalOpen(true)} />
       </div>
 
       {/* ══════════════════════════════════════════════════════════════
@@ -457,6 +473,61 @@ const GlobeMonitor = () => {
           STREET VIEW ACTIVE — CLICK ANY LOCATION ON THE GLOBE
         </div>
       )}
+
+      {/* ══ Combat Mode Modal ═══════════════════════════════════ */}
+      <CombatModeModal open={combatModalOpen} onClose={() => setCombatModalOpen(false)} />
+
+      {/* ══ Combat Panels ═══════════════════════════════════════ */}
+      <AnimatePresence>
+        {(combatActivePanel === 'identity' || combatActivePanel === 'recon') && (
+          <motion.div
+            key="combat-recon"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="fixed left-4 z-50 pointer-events-auto"
+            style={{ top: '60px', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
+          >
+            <ReconPanel />
+          </motion.div>
+        )}
+        {combatActivePanel === 'sigint' && (
+          <motion.div
+            key="combat-sigint"
+            initial={{ opacity: 0, x: -20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: -20 }}
+            className="fixed left-4 z-50 pointer-events-auto"
+            style={{ top: '60px', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
+          >
+            <SigintPanel />
+          </motion.div>
+        )}
+        {combatActivePanel === 'tor' && (
+          <motion.div
+            key="combat-tor"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="fixed right-16 z-50 pointer-events-auto"
+            style={{ top: '60px', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
+          >
+            <TorGateway />
+          </motion.div>
+        )}
+        {combatActivePanel === 'vault' && (
+          <motion.div
+            key="combat-vault"
+            initial={{ opacity: 0, x: 20 }}
+            animate={{ opacity: 1, x: 0 }}
+            exit={{ opacity: 0, x: 20 }}
+            className="fixed right-16 z-50 pointer-events-auto"
+            style={{ top: '60px', maxHeight: 'calc(100vh - 80px)', overflowY: 'auto' }}
+          >
+            <VaultPanel />
+          </motion.div>
+        )}
+      </AnimatePresence>
 
       {/* ══════════════════════════════════════════════════════════════
           STATUS BAR  (32px, bottom)

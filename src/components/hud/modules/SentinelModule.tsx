@@ -1,13 +1,14 @@
 /**
  * SENTINEL — unified threat intelligence + network security
- * Tabs: TACTICAL (TacticalModule) | NETWORK (SecurityModule)
+ * Tabs: TACTICAL (TacticalModule) | NETWORK (SecurityModule) | SENSOR (DensePose)
  */
-import { useState, useEffect } from 'react';
-import { Shield, Eye, Fingerprint, Lock, AlertTriangle, Globe, RefreshCw, Search, Wifi, Activity, CheckCircle, XCircle } from 'lucide-react';
+import { useState, useEffect, useCallback } from 'react';
+import { Shield, Eye, Fingerprint, Lock, AlertTriangle, Globe, RefreshCw, Search, Wifi, Activity, CheckCircle, XCircle, Radio } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet } from '@/lib/api';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useContextStore } from '@/store/useContextStore';
+import { useCombatStore } from '@/store/useCombatStore';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -283,14 +284,194 @@ function NetworkTab() {
   );
 }
 
+/* ── SENSOR tab — WiFi-DensePose physical presence ───────────────────────── */
+type SensorPerson = { id: number; action: string; heart_rate?: number; bbox?: number[] }
+type SensorFrame  = { timestamp: number; person_count: number; persons: SensorPerson[]; rssi?: number }
+
+function SensorTab() {
+  const { sessionToken, isActive } = useCombatStore()
+  const [host, setHost]       = useState('localhost')
+  const [port, setPort]       = useState(8765)
+  const [connected, setConnected] = useState(false)
+  const [connecting, setConnecting]= useState(false)
+  const [frame,  setFrame]    = useState<SensorFrame | null>(null)
+  const [error,  setError]    = useState('')
+
+  // Listen for SENSOR_FRAME messages on the combat WS
+  useEffect(() => {
+    if (!isActive) return
+    const handler = (e: MessageEvent) => {
+      try {
+        const msg = JSON.parse(e.data)
+        if (msg.type === 'SENSOR_FRAME') setFrame(msg.frame)
+      } catch { /* skip */ }
+    }
+    window.addEventListener('message', handler)
+    return () => window.removeEventListener('message', handler)
+  }, [isActive])
+
+  // Combat WS frames arrive on the global WS — hook into it
+  useEffect(() => {
+    if (!isActive) return
+    const onWsMsg = (e: CustomEvent) => {
+      const msg = e.detail
+      if (msg?.type === 'SENSOR_FRAME') setFrame(msg.frame)
+    }
+    window.addEventListener('spark:ws', onWsMsg as EventListener)
+    return () => window.removeEventListener('spark:ws', onWsMsg as EventListener)
+  }, [isActive])
+
+  const connect = useCallback(async () => {
+    setConnecting(true); setError('')
+    try {
+      const res = await fetch(`${API}/api/combat/sensor/connect`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', 'X-Combat-Token': sessionToken! },
+        body: JSON.stringify({ host, port }),
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Connection failed')
+      setConnected(true)
+    } catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)) }
+    finally { setConnecting(false) }
+  }, [host, port, sessionToken])
+
+  const disconnect = useCallback(async () => {
+    try {
+      await fetch(`${API}/api/combat/sensor/disconnect`, {
+        method: 'POST',
+        headers: { 'X-Combat-Token': sessionToken! },
+      })
+    } catch { /* ignore */ }
+    setConnected(false); setFrame(null)
+  }, [sessionToken])
+
+  const ACTION_COLOR = (a: string) => {
+    if (a === 'running')  return '#FF2D55'
+    if (a === 'walking')  return '#FF9F0A'
+    if (a === 'standing') return '#34d399'
+    return '#60a5fa'
+  }
+
+  return (
+    <div className="flex flex-col gap-3 p-3 h-full overflow-y-auto scrollbar-hud">
+      {/* Connection bar */}
+      <div className="flex items-center gap-2">
+        <input value={host} onChange={e => setHost(e.target.value)}
+          placeholder="host" style={{ background: '#0a0002', border: '1px solid #2a0010',
+            borderRadius: 4, padding: '4px 8px', color: '#fff', fontSize: 10, width: 100 }} />
+        <input value={port} type="number" onChange={e => setPort(Number(e.target.value))}
+          placeholder="8765" style={{ background: '#0a0002', border: '1px solid #2a0010',
+            borderRadius: 4, padding: '4px 8px', color: '#fff', fontSize: 10, width: 60 }} />
+        {!connected ? (
+          <button onClick={connect} disabled={connecting}
+            className="font-orbitron text-[9px] font-bold"
+            style={{ background: '#FF2D55', border: 'none', borderRadius: 4,
+              padding: '4px 12px', color: '#fff', cursor: 'pointer' }}>
+            {connecting ? 'CONNECTING…' : 'CONNECT'}
+          </button>
+        ) : (
+          <button onClick={disconnect}
+            className="font-orbitron text-[9px] font-bold"
+            style={{ background: 'transparent', border: '1px solid #FF2D55',
+              borderRadius: 4, padding: '4px 12px', color: '#FF2D55', cursor: 'pointer' }}>
+            DISCONNECT
+          </button>
+        )}
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 6 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%',
+            background: connected ? '#34d399' : '#3a1520',
+            boxShadow: connected ? '0 0 8px #34d399' : 'none' }} />
+          <span className="font-orbitron text-[8px]" style={{ color: connected ? '#34d399' : '#555' }}>
+            {connected ? 'LIVE' : 'OFFLINE'}
+          </span>
+        </div>
+      </div>
+
+      {error && (
+        <div className="font-mono-tech text-[9px] text-hud-red p-2 rounded border border-hud-red/30 bg-hud-red/10">
+          {error}
+        </div>
+      )}
+
+      {/* Live frame */}
+      {frame ? (
+        <>
+          {/* Summary row */}
+          <div className="hud-panel rounded p-3">
+            <div className="flex justify-between items-center mb-2">
+              <span className="font-orbitron text-[9px] text-hud-red/80">PHYSICAL PRESENCE</span>
+              {frame.rssi !== undefined && (
+                <span className="font-mono-tech text-[8px] text-hud-cyan/50">
+                  RSSI {frame.rssi} dBm
+                </span>
+              )}
+            </div>
+            <div className="flex gap-6">
+              <div className="text-center">
+                <div className="font-orbitron text-2xl font-bold" style={{ color: frame.person_count > 0 ? '#FF2D55' : '#34d399' }}>
+                  {frame.person_count}
+                </div>
+                <div className="font-orbitron text-[7px] text-hud-cyan/50">PERSONS</div>
+              </div>
+            </div>
+          </div>
+
+          {/* Person cards */}
+          {frame.persons.length > 0 && (
+            <div className="flex flex-col gap-2">
+              {frame.persons.map(p => (
+                <div key={p.id} className="hud-panel rounded p-2.5 border border-hud-red/20">
+                  <div className="flex items-center justify-between mb-1.5">
+                    <span className="font-orbitron text-[9px] text-hud-cyan/60">PERSON #{p.id}</span>
+                    <span className="font-mono-tech text-[9px] font-bold" style={{ color: ACTION_COLOR(p.action) }}>
+                      {p.action?.toUpperCase()}
+                    </span>
+                  </div>
+                  {p.heart_rate !== undefined && (
+                    <div className="flex items-center gap-2">
+                      <Activity size={9} className="text-hud-red" />
+                      <span className="font-mono-tech text-[9px] text-hud-cyan/70">{p.heart_rate} BPM</span>
+                    </div>
+                  )}
+                  {p.bbox && (
+                    <div className="font-mono-tech text-[7px] text-hud-cyan/30 mt-1">
+                      bbox [{p.bbox.map(v => Math.round(v)).join(', ')}]
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )}
+        </>
+      ) : connected ? (
+        <div className="flex items-center gap-2 p-3 rounded border border-hud-cyan/20">
+          <Radio size={11} className="text-hud-cyan animate-pulse" />
+          <span className="font-mono-tech text-[9px] text-hud-cyan/60">Awaiting sensor frames…</span>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 p-3 rounded border border-hud-red/20">
+          <Radio size={11} className="text-hud-red/50" />
+          <span className="font-mono-tech text-[9px] text-hud-cyan/40">
+            Connect to a WiFi-DensePose inference server to enable physical presence detection.
+          </span>
+        </div>
+      )}
+    </div>
+  )
+}
+
+
 /* ── Main export ─────────────────────────────────────────────────────────── */
-type Tab = 'tactical' | 'network';
+type Tab = 'tactical' | 'network' | 'sensor';
 
 export default function SentinelModule() {
   const [tab, setTab] = useState<Tab>('tactical');
+  const combatActive = useCombatStore(s => s.isActive)
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'tactical', label: 'TACTICAL', icon: <AlertTriangle size={10} /> },
     { id: 'network',  label: 'NETWORK',  icon: <Shield size={10} /> },
+    ...(combatActive ? [{ id: 'sensor' as Tab, label: 'SENSOR', icon: <Radio size={10} /> }] : []),
   ];
 
   return (
@@ -311,6 +492,7 @@ export default function SentinelModule() {
       <div className="flex-1 min-h-0">
         {tab === 'tactical' && <TacticalTab />}
         {tab === 'network'  && <NetworkTab />}
+        {tab === 'sensor'   && <SensorTab />}
       </div>
     </div>
   );

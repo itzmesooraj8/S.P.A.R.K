@@ -1,5 +1,7 @@
 import { AiStatus } from '@/hooks/useVoiceEngine';
-import { Mic, MicOff, Brain } from 'lucide-react';
+import { Mic, MicOff, Brain, AlertTriangle } from 'lucide-react';
+import { useCombatStore } from '@/store/useCombatStore';
+import { useEffect, useCallback, useState } from 'react';
 
 interface Props {
   status: AiStatus;
@@ -9,15 +11,54 @@ interface Props {
   aiMode: string;
 }
 
-const STATUS_CONFIG = {
-  idle: { color: '#00f5ff', label: 'IDLE', rings: 1 },
-  listening: { color: '#00ff88', label: 'LISTENING', rings: 2 },
-  thinking: { color: '#ffb800', label: 'PROCESSING', rings: 3 },
-  responding: { color: '#0066ff', label: 'RESPONDING', rings: 2 },
+const STATUS_CONFIG: Record<string, { color: string; label: string; rings: number }> = {
+  idle:        { color: '#00f5ff', label: 'IDLE',       rings: 1 },
+  listening:   { color: '#00ff88', label: 'LISTENING',  rings: 2 },
+  thinking:    { color: '#ffb800', label: 'PROCESSING', rings: 3 },
+  responding:  { color: '#0066ff', label: 'RESPONDING', rings: 2 },
+  combat:      { color: '#FF2D55', label: 'COMBAT',     rings: 3 },
+  degraded:    { color: '#FF9F0A', label: 'DEGRADED',   rings: 1 },
 };
 
 export default function CoreModule({ status, isListening, amplitude, onToggleMic, aiMode }: Props) {
-  const cfg = STATUS_CONFIG[status];
+  const combatActive = useCombatStore(s => s.isActive)
+  const { sessionToken } = useCombatStore()
+  const [briefing, setBriefing] = useState<string | null>(null)
+  const [briefingLoading, setBriefingLoading] = useState(false)
+
+  // Effective display status — override with 'combat' when in combat mode
+  const effectiveStatus = combatActive ? 'combat' : status
+  const cfg = STATUS_CONFIG[effectiveStatus] ?? STATUS_CONFIG.idle
+
+  const fetchBriefing = useCallback(async () => {
+    if (!combatActive || !sessionToken) return
+    setBriefingLoading(true)
+    try {
+      const res = await fetch(
+        `${window.location.protocol}//${window.location.hostname}:8000/api/combat/jarvis/briefing`,
+        {
+          method:  'POST',
+          headers: { 'Content-Type': 'application/json', 'X-Combat-Token': sessionToken },
+          body:    JSON.stringify({ mode: aiMode, speak: false, context: { combat_active: true } }),
+        },
+      )
+      if (res.ok) {
+        const data = await res.json()
+        setBriefing(data.text || null)
+      }
+    } catch { /* ignore */ }
+    finally { setBriefingLoading(false) }
+  }, [combatActive, sessionToken, aiMode])
+
+  // Fetch briefing when combat activates
+  useEffect(() => {
+    if (combatActive) {
+      fetchBriefing()
+    } else {
+      setBriefing(null)
+    }
+  }, [combatActive])
+
   const size = 260;
   const cx = size / 2;
   const cy = size / 2;
@@ -128,7 +169,7 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
             fill="none"
             stroke={cfg.color}
             strokeWidth={4}
-            opacity={status !== 'idle' ? 0.6 : 0.3}
+            opacity={effectiveStatus !== 'idle' ? 0.6 : 0.3}
             style={{ filter: `drop-shadow(0 0 8px ${cfg.color})` }}
           />
 
@@ -179,7 +220,10 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
 
         {/* Center content */}
         <div className="absolute inset-0 flex flex-col items-center justify-center">
-          <Brain size={20} style={{ color: cfg.color, filter: `drop-shadow(0 0 6px ${cfg.color})` }} />
+          {combatActive
+            ? <AlertTriangle size={20} style={{ color: cfg.color, filter: `drop-shadow(0 0 6px ${cfg.color})` }} />
+            : <Brain size={20} style={{ color: cfg.color, filter: `drop-shadow(0 0 6px ${cfg.color})` }} />
+          }
           <div className="font-orbitron text-[9px] mt-1 tracking-widest"
             style={{ color: cfg.color, textShadow: `0 0 8px ${cfg.color}` }}>
             {cfg.label}
@@ -217,17 +261,40 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
 
       {/* Status bar */}
       <div className="flex gap-3">
-        {(['idle', 'listening', 'thinking', 'responding'] as AiStatus[]).map(s => (
+        {(['idle', 'listening', 'thinking', 'responding', ...(combatActive ? ['combat'] : [])] as string[]).map(s => (
           <div key={s} className="flex flex-col items-center gap-0.5">
-            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${status === s ? 'scale-125' : 'opacity-30'
+            <div className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${effectiveStatus === s ? 'scale-125' : 'opacity-30'
               }`} style={{
-                background: STATUS_CONFIG[s].color,
-                boxShadow: status === s ? `0 0 6px ${STATUS_CONFIG[s].color}` : 'none',
+                background: STATUS_CONFIG[s]?.color ?? '#555',
+                boxShadow: effectiveStatus === s ? `0 0 6px ${STATUS_CONFIG[s]?.color}` : 'none',
               }} />
             <span className="font-mono-tech text-[7px] text-hud-cyan/40">{s.toUpperCase()}</span>
           </div>
         ))}
       </div>
+
+      {/* Jarvis briefing strip */}
+      {combatActive && (
+        <div style={{
+          maxWidth: 280, textAlign: 'center', color: '#FF9F0A',
+          fontSize: 10, fontStyle: 'italic', lineHeight: 1.4, minHeight: 32,
+        }}>
+          {briefingLoading ? (
+            <span style={{ color: '#3a1520' }}>Generating briefing…</span>
+          ) : briefing ? (
+            <>
+              <span style={{ color: '#555', fontSize: 9 }}>JARVIS: </span>
+              {briefing}
+            </>
+          ) : (
+            <button onClick={fetchBriefing}
+              style={{ background: 'transparent', border: '1px solid #3a1520',
+                borderRadius: 4, padding: '2px 10px', color: '#555', fontSize: 9, cursor: 'pointer' }}>
+              GET BRIEFING
+            </button>
+          )}
+        </div>
+      )}
     </div>
   );
 }

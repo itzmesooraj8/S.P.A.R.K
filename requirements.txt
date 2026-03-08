@@ -70,3 +70,24 @@ ruff==0.11.10
 
 # ── Browser Agent ──────────────────────────────
 playwright>=1.40.0
+
+# ── Combat Mode — Professional Security Stack ──
+pyshark>=0.6                  # Wireshark/tshark live capture wrapper
+python-owasp-zap-v2.4>=0.0.21 # OWASP ZAP web scanner
+pymisp>=2.4.195               # MISP threat intelligence platform
+
+# ── Combat Mode — Password Audit ───────────────
+# hashcat  ← install system-wide from https://hashcat.net
+# cupp     ← pip install cupp  OR  git clone https://github.com/Mebus/cupp
+
+# ── Combat Mode — WiFi Audit ───────────────────
+# aircrack-ng suite  ← install via OS package manager (aircrack-ng, airodump-ng)
+# bettercap          ← https://www.bettercap.org/
+
+# ── Combat Mode — Physical Sensor ──────────────
+# websockets already listed above (v15.x)
+# wifi-densepose  ← git clone https://github.com/ruvnet/wifi-densepose
+
+# ── Combat Mode — Jarvis Voice Upgrade ─────────
+# luxtts  ← pip install luxtts  (requires CUDA GPU with ≥1 GB VRAM)
+# torch   ← pip install torch   (for LuxTTS CUDA probe)

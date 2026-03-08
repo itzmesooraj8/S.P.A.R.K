@@ -1,18 +1,26 @@
 """
 SPARK Voice — TTS Router
 ────────────────────────────────────────────────────────────────────────────────
-Uses edge-tts (Microsoft Azure Neural Voices via free public API) to synthesize
-speech for SPARK's verbal responses.
+Primary engine: LuxTTS (local, 1 GB VRAM, 150× real-time speed) when CUDA is
+available. Falls back to edge-tts (Microsoft Azure Neural Voices) automatically.
 
-Endpoints exposed (registered in main.py):
+Engine selection at import time:
+  1. VRAM ≥ 1 GB  → LuxTTS (high-quality prosody, low latency, fully offline)
+  2. Fallback      → edge-tts (cloud, no GPU required)
+
+Endpoints:
   POST /api/voice/speak       — synthesize text → streams MP3 audio
-  GET  /api/voice/voices      — list available edge-tts voices
+  GET  /api/voice/voices      — list available voices
+  GET  /api/voice/engine      — which engine is active
   POST /api/voice/speak/ws    — WebSocket: receive text, stream back audio bytes
 """
 
 import asyncio
 import io
 import json
+import logging
+import subprocess
+import sys
 from typing import Optional
 
 import edge_tts
@@ -20,13 +28,40 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 
+log = logging.getLogger(__name__)
+
+# ── LuxTTS availability probe ──────────────────────────────────────────────────
+def _probe_luxtts() -> bool:
+    """Return True if LuxTTS is importable AND sufficient VRAM (≥1 GB) is available."""
+    try:
+        import torch  # type: ignore
+        if not torch.cuda.is_available():
+            return False
+        vram_mb = torch.cuda.get_device_properties(0).total_memory // (1024 * 1024)
+        if vram_mb < 1024:
+            log.info("[TTS] VRAM %d MB < 1024 MB — using edge-tts fallback", vram_mb)
+            return False
+        import luxtts  # type: ignore  # noqa: F401
+        log.info("[TTS] LuxTTS selected — VRAM: %d MB available", vram_mb)
+        return True
+    except Exception as exc:
+        log.debug("[TTS] LuxTTS unavailable: %s", exc)
+        return False
+
+_LUXTTS_ACTIVE = _probe_luxtts()
+TTS_ENGINE = "luxtts" if _LUXTTS_ACTIVE else "edge-tts"
+print(f"🎙️  [TTS] Active engine: {TTS_ENGINE.upper()}")
+
 # ── Router ─────────────────────────────────────────────────────────────────────
 tts_router = APIRouter(prefix="/api/voice", tags=["voice"])
 
-# SPARK default voice — professional, neutral, slightly synthetic = Jarvis vibes
+# SPARK default voice
 DEFAULT_VOICE = "en-US-GuyNeural"
-DEFAULT_RATE   = "+5%"   # slightly faster
-DEFAULT_PITCH  = "-10Hz" # slightly deeper
+DEFAULT_RATE   = "+5%"
+DEFAULT_PITCH  = "-10Hz"
+
+# LuxTTS model name (high-quality male voice)
+LUXTTS_VOICE   = "en_male_jarvis"
 
 
 class SpeakRequest(BaseModel):
@@ -36,8 +71,23 @@ class SpeakRequest(BaseModel):
     pitch: Optional[str] = DEFAULT_PITCH
 
 
-async def _synthesize_bytes(text: str, voice: str, rate: str, pitch: str) -> bytes:
-    """Run edge-tts synthesis and return raw MP3 bytes."""
+# ── LuxTTS synthesis ───────────────────────────────────────────────────────────
+async def _synthesize_luxtts(text: str) -> bytes:
+    """Run LuxTTS in a thread pool executor and return WAV/MP3 bytes."""
+    import luxtts  # type: ignore
+    loop = asyncio.get_event_loop()
+
+    def _run() -> bytes:
+        buf = io.BytesIO()
+        luxtts.synthesize(text, voice=LUXTTS_VOICE, output_file=buf)
+        buf.seek(0)
+        return buf.read()
+
+    return await loop.run_in_executor(None, _run)
+
+
+# ── edge-tts synthesis ─────────────────────────────────────────────────────────
+async def _synthesize_edgetts(text: str, voice: str, rate: str, pitch: str) -> bytes:
     communicate = edge_tts.Communicate(text, voice, rate=rate, pitch=pitch)
     buf = io.BytesIO()
     async for chunk in communicate.stream():
@@ -47,37 +97,57 @@ async def _synthesize_bytes(text: str, voice: str, rate: str, pitch: str) -> byt
     return buf.read()
 
 
+async def _synthesize_bytes(text: str, voice: str, rate: str, pitch: str) -> bytes:
+    """Unified synthesis — tries LuxTTS first, falls back to edge-tts."""
+    if _LUXTTS_ACTIVE:
+        try:
+            return await _synthesize_luxtts(text)
+        except Exception as exc:
+            log.warning("[TTS] LuxTTS synthesis failed (%s) — falling back to edge-tts", exc)
+    return await _synthesize_edgetts(text, voice, rate, pitch)
+
+
+@tts_router.get("/engine")
+async def get_engine():
+    """Return which TTS engine is currently active."""
+    return {"engine": TTS_ENGINE, "luxtts_active": _LUXTTS_ACTIVE}
+
+
 @tts_router.post("/speak")
 async def speak(req: SpeakRequest):
-    """
-    Synthesize text to speech and stream back MP3 audio.
-    Frontend can play this via:
-        const audio = new Audio(URL.createObjectURL(blob));  audio.play();
-    """
+    """Synthesize text to speech and stream back MP3/WAV audio."""
     voice = req.voice or DEFAULT_VOICE
     rate  = req.rate  or DEFAULT_RATE
     pitch = req.pitch or DEFAULT_PITCH
 
-    async def audio_stream():
-        communicate = edge_tts.Communicate(req.text, voice, rate=rate, pitch=pitch)
-        async for chunk in communicate.stream():
-            if chunk["type"] == "audio":
-                yield chunk["data"]
+    if _LUXTTS_ACTIVE:
+        async def audio_stream():
+            data = await _synthesize_luxtts(req.text)
+            yield data
+        media_type = "audio/wav"
+    else:
+        async def audio_stream():  # type: ignore[no-redef]
+            communicate = edge_tts.Communicate(req.text, voice, rate=rate, pitch=pitch)
+            async for chunk in communicate.stream():
+                if chunk["type"] == "audio":
+                    yield chunk["data"]
+        media_type = "audio/mpeg"
 
     return StreamingResponse(
         audio_stream(),
-        media_type="audio/mpeg",
+        media_type=media_type,
         headers={
             "Content-Disposition": "inline; filename=spark_speech.mp3",
             "Cache-Control": "no-cache",
-            "X-Voice": voice,
+            "X-Voice": LUXTTS_VOICE if _LUXTTS_ACTIVE else voice,
+            "X-Engine": TTS_ENGINE,
         },
     )
 
 
 @tts_router.get("/voices")
 async def list_voices():
-    """Return available edge-tts voices filtered to English."""
+    """Return available voices filtered to English."""
     voices = await edge_tts.list_voices()
     english = [
         {

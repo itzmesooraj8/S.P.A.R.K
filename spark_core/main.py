@@ -45,6 +45,7 @@ from scheduler_service import scheduler_router, init_scheduler
 from agents.browser_agent import browser_router
 from security.firewall_router import router as security_router  # /api/security/*
 from music.router import router as music_router                  # /api/music/*
+from combat.router import router as combat_router                # /api/combat/* — Sovereign OSINT Platform
 from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
 
 if sys.platform == 'win32':
@@ -215,8 +216,8 @@ async def _threat_feed_loop():
         try:
             async with __import__("httpx").AsyncClient(timeout=15.0) as c:
                 # Feed earthquake data
-                eq_r = await c.get("http://localhost:8000/api/seismology/v1/listEarthquakes",
-                                   json={"layers": ["earthquake"]}, timeout=15.0)
+                eq_r = await c.post("http://localhost:8000/api/seismology/v1/listEarthquakes",
+                                    json={"layers": ["earthquake"]}, timeout=15.0)
                 if eq_r.status_code == 200:
                     events = eq_r.json().get("events", [])
                     threat_predictor.ingest(events, "earthquake")
@@ -274,6 +275,7 @@ app.include_router(scheduler_router) # /api/scheduler/* — reminders + cron job
 app.include_router(browser_router)   # /api/browser/*  — Playwright web agent
 app.include_router(security_router)  # /api/security/* — firewall + network telemetry
 app.include_router(music_router)     # /api/music/*    — local audio file browser
+app.include_router(combat_router)    # /api/combat/*   — Sovereign Cyber Intelligence Platform
 
 # -----------------
 # API ENDPOINTS
@@ -411,6 +413,25 @@ async def websocket_system(websocket: WebSocket):
                 pass
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "system")
+
+@app.websocket("/ws/combat")
+async def websocket_combat(websocket: WebSocket):
+    """Combat Mode real-time push channel (Sherlock hits, recon events, etc.)"""
+    await ws_manager.connect(websocket, "combat")
+    try:
+        while True:
+            raw = await websocket.receive_text()
+            try:
+                frame = json.loads(raw)
+                if frame.get("type") == "PING":
+                    await websocket.send_text(json.dumps({"type": "PONG", "ts": time.time() * 1000}))
+            except (json.JSONDecodeError, Exception):
+                pass
+    except WebSocketDisconnect:
+        ws_manager.disconnect(websocket, "combat")
+    except Exception:
+        ws_manager.disconnect(websocket, "combat")
+
 
 @app.websocket("/ws/globe")
 async def websocket_globe(websocket: WebSocket):
