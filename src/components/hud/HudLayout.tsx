@@ -8,22 +8,18 @@ import CoreModule from './CoreModule';
 import SystemPanel from './SystemPanel';
 import ControlPanel from './ControlPanel';
 import AIPanelSlider from './AIPanelSlider';
-import SecurityModule from './modules/SecurityModule';
-import AnalyticsModule from './modules/AnalyticsModule';
-import AgentModule from './modules/AgentModule';
-import DataStreamModule from './modules/DataStreamModule';
 import SatelliteModule from './modules/SatelliteModule';
-import ReasoningLogModule from './modules/ReasoningLogModule';
-import TacticalModule from './modules/TacticalModule';
 import DevGraphModule from './modules/DevGraphModule';
 import AlertLogPanel from './modules/AlertLogPanel';
 import ToolActivityPanel from './modules/ToolActivityPanel';
 import ActionFeedPanel from './modules/ActionFeedPanel';
 import PluginsModule from './modules/PluginsModule';
-import SchedulerModule from './modules/SchedulerModule';
 import BrowserModule from './modules/BrowserModule';
-import NeuralSearchModule from './modules/NeuralSearchModule';
 import MusicModule from './modules/MusicModule';
+import SparkPanel from './modules/SparkPanel';
+import SentinelModule from './modules/SentinelModule';
+import TelemetryModule from './modules/TelemetryModule';
+import MindModule from './modules/MindModule';
 import SparkAlertToast from './SparkAlertToast';
 import AgentConfirmModal from './AgentConfirmModal';
 import CommandBar from './CommandBar';
@@ -38,26 +34,21 @@ import { useCommandBarStore } from '@/store/commandBarStore';
 import { useWakeWordListener } from '@/hooks/useWakeWordListener';
 import { Brain } from 'lucide-react';
 
-type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'scheduler' | 'browser' | 'neuralsearch' | 'music';
+type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
-  security:  '🔐 SECURITY MODE',
-  globe:     '🌍 GLOBAL MAP',
-  analytics: '📊 ANALYTICS',
-  agent:     '🤖 AUTONOMOUS AGENT',
-  datastream:'📡 DATA STREAM',
-  satellite: '🛰 SATELLITE TRACKER',
-  reasoning: '🧬 AI REASONING LOG',
-  tactical:  '🕶 TACTICAL OVERLAY',
-  devgraph:  '🕸️ DEV OS GRAPH',
-  alertlog:    '🔔 SYSTEM ALERTS',
-  tools:       '⚙ TOOL EXECUTION',
-  actionfeed:  '⚡ ACTION FEED',
-  plugins:     '🧩 PLUGIN MANAGER',
-  scheduler:   '⏰ SCHEDULER & REMINDERS',
-  browser:     '🌐 BROWSER AGENT',
-  neuralsearch:'🧠 NEURAL SEARCH · CHROMADB',
-  music:       '🎵 MUSIC PLAYER',
+  spark:      '⚡ SPARK AGENT',
+  sentinel:   '🔐 SENTINEL',
+  telemetry:  '📡 TELEMETRY',
+  mind:       '🧠 MIND',
+  satellite:  '🛰 SATELLITE TRACKER',
+  devgraph:   '🕸️ DEV OS GRAPH',
+  alertlog:   '🔔 SYSTEM ALERTS',
+  tools:      '⚙ TOOL EXECUTION',
+  actionfeed: '⚡ ACTION FEED',
+  plugins:    '🧩 PLUGIN MANAGER',
+  browser:    '🌐 BROWSER AGENT',
+  music:      '🎵 MUSIC PLAYER',
 };
 
 export default function HudLayout() {
@@ -121,23 +112,22 @@ export default function HudLayout() {
         navigate('/globe-monitor');
       } else if (module === 'music' && params?.query) {
         setActiveModule('music');
-        // Dispatch to music module to start playing the query
         window.dispatchEvent(new CustomEvent('music-play', { detail: { query: params.query } }));
       } else if (module === 'browser' && params?.url) {
         setActiveModule('browser');
         window.dispatchEvent(new CustomEvent('browser-navigate', { detail: { url: params.url } }));
       } else if (module === 'neural_search' && params?.query) {
-        setActiveModule('neuralsearch');
+        setActiveModule('mind');
         window.dispatchEvent(new CustomEvent('search-query', { detail: { query: params.query } }));
       } else if (module === 'scheduler') {
-        setActiveModule('scheduler');
+        setActiveModule('mind');
         window.dispatchEvent(new CustomEvent('scheduler-action', { detail: params }));
       } else if (module === 'security') {
-        setActiveModule('security');
+        setActiveModule('sentinel');
         window.dispatchEvent(new CustomEvent('security-action', { detail: { action } }));
-      } else if (module === 'llm') {
-        // Open AI chat panel and send query
-        setShowAiPanel(true);
+      } else if (module === 'agent' || module === 'llm') {
+        setActiveModule('spark');
+        if (module === 'llm') setShowAiPanel(true);
         window.dispatchEvent(new CustomEvent('llm-query', { detail: { query: params?.query } }));
       } else if (module === 'mode') {
         window.dispatchEvent(new CustomEvent('mode-activate', { detail: params }));
@@ -270,22 +260,18 @@ export default function HudLayout() {
                   </div>
                 </div>
                 <div className="h-[calc(100%-36px)] overflow-hidden relative">
-                  {activeModule === 'security' && <SecurityModule />}
-                  {activeModule === 'analytics' && <AnalyticsModule metrics={metrics} />}
-                  {activeModule === 'agent' && <AgentModule />}
-                  {activeModule === 'datastream' && <DataStreamModule />}
-                  {activeModule === 'satellite' && <SatelliteModule />}
-                  {activeModule === 'reasoning' && <ReasoningLogModule />}
-                  {activeModule === 'tactical' && <TacticalModule />}
-                  {activeModule === 'devgraph' && <DevGraphModule />}
-                  {activeModule === 'alertlog'    && <AlertLogPanel />}
-                  {activeModule === 'tools'       && <ToolActivityPanel />}
-                  {activeModule === 'actionfeed'  && <ActionFeedPanel />}
-                  {activeModule === 'plugins'     && <PluginsModule />}
-                  {activeModule === 'scheduler'   && <SchedulerModule />}
-                  {activeModule === 'browser'     && <BrowserModule />}
-                  {activeModule === 'neuralsearch'&& <NeuralSearchModule />}
-                  {activeModule === 'music'        && <MusicModule />}
+                  {activeModule === 'spark'      && <SparkPanel />}
+                  {activeModule === 'sentinel'   && <SentinelModule />}
+                  {activeModule === 'telemetry'  && <TelemetryModule />}
+                  {activeModule === 'mind'        && <MindModule />}
+                  {activeModule === 'satellite'  && <SatelliteModule />}
+                  {activeModule === 'devgraph'   && <DevGraphModule />}
+                  {activeModule === 'alertlog'   && <AlertLogPanel />}
+                  {activeModule === 'tools'      && <ToolActivityPanel />}
+                  {activeModule === 'actionfeed' && <ActionFeedPanel />}
+                  {activeModule === 'plugins'    && <PluginsModule />}
+                  {activeModule === 'browser'    && <BrowserModule />}
+                  {activeModule === 'music'      && <MusicModule />}
                 </div>
               </motion.div>
             )}
@@ -306,7 +292,7 @@ export default function HudLayout() {
 
       {/* Bottom dock */}
       <div className="z-20 shrink-0">
-        <BottomDock onOpenModule={openModule} uptime={metrics.uptime} processes={metrics.processes} ping={metrics.ping} />
+        <BottomDock onOpenModule={openModule} activeModule={activeModule} uptime={metrics.uptime} processes={metrics.processes} ping={metrics.ping} />
       </div>
 
       {/* AI personality panel */}

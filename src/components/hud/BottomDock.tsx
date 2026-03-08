@@ -1,23 +1,15 @@
-import { useState, useEffect, useRef } from 'react';
+import React, { useState } from 'react';
 import {
-  Globe, Chrome, Terminal, Power, Lock, Rocket,
-  Shield, Music, ChevronUp, ChevronDown, Cpu,
-  Activity, Wifi, Thermometer, Clock, Network, Brain,
-  Bell, Wrench, Zap, Puzzle, Globe2
+  Globe, Terminal, Shield, Music, ChevronUp, ChevronDown, Cpu,
+  Activity, Wifi, Clock, Network, Brain, Bell, Wrench, Zap, Puzzle, Globe2, Satellite
 } from 'lucide-react';
 import { useAlertStore } from '@/store/useAlertStore';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
 import { useActionFeedStore } from '@/store/useActionFeedStore';
 
-interface QuickButton {
-  icon: React.ReactNode;
-  label: string;
-  action: () => void;
-  color?: string;
-}
-
 interface Props {
   onOpenModule: (m: string) => void;
+  activeModule: string | null;
   uptime: number;
   processes: number;
   ping: number;
@@ -31,9 +23,8 @@ function formatUptime(ms: number) {
   return `${h}:${m}:${sec}`;
 }
 
-export default function BottomDock({ onOpenModule, uptime, processes, ping }: Props) {
+export default function BottomDock({ onOpenModule, activeModule, uptime, processes, ping }: Props) {
   const [expanded, setExpanded] = useState(false);
-  const [activeBtn, setActiveBtn] = useState<string | null>(null);
 
   const alertCount   = useAlertStore(s => s.alerts.filter(a => !a.dismissed).length);
   const pendingTools = useToolActivityStore(s => s.pendingTools.size);
@@ -41,132 +32,138 @@ export default function BottomDock({ onOpenModule, uptime, processes, ping }: Pr
     s.plans.filter(p => p.steps.some(step => step.status === 'running')).length
   );
 
-  const quickButtons: QuickButton[] = [
-    { icon: <Globe size={16} />, label: 'BROWSER', action: () => window.open('about:blank') },
-    { icon: <Terminal size={16} />, label: 'TERMINAL', action: () => { } },
-    { icon: <Shield size={16} />, label: 'SECURITY', action: () => onOpenModule('security'), color: 'hud-green' },
-    { icon: <Lock size={16} />, label: 'LOCK', action: () => { }, color: 'hud-amber' },
-    { icon: <Rocket size={16} />, label: 'LAUNCH', action: () => { } },
-    { icon: <Activity size={16} />, label: 'SCAN', action: () => onOpenModule('analytics') },
-    { icon: <Music size={16} />, label: 'MUSIC', action: () => onOpenModule('music'), color: 'hud-cyan' },
-    { icon: <Globe size={16} />, label: 'GLOBE', action: () => onOpenModule('globe') },
-  ];
+  // ── Primary 8 module buttons ─────────────────────────────────────────────
+  const primaryButtons = [
+    { id: 'spark',     icon: <Brain size={15} />,    label: 'SPARK',    color: '#00f5ff' },
+    { id: 'sentinel',  icon: <Shield size={15} />,   label: 'SENTINEL', color: '#ff9f0a' },
+    { id: 'globe',     icon: <Globe size={15} />,    label: 'GLOBE',    color: '#00ff88' },
+    { id: 'telemetry', icon: <Activity size={15} />, label: 'TELEMETRY',color: '#00f5ff' },
+    { id: 'terminal',  icon: <Terminal size={15} />, label: 'TERMINAL', color: '#aaaaaa' },
+    { id: 'browser',   icon: <Globe2 size={15} />,   label: 'BROWSER',  color: '#0066ff' },
+    { id: 'mind',      icon: <Network size={15} />,  label: 'MIND',     color: '#00ff88' },
+    { id: 'music',     icon: <Music size={15} />,    label: 'MUSIC',    color: '#bf5af2' },
+  ] as const;
 
-  const secondaryButtons: QuickButton[] = [
-    { icon: <Cpu size={14} />, label: 'AGENT', action: () => onOpenModule('agent') },
-    { icon: <Wifi size={14} />, label: 'DATASTREAM', action: () => onOpenModule('datastream') },
-    { icon: <Activity size={14} />, label: 'SATELLITE', action: () => onOpenModule('satellite') },
-    { icon: <Terminal size={14} />, label: 'AI LOG', action: () => onOpenModule('reasoning') },
-    { icon: <Network size={14} />, label: 'DEVGRAPH', action: () => onOpenModule('devgraph'), color: 'hud-purple' },
-    { icon: <Shield size={14} />, label: 'TACTICAL', action: () => onOpenModule('tactical'), color: 'hud-red' },
-    { icon: <Brain size={14} />, label: 'OS CORE', action: () => onOpenModule('os'), color: 'hud-cyan' },
-    { icon: <Bell size={14} />,  label: 'ALERTS',      action: () => onOpenModule('alertlog'),    color: alertCount > 0  ? 'hud-amber' : undefined },
-    { icon: <Wrench size={14} />,label: 'TOOLS',       action: () => onOpenModule('tools'),       color: pendingTools > 0 ? 'hud-cyan'  : undefined },
-    { icon: <Zap size={14} />,   label: 'ACTION FEED', action: () => onOpenModule('actionfeed'),  color: activePlans > 0  ? 'hud-cyan'  : undefined },
-    { icon: <Puzzle size={14} />,label: 'PLUGINS',     action: () => onOpenModule('plugins'),     color: 'hud-purple' },
-    { icon: <Clock size={14} />, label: 'SCHEDULER',   action: () => onOpenModule('scheduler'),   color: 'hud-amber'  },
-    { icon: <Globe2 size={14} />,label: 'BROWSER',     action: () => onOpenModule('browser'),     color: 'hud-cyan'   },
-    { icon: <Brain size={14} />, label: 'NEURAL SEARCH',action: () => onOpenModule('neuralsearch'),color: 'hud-green'  },
+  // ── Utility tray (secondary) ─────────────────────────────────────────────
+  const utilityButtons = [
+    { id: 'satellite',  icon: <Satellite size={13} />, label: 'SATELLITE',   badge: 0,          color: '#aaaaaa' },
+    { id: 'devgraph',   icon: <Cpu size={13} />,       label: 'DEVGRAPH',    badge: 0,          color: '#bf5af2' },
+    { id: 'alertlog',   icon: <Bell size={13} />,      label: 'ALERTS',      badge: alertCount,  color: alertCount   > 0 ? '#ff9f0a' : '#aaaaaa' },
+    { id: 'tools',      icon: <Wrench size={13} />,    label: 'TOOLS',       badge: pendingTools,color: pendingTools > 0 ? '#00f5ff' : '#aaaaaa' },
+    { id: 'actionfeed', icon: <Zap size={13} />,       label: 'ACTION FEED', badge: activePlans, color: activePlans  > 0 ? '#00f5ff' : '#aaaaaa' },
+    { id: 'plugins',    icon: <Puzzle size={13} />,    label: 'PLUGINS',     badge: 0,          color: '#bf5af2' },
   ];
-
-  const handleBtn = (btn: QuickButton) => {
-    setActiveBtn(btn.label);
-    btn.action();
-    setTimeout(() => setActiveBtn(null), 500);
-  };
 
   return (
     <footer
       className="relative z-20 animate-boot-up"
       style={{
-        background: 'rgba(0,5,20,0.85)',
+        background: 'rgba(0,5,20,0.90)',
         backdropFilter: 'blur(16px)',
-        borderTop: '1px solid hsl(186 100% 50% / 0.3)',
-        boxShadow: '0 -2px 30px hsl(186 100% 50% / 0.1)',
+        borderTop: '1px solid hsl(186 100% 50% / 0.25)',
+        boxShadow: '0 -2px 30px hsl(186 100% 50% / 0.08)',
         animationDelay: '0.2s',
       }}
     >
-      {/* Secondary tray */}
+      {/* Utility tray (collapsible) */}
       <div
-        className={`overflow-hidden transition-all duration-300 ${expanded ? 'max-h-16' : 'max-h-0'}`}
-        style={{ borderBottom: expanded ? '1px solid hsl(186 100% 50% / 0.2)' : 'none' }}
+        className={`overflow-hidden transition-all duration-300 ${expanded ? 'max-h-12' : 'max-h-0'}`}
+        style={{ borderBottom: expanded ? '1px solid rgba(0,245,255,0.12)' : 'none' }}
       >
-        <div className="flex items-center justify-center gap-3 py-2 px-4">
-          {secondaryButtons.map(btn => {
-            const badge =
-              btn.label === 'ALERTS'       && alertCount > 0   ? alertCount  :
-              btn.label === 'TOOLS'        && pendingTools > 0  ? pendingTools :
-              btn.label === 'ACTION FEED'  && activePlans > 0   ? activePlans  :
-              null;
-            return (
-              <button
-                key={btn.label}
-                onClick={() => handleBtn(btn)}
-                className="hud-btn flex-row gap-1.5 px-3 py-1.5 relative"
-              >
-                {btn.icon}
-                <span className="font-orbitron text-[8px] tracking-wider">{btn.label}</span>
-                {badge !== null && (
-                  <span
-                    className="absolute -top-0.5 -right-0.5 min-w-[14px] h-3.5 rounded-full font-orbitron text-[7px] flex items-center justify-center px-0.5"
-                    style={{
-                      background: btn.label === 'ALERTS' ? '#ff9f0a' : '#00f5ff',
-                      color: '#000',
-                    }}
-                  >
-                    {badge}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </div>
-
-      <div className="flex items-center justify-between px-4 py-2">
-        {/* Status indicators */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-1.5">
-            <Clock size={10} className="text-hud-cyan/60" />
-            <span className="font-mono-tech text-[10px] text-hud-cyan/70">{formatUptime(uptime)}</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Cpu size={10} className="text-hud-cyan/60" />
-            <span className="font-mono-tech text-[10px] text-hud-cyan/70">{processes} PROC</span>
-          </div>
-          <div className="flex items-center gap-1.5">
-            <Wifi size={10} className={ping > 100 ? 'text-hud-red' : ping > 50 ? 'text-hud-amber' : 'text-hud-green'} />
-            <span className="font-mono-tech text-[10px] text-hud-cyan/70">{ping}ms</span>
-          </div>
-          <div className="flex items-center gap-1">
-            <div className="w-1 h-1 rounded-full bg-hud-green animate-pulse" />
-            <span className="font-mono-tech text-[9px] text-hud-green/80">SYS NOMINAL</span>
-          </div>
-        </div>
-
-        {/* Quick buttons */}
-        <div className="flex items-center gap-1.5">
-          {quickButtons.map(btn => (
+        <div className="flex items-center justify-center gap-2 py-1.5 px-4">
+          {utilityButtons.map(btn => (
             <button
-              key={btn.label}
-              onClick={() => handleBtn(btn)}
-              className={`hud-btn transition-all duration-150 ${activeBtn === btn.label ? 'scale-95 opacity-60' : ''}`}
-              style={{ minWidth: '52px' }}
+              key={btn.id}
+              onClick={() => onOpenModule(btn.id)}
+              className="relative flex items-center gap-1.5 px-3 py-1 rounded transition-all font-orbitron text-[8px] tracking-wider border"
+              style={{
+                borderColor: activeModule === btn.id ? `${btn.color}60` : 'rgba(0,245,255,0.12)',
+                color: activeModule === btn.id ? btn.color : 'rgba(0,245,255,0.45)',
+                background: activeModule === btn.id ? `${btn.color}12` : 'transparent',
+              }}
             >
               {btn.icon}
-              <span className="font-orbitron text-[7px] tracking-wider leading-none">{btn.label}</span>
+              {btn.label}
+              {btn.badge > 0 && (
+                <span
+                  className="absolute -top-1 -right-1 min-w-[14px] h-3.5 rounded-full font-orbitron text-[7px] flex items-center justify-center px-0.5"
+                  style={{ background: btn.color, color: '#000' }}
+                >
+                  {btn.badge}
+                </span>
+              )}
             </button>
           ))}
         </div>
+      </div>
 
-        {/* Expand toggle */}
-        <button
-          onClick={() => setExpanded(v => !v)}
-          className="flex items-center gap-1 font-orbitron text-[9px] text-hud-cyan/60 hover:text-hud-cyan transition-colors px-2 py-1 rounded border border-hud-cyan/20 hover:border-hud-cyan/50"
-        >
-          {expanded ? <ChevronDown size={10} /> : <ChevronUp size={10} />}
-          <span>{expanded ? 'COLLAPSE' : 'EXPAND'}</span>
-        </button>
+      {/* Main dock bar */}
+      <div className="flex items-center justify-between px-3 py-1.5">
+        {/* Status indicators */}
+        <div className="flex items-center gap-3 shrink-0">
+          <div className="flex items-center gap-1">
+            <Clock size={9} className="text-hud-cyan/50" />
+            <span className="font-mono-tech text-[9px] text-hud-cyan/60">{formatUptime(uptime)}</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Cpu size={9} className="text-hud-cyan/50" />
+            <span className="font-mono-tech text-[9px] text-hud-cyan/60">{processes}P</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <Wifi size={9} className={ping > 100 ? 'text-hud-red' : ping > 50 ? 'text-hud-amber' : 'text-hud-green'} />
+            <span className="font-mono-tech text-[9px] text-hud-cyan/60">{ping}ms</span>
+          </div>
+          <div className="w-1.5 h-1.5 rounded-full bg-hud-green animate-pulse" />
+        </div>
+
+        {/* Primary module buttons */}
+        <div className="flex items-center gap-0.5">
+          {primaryButtons.map((btn, i) => {
+            const isActive = activeModule === btn.id;
+            const showSep = i === 3 || i === 5 || i === 6;
+            return (
+              <React.Fragment key={btn.id}>
+                {showSep && (
+                  <div className="w-px h-5 mx-1" style={{ background: 'rgba(0,245,255,0.1)' }} />
+                )}
+                <button
+                  onClick={() => onOpenModule(btn.id)}
+                  className="relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded transition-all"
+                  style={{ color: isActive ? btn.color : 'rgba(0,245,255,0.4)' }}
+                >
+                  <div className="transition-transform" style={{ transform: isActive ? 'scale(1.1)' : 'scale(1)' }}>
+                    {btn.icon}
+                  </div>
+                  <span className="font-orbitron text-[7px] tracking-wider leading-none">{btn.label}</span>
+                  {isActive && (
+                    <span
+                      className="absolute bottom-0 left-2 right-2 h-0.5 rounded-t-full"
+                      style={{ background: btn.color, boxShadow: `0 0 6px ${btn.color}` }}
+                    />
+                  )}
+                </button>
+              </React.Fragment>
+            );
+          })}
+        </div>
+
+        {/* Expand toggle + alert indicator */}
+        <div className="flex items-center gap-2 shrink-0">
+          {alertCount > 0 && (
+            <button
+              onClick={() => onOpenModule('alertlog')}
+              className="flex items-center gap-1 font-orbitron text-[8px] px-2 py-1 rounded border border-hud-amber/40 text-hud-amber animate-pulse"
+            >
+              <Bell size={10} /> {alertCount}
+            </button>
+          )}
+          <button
+            onClick={() => setExpanded(v => !v)}
+            className="flex items-center gap-1 font-orbitron text-[8px] text-hud-cyan/50 hover:text-hud-cyan transition-colors px-2 py-1 rounded border border-hud-cyan/15 hover:border-hud-cyan/40"
+          >
+            {expanded ? <ChevronDown size={9} /> : <ChevronUp size={9} />}
+          </button>
+        </div>
       </div>
     </footer>
   );

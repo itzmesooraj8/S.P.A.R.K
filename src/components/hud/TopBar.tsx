@@ -1,10 +1,11 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
-import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff, Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
+import { Zap, FolderKey, LogOut, User, WifiOff, Volume2, VolumeX, Mic, MicOff, Bell, Settings } from 'lucide-react';
 import { useDevState } from '@/hooks/useDevState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConnectionStore } from '@/store/useConnectionStore';
 import { useVoiceMic } from '@/hooks/useVoiceMic';
+import { useAlertStore } from '@/store/useAlertStore';
 import type { WsStatus } from '@/store/useConnectionStore';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -49,7 +50,7 @@ export default function TopBar({
   // ── Microphone capture ────────────────────────────────────────────────────
   const { isRecording, isTranscribing, transcript: micTranscript, error: micError, startRecording, stopRecording, reset: resetMic } = useVoiceMic();
 
-  // ── Badge state derivation ────────────────────────────────────────────────
+  const alertCount = useAlertStore(s => s.alerts.filter(a => !a.dismissed).length);
   const bothOnline       = coreOnline && aiOnline;
   const backendOnline    = coreOnline || aiOnline;
   const partial          = coreOnline !== aiOnline;    // exactly one is online
@@ -334,22 +335,7 @@ export default function TopBar({
           ))}
         </div>
 
-        {/* Project Switcher */}
-        <div className="flex items-center gap-1.5 ml-4 px-2 py-0.5 rounded border border-hud-purple/40 bg-hud-purple/5">
-          <FolderKey size={10} className="text-hud-purple" />
-          <span className="font-orbitron text-[8px] text-hud-purple/70">DOMAIN:</span>
-          <select
-            value={focusedProject || ''}
-            onChange={(e) => switchProject(e.target.value)}
-            className="bg-transparent font-mono-tech text-[9px] text-hud-purple outline-none cursor-pointer"
-            style={{ WebkitAppearance: 'none' }}
-          >
-            <option value="" disabled className="bg-black text-hud-purple">SELECT DOMAIN...</option>
-            {projects.map(p => (
-              <option key={p} value={p} className="bg-black text-hud-purple">{p.toUpperCase()}</option>
-            ))}
-          </select>
-        </div>
+        {/* Project Switcher — removed for cleaner TopBar */}
       </div>
 
       {/* CENTER: Clock */}
@@ -365,28 +351,35 @@ export default function TopBar({
         <div className="font-rajdhani text-[10px] text-hud-cyan/60 tracking-widest mt-0.5">{dateStr}</div>
       </div>
 
-      {/* RIGHT: Location + Weather + Theme */}
-      <div className="flex items-center gap-4 min-w-0">
-        {/* Location */}
-        <div className="flex items-center gap-1">
-          <MapPin size={10} className="text-hud-cyan animate-blink" />
-          <div className="font-mono-tech text-[9px] text-hud-cyan/70">
-            <span>40.7128° N</span>
-            <span className="mx-1 text-hud-cyan/30">|</span>
-            <span>74.0060° W</span>
-          </div>
-        </div>
+      {/* RIGHT: Actions */}
+      <div className="flex items-center gap-3 min-w-0">
+        {/* Notification bell */}
+        <button
+          onClick={() => window.dispatchEvent(new CustomEvent('module-activate', { detail: { module: 'alertlog' } }))}
+          className="relative flex items-center justify-center w-7 h-7 rounded border border-hud-cyan/20 text-hud-cyan/40 hover:border-hud-cyan/50 hover:text-hud-cyan transition-all"
+          title="Alerts"
+        >
+          <Bell size={12} />
+          {alertCount > 0 && (
+            <span
+              className="absolute -top-1 -right-1 min-w-[14px] h-3.5 rounded-full font-orbitron text-[7px] flex items-center justify-center px-0.5"
+              style={{ background: '#ff9f0a', color: '#000' }}
+            >
+              {alertCount}
+            </span>
+          )}
+        </button>
 
-        {/* Weather */}
-        <div className="flex items-center gap-1.5 px-2 py-0.5 rounded border border-hud-cyan/20">
-          <Sun size={12} className="text-hud-amber" />
-          <span className="font-rajdhani text-xs text-hud-cyan/80">22°C</span>
-          <span className="font-rajdhani text-[9px] text-hud-cyan/40">CLEAR</span>
-          <div className="flex items-center gap-0.5">
-            <Wind size={9} className="text-hud-cyan/40" />
-            <span className="font-mono-tech text-[8px] text-hud-cyan/40">12km/h</span>
-          </div>
-        </div>
+        {/* Settings gear */}
+        <button
+          className="flex items-center justify-center w-7 h-7 rounded border border-hud-cyan/20 text-hud-cyan/30 hover:border-hud-cyan/50 hover:text-hud-cyan/70 transition-all"
+          title="Settings"
+        >
+          <Settings size={12} />
+        </button>
+
+        {/* Divider */}
+        <div className="w-px h-5" style={{ background: 'rgba(0,245,255,0.15)' }} />
 
         {/* TTS toggle */}
         {onToggleTts !== undefined && (
@@ -405,46 +398,6 @@ export default function TopBar({
             </span>
           </button>
         )}
-
-        {/* Microphone capture */}
-        <button
-          onClick={handleMicClick}
-          disabled={isTranscribing}
-          title={isRecording ? 'Recording... Click to stop' : 'Click to start recording'}
-          className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-all duration-200 ${
-            isRecording
-              ? 'border-hud-red/60 text-hud-red bg-hud-red/10 animate-pulse'
-              : isTranscribing
-              ? 'border-hud-amber/60 text-hud-amber/80 bg-hud-amber/10 cursor-wait'
-              : 'border-hud-cyan/20 text-hud-cyan/40 hover:border-hud-cyan/50 hover:text-hud-cyan/70'
-          }`}
-        >
-          {isRecording ? <Mic size={11} /> : <MicOff size={11} />}
-          <span className="font-orbitron text-[8px] tracking-wider">
-            {isRecording ? 'REC' : isTranscribing ? 'STT' : 'MIC'}
-          </span>
-        </button>
-
-        {micError && (
-          <div className="text-hud-red text-[8px] font-mono-tech px-2">
-            {micError}
-          </div>
-        )}
-
-        {/* Theme selector */}
-        <div className="flex gap-1">
-          {([['blue', '#00f5ff', 'B'], ['red', '#ff3b3b', 'R'], ['white', '#e0e0e0', 'W']] as const).map(([t, color, label]) => (
-            <button
-              key={t}
-              onClick={() => setTheme(t)}
-              className={`w-5 h-5 rounded-sm border text-[9px] font-orbitron font-bold transition-all duration-200 ${theme === t ? 'opacity-100 scale-110' : 'opacity-40 hover:opacity-70'
-                }`}
-              style={{ borderColor: color, color, backgroundColor: `${color}22` }}
-            >
-              {label}
-            </button>
-          ))}
-        </div>
 
         {/* User badge + logout */}
         {isAuthenticated && user && (
