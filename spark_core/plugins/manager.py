@@ -15,8 +15,10 @@ Endpoints:
 import asyncio
 import os
 import time
+import json
 from typing import Dict, Optional, Any
 from enum import Enum
+from pathlib import Path
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
@@ -77,7 +79,39 @@ class PluginManager:
 
     def __init__(self):
         self._plugins: Dict[str, Plugin] = {}
+        self._state_file = Path(__file__).parent.parent.parent / "config" / "plugins_state.json"
+        self._ensure_state_dir()
         self._register_core_plugins()
+        self._load_persisted_state()
+
+    def _ensure_state_dir(self):
+        """Ensure the config directory exists."""
+        self._state_file.parent.mkdir(parents=True, exist_ok=True)
+
+    def _load_persisted_state(self):
+        """Load plugin enabled/disabled state from disk."""
+        if not self._state_file.exists():
+            return
+        try:
+            with open(self._state_file, 'r') as f:
+                state = json.load(f)
+            for plugin_id, enabled in state.items():
+                if plugin_id in self._plugins:
+                    self._plugins[plugin_id].enabled = enabled
+                    self._plugins[plugin_id].status = PluginStatus.ENABLED if enabled else PluginStatus.DISABLED
+                    print(f"🔌 [PLUGINS] Loaded state: {plugin_id} = {enabled}")
+        except Exception as e:
+            print(f"⚠️ [PLUGINS] Failed to load persisted state: {e}")
+
+    def _save_persisted_state(self):
+        """Save plugin enabled/disabled state to disk."""
+        try:
+            state = {plugin_id: plugin.enabled for plugin_id, plugin in self._plugins.items()}
+            with open(self._state_file, 'w') as f:
+                json.dump(state, f, indent=2)
+            print(f"💾 [PLUGINS] State saved to {self._state_file}")
+        except Exception as e:
+            print(f"⚠️ [PLUGINS] Failed to save plugin state: {e}")
 
     def _register_core_plugins(self):
         """Register built-in SPARK plugins."""
@@ -131,6 +165,7 @@ class PluginManager:
         p.status      = PluginStatus.ENABLED
         p.last_toggle = time.time()
         p.error_msg   = None
+        self._save_persisted_state()
         print(f"🔌 [PLUGINS] Enabled: {p.name}")
         return p.to_dict()
 
@@ -141,6 +176,7 @@ class PluginManager:
         p.enabled     = False
         p.status      = PluginStatus.DISABLED
         p.last_toggle = time.time()
+        self._save_persisted_state()
         print(f"🔌 [PLUGINS] Disabled: {p.name}")
         return p.to_dict()
 

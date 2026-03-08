@@ -4,12 +4,14 @@ All SPARK agents inherit from BaseAgent and communicate via the event bus.
 """
 import asyncio
 import time
+import traceback
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any, Dict, Optional
 
 from system.event_bus import event_bus
+from ws.manager import ws_manager
 
 
 class AgentState(str, Enum):
@@ -70,9 +72,9 @@ class BaseAgent(ABC):
     async def ensure_started(self):
         """Create the asyncio background task. Must be called inside a running loop."""
         if not self._started:
-            asyncio.create_task(self._run_loop())
+            asyncio.create_task(self._resilient_loop())
             self._started = True
-            print(f"🚀 [Agent:{self.name}] Started")
+            print(f"🚀 [Agent:{self.name}] Started with crash recovery enabled")
 
     async def submit(self, task: AgentTask) -> Optional[str]:
         """Queue a task. Returns task_id or None if queue full."""
@@ -81,6 +83,49 @@ class BaseAgent(ABC):
             return task.task_id
         except asyncio.QueueFull:
             return None
+
+    async def _resilient_loop(self):
+        """
+        Wraps _run_loop with crash recovery.
+        If the loop crashes for any reason:
+          1. Publish AGENT_ERROR to WebSocket
+          2. Sleep 5 seconds
+          3. Restart the loop automatically
+        This ensures agents are "immortal" — they never die from runtime errors.
+        """
+        while True:
+            try:
+                await self._run_loop()
+            except asyncio.CancelledError:
+                # Task was cancelled — don't restart, just exit
+                raise
+            except Exception as exc:
+                # Unhandled exception — agent crashed, recover it
+                self.state = AgentState.ERROR
+                error_msg = f"{type(exc).__name__}: {str(exc)}"
+                stack_trace = traceback.format_exc()
+                
+                print(f"💥 [Agent:{self.name}] CRASHED: {error_msg}")
+                print(f"💥 [Agent:{self.name}] Stack trace:\n{stack_trace}")
+                
+                # Publish AGENT_ERROR event to /ws/system for frontend warning badge
+                try:
+                    await ws_manager.broadcast_json({
+                        "type": "AGENT_ERROR",
+                        "agent": self.name,
+                        "error": error_msg,
+                        "timestamp": time.time(),
+                    }, "system")
+                except Exception as broadcast_err:
+                    print(f"⚠️ [Agent:{self.name}] Failed to broadcast error: {broadcast_err}")
+                
+                # Sleep 5 seconds before restart
+                print(f"⏳ [Agent:{self.name}] Restarting in 5 seconds...")
+                await asyncio.sleep(5)
+                
+                # Reset state and restart the loop
+                self.state = AgentState.IDLE
+                print(f"♻️ [Agent:{self.name}] Restarting agent loop...")
 
     async def _run_loop(self):
         """Continuously processes tasks from the queue."""

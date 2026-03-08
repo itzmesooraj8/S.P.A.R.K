@@ -34,6 +34,8 @@ import { useAIEvents } from '@/hooks/useAIEvents';
 import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 import { useCommanderContext } from '@/hooks/useCommanderContext';
 import { useFxStore } from '@/store/useFxStore';
+import { useCommandBarStore } from '@/store/commandBarStore';
+import { useWakeWordListener } from '@/hooks/useWakeWordListener';
 import { Brain } from 'lucide-react';
 
 type ModuleKey = 'security' | 'globe' | 'analytics' | 'agent' | 'datastream' | 'satellite' | 'reasoning' | 'tactical' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'scheduler' | 'browser' | 'neuralsearch' | 'music';
@@ -65,8 +67,8 @@ export default function HudLayout() {
   const [activeModule, setActiveModule] = useState<ModuleKey | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
-  const [showCommandBar, setShowCommandBar] = useState(false);
   const navigate = useNavigate();
+  const { setOpen: setCommandBarOpen } = useCommandBarStore();
 
   const commanderCtx = useCommanderContext(
     { cpu: metrics.cpu, ram: metrics.ram, ping: metrics.ping },
@@ -75,6 +77,7 @@ export default function HudLayout() {
 
   // ── Global event listeners ───────────────────────────────────────────────
   useAIEvents();                                   // listens to /ws/ai → tool store
+  useWakeWordListener();                           // listens for WAKE_WORD_DETECTED → opens CommandBar
   const { pendingRequest, setPending } = useAgentConfirmStore();
   // ── SPARK FX queue consumer ───────────────────────────────────────
   const fxQueue      = useFxStore((s) => s.queue);
@@ -100,13 +103,53 @@ export default function HudLayout() {
     const handler = (e: KeyboardEvent) => {
       if (e.code === 'Space' && (e.ctrlKey || e.metaKey)) {
         e.preventDefault();
-        setShowCommandBar(v => !v);
+        setCommandBarOpen(v => !v);
       }
-      if (e.key === 'Escape') setShowCommandBar(false);
     };
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []);
+  }, [setCommandBarOpen]);
+
+  // ── Module activation via custom events from CommandBar ─────────────────
+  useEffect(() => {
+    const handler = (evt: Event) => {
+      const event = evt as CustomEvent;
+      const { module, action, params } = event.detail;
+      
+      // Handle module-specific activation
+      if (module === 'globe') {
+        navigate('/globe-monitor');
+      } else if (module === 'music' && params?.query) {
+        setActiveModule('music');
+        // Dispatch to music module to start playing the query
+        window.dispatchEvent(new CustomEvent('music-play', { detail: { query: params.query } }));
+      } else if (module === 'browser' && params?.url) {
+        setActiveModule('browser');
+        window.dispatchEvent(new CustomEvent('browser-navigate', { detail: { url: params.url } }));
+      } else if (module === 'neural_search' && params?.query) {
+        setActiveModule('neuralsearch');
+        window.dispatchEvent(new CustomEvent('search-query', { detail: { query: params.query } }));
+      } else if (module === 'scheduler') {
+        setActiveModule('scheduler');
+        window.dispatchEvent(new CustomEvent('scheduler-action', { detail: params }));
+      } else if (module === 'security') {
+        setActiveModule('security');
+        window.dispatchEvent(new CustomEvent('security-action', { detail: { action } }));
+      } else if (module === 'llm') {
+        // Open AI chat panel and send query
+        setShowAiPanel(true);
+        window.dispatchEvent(new CustomEvent('llm-query', { detail: { query: params?.query } }));
+      } else if (module === 'mode') {
+        window.dispatchEvent(new CustomEvent('mode-activate', { detail: params }));
+      } else if (module === 'plugin') {
+        window.dispatchEvent(new CustomEvent('plugin-action', { detail: params }));
+      }
+      setIsMaximized(false);
+    };
+    
+    window.addEventListener('module-activate', handler);
+    return () => window.removeEventListener('module-activate', handler);
+  }, [navigate]);
 
   const openModule = (m: string) => {
     if (m === 'globe') {
@@ -166,6 +209,7 @@ export default function HudLayout() {
         <TopBar
           ttsEnabled={voice.ttsEnabled}
           onToggleTts={() => voice.setTtsEnabled(!voice.ttsEnabled)}
+          onMicTranscript={(transcript) => voice.processInput(transcript)}
         />
       </div>
 
@@ -290,12 +334,8 @@ export default function HudLayout() {
         onClose={() => setPending(null)}
       />
 
-      {/* Global command bar — Ctrl+Space */}
-      <CommandBar
-        open={showCommandBar}
-        onClose={() => setShowCommandBar(false)}
-        contextSnapshot={commanderCtx as Record<string, unknown>}
-      />
+      {/* Global command bar — Ctrl+Space (renders via Zustand store) */}
+      <CommandBar />
     </div>
   );
 }

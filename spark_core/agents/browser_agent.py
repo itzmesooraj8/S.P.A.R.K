@@ -4,15 +4,16 @@ SPARK Browser Agent — Playwright-Powered Autonomous Web Browser
 Gives SPARK the ability to autonomously browse the web, extract information,
 take screenshots, and perform web-based research.
 
-Endpoints:
-  POST /api/browser/navigate      — navigate to URL + get content
-  POST /api/browser/screenshot    — capture page screenshot (base64)
-  POST /api/browser/search        — DuckDuckGo web search
-  POST /api/browser/extract       — extract text/links from URL
-  POST /api/browser/interact      — click/type/scroll on page
-  GET  /api/browser/history       — browsing history
-  POST /api/browser/close         — close the browser instance
-  GET  /api/browser/status        — browser status
+Features:
+  - POST /api/browser/navigate      — navigate to URL + get content
+  - POST /api/browser/screenshot    — capture page screenshot (base64)
+  - POST /api/browser/search        — DuckDuckGo web search
+  - POST /api/browser/extract       — extract text/links from URL
+  - POST /api/browser/interact      — click/type/scroll on page
+  - GET  /api/browser/history       — browsing history
+  - POST /api/browser/close         — close the browser instance
+  - GET  /api/browser/status        — browser status
+  - Live screenshot push: every 2s while browser active (via /ws/system)
 """
 
 import asyncio
@@ -23,6 +24,7 @@ from typing import Optional, List, Dict, Any
 
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
+from ws.manager import ws_manager
 
 # ── Browser State ──────────────────────────────────────────────────────────────
 _browser = None
@@ -30,6 +32,10 @@ _context = None
 _page    = None
 _history: List[Dict] = []
 _browser_lock = asyncio.Lock()
+
+# ── Screenshot Push State ──────────────────────────────────────────────────────
+_active_operation_id: Optional[str] = None  # Identifies current browser operation
+_screenshot_push_task: Optional[asyncio.Task] = None
 
 
 async def _get_page():
@@ -70,6 +76,42 @@ def _add_history(url: str, title: str, action: str):
     # Keep last 100 entries
     if len(_history) > 100:
         _history[:] = _history[-100:]
+
+
+async def _start_screenshot_push_loop(operation_id: str):
+    """
+    Background loop: capture screenshot every 2 seconds while browser is active.
+    Push to /ws/system as BROWSER_LIVE_PREVIEW events.
+    Stops when operation_id changes or browser closes.
+    """
+    global _page, _active_operation_id
+    
+    while _active_operation_id == operation_id:
+        try:
+            if _page is None or _page.is_closed():
+                break
+            
+            # Capture screenshot
+            screenshot_bytes = await _page.screenshot(full_page=False, type="jpeg", quality=75)
+            b64 = base64.b64encode(screenshot_bytes).decode("utf-8")
+            current_url = _page.url
+            
+            # Push via WebSocket
+            await ws_manager.broadcast_json({
+                "type": "BROWSER_LIVE_PREVIEW",
+                "operation_id": operation_id,
+                "url": current_url,
+                "screenshot_base64": f"data:image/jpeg;base64,{b64}",
+                "timestamp": time.time() * 1000,
+            }, "system")
+            
+            # Wait 2 seconds before next capture
+            await asyncio.sleep(2)
+        except asyncio.CancelledError:
+            break
+        except Exception as exc:
+            print(f"⚠️ [BROWSER] Screenshot push error: {exc}")
+            await asyncio.sleep(2)
 
 
 # ── FastAPI Router ─────────────────────────────────────────────────────────────
@@ -138,9 +180,18 @@ async def browser_status():
 
 @browser_router.post("/navigate")
 async def navigate(req: NavigateRequest):
-    """Navigate to a URL and return page content."""
+    """Navigate to a URL and return page content. Starts live screenshot stream."""
+    global _active_operation_id, _screenshot_push_task
     try:
         page = await _get_page()
+
+        # Assign operation ID for this browser session
+        operation_id = str(uuid.uuid4())
+        _active_operation_id = operation_id
+        
+        # Start screenshot push loop (if not already running for this operation)
+        if _screenshot_push_task is None or _screenshot_push_task.done():
+            _screenshot_push_task = asyncio.create_task(_start_screenshot_push_loop(operation_id))
 
         await page.goto(
             req.url,
@@ -153,6 +204,7 @@ async def navigate(req: NavigateRequest):
             "url":   page.url,
             "title": title,
             "status": "ok",
+            "operation_id": operation_id,  # Include operation ID for tracking
         }
 
         if req.extract_text:
@@ -339,8 +391,13 @@ async def browsing_history(limit: int = 50):
 @browser_router.post("/close")
 async def close_browser():
     """Close the browser instance to free resources."""
-    global _browser, _context, _page
+    global _browser, _context, _page, _active_operation_id, _screenshot_push_task
     try:
+        # Stop screenshot push loop
+        _active_operation_id = None
+        if _screenshot_push_task and not _screenshot_push_task.done():
+            _screenshot_push_task.cancel()
+        
         if _page and not _page.is_closed():
             await _page.close()
         if _context:

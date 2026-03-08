@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { Music, Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, RefreshCw, Search } from 'lucide-react';
 
-const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
+const API = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
 
 interface Track {
   id: string;

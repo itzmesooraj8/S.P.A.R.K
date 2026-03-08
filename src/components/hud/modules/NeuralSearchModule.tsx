@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Brain, Search, Plus, Loader2, Database, Trash2, BarChart2, BookOpen } from 'lucide-react';
+import { useContextStore } from '@/store/useContextStore';
 
 const API = 'http://localhost:8000';
 
@@ -24,6 +25,7 @@ const COLLECTIONS = [
 ];
 
 export default function NeuralSearchModule() {
+  const { setSelectedItem } = useContextStore();
   const [query, setQuery] = useState('');
   const [collection, setCollection] = useState('spark_knowledge');
   const [results, setResults] = useState<SearchResult[]>([]);
@@ -214,7 +216,11 @@ export default function NeuralSearchModule() {
             )}
 
             {results.map((r, i) => (
-              <div key={r.id} className="hud-panel rounded p-3 flex flex-col gap-1.5">
+              <div
+                key={r.id}
+                className="hud-panel rounded p-3 flex flex-col gap-1.5 cursor-pointer hover:border-hud-cyan/40 transition-colors"
+                onClick={() => setSelectedItem({ module: 'neural_search', type: 'search_result', label: r.text.slice(0, 60) + (r.text.length > 60 ? '…' : ''), data: { id: r.id, text: r.text, similarity: r.similarity, collection, metadata: r.metadata } })}
+              >
                 <div className="flex items-start justify-between gap-2">
                   <div className="flex items-center gap-2">
                     <span className="font-orbitron text-[9px] text-hud-cyan/40">#{i + 1}</span>

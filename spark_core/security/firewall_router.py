@@ -4,14 +4,19 @@ Provides real system-level security telemetry via psutil.
 Endpoints:
   GET  /api/security/status   — ports, connections, top processes, threat level
   GET  /api/security/network  — top network I/O consumers
-  POST /api/security/scan     — trigger a quick port/connection rescan
+  POST /api/security/scan     — trigger a quick port/connection rescan (async)
 """
 import time
 import socket
 import psutil
+import asyncio
+from concurrent.futures import ThreadPoolExecutor
 from fastapi import APIRouter
 
 router = APIRouter(prefix="/api/security", tags=["security"])
+
+# Thread pool for blocking psutil calls
+_executor = ThreadPoolExecutor(max_workers=2, thread_name_prefix="security-")
 
 # Simple in-memory blocked IP set (persists for the server lifetime)
 _blocked_ips: set[str] = set()
@@ -123,16 +128,19 @@ def _assess_risk(name: str) -> str:
 
 @router.get("/status")
 async def get_security_status():
-    """Returns full real-time security telemetry."""
+    """Returns full real-time security telemetry (runs heavy work in thread pool)."""
     global _last_scan
+    loop = asyncio.get_event_loop()
+    
+    # Run expensive psutil calls in thread executor to avoid blocking
     _last_scan = {
         "timestamp": time.time(),
-        "listening_ports": _get_listening_ports(),
-        "connections": _get_active_connections(),
-        "top_processes": _get_top_processes(),
-        "net_io": _get_net_io(),
+        "listening_ports": await loop.run_in_executor(_executor, _get_listening_ports),
+        "connections": await loop.run_in_executor(_executor, _get_active_connections),
+        "top_processes": await loop.run_in_executor(_executor, _get_top_processes),
+        "net_io": await loop.run_in_executor(_executor, _get_net_io),
         "blocked_ips": list(_blocked_ips),
-        "threat_level": _compute_threat_level(),
+        "threat_level": await loop.run_in_executor(_executor, _compute_threat_level),
     }
     return _last_scan
 
@@ -159,7 +167,7 @@ async def get_network_io():
 
 @router.post("/scan")
 async def trigger_scan():
-    """Trigger a fresh security scan synchronously."""
+    """Trigger a fresh security scan asynchronously (won't block event loop)."""
     return await get_security_status()
 
 

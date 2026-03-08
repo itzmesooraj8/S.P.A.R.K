@@ -19,49 +19,81 @@ export interface CommandEntry {
 
 // ── TTS Helper ─────────────────────────────────────────────────────────────────
 let _currentAudio: HTMLAudioElement | null = null;
+let _ttsQueue: string[] = [];
+let _isSpeaking = false;
 
-async function speakText(text: string): Promise<void> {
-  // Stop any currently playing TTS
-  if (_currentAudio) {
-    _currentAudio.pause();
-    _currentAudio = null;
+async function _playNextInQueue(): Promise<void> {
+  if (_isSpeaking || _ttsQueue.length === 0) return;
+
+  _isSpeaking = true;
+  const text = _ttsQueue.shift();
+  if (!text) {
+    _isSpeaking = false;
+    return;
   }
-
-  // Limit text length for TTS to avoid very long responses
-  const ttsText = text.slice(0, 800);
-  if (!ttsText.trim()) return;
 
   try {
     const response = await fetch(`${API_BASE}/api/voice/speak`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        text: ttsText,
+        text: text.slice(0, 800), // Limit text length for TTS
         voice: 'en-US-GuyNeural',
         rate: '+5%',
         pitch: '-10Hz',
       }),
     });
 
-    if (!response.ok) return;
+    if (!response.ok) {
+      _isSpeaking = false;
+      _playNextInQueue(); // Try next item
+      return;
+    }
 
     const blob = await response.blob();
-    const url  = URL.createObjectURL(blob);
+    const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     _currentAudio = audio;
 
+    // When this audio finishes, play the next one
     audio.onended = () => {
       URL.revokeObjectURL(url);
       _currentAudio = null;
+      _isSpeaking = false;
+      _playNextInQueue();
     };
+
     audio.onerror = () => {
       URL.revokeObjectURL(url);
       _currentAudio = null;
+      _isSpeaking = false;
+      _playNextInQueue();
     };
-    audio.play().catch(() => {});
+
+    audio.play().catch(() => {
+      _isSpeaking = false;
+      URL.revokeObjectURL(url);
+      _playNextInQueue();
+    });
   } catch (err) {
     wsWarn('TTS error:', err);
+    _isSpeaking = false;
+    _playNextInQueue();
   }
+}
+
+async function speakText(text: string): Promise<void> {
+  // Stop any currently playing TTS (new messages override old ones)
+  if (_currentAudio) {
+    _currentAudio.pause();
+    _currentAudio = null;
+  }
+
+  if (!text.trim()) return;
+
+  // Add to queue
+  _ttsQueue = [text]; // Clear queue and add new message (override old)
+  _playNextInQueue();
 }
 
 export function stopTTS() {
@@ -69,6 +101,8 @@ export function stopTTS() {
     _currentAudio.pause();
     _currentAudio = null;
   }
+  _ttsQueue = [];
+  _isSpeaking = false;
 }
 
 export function useVoiceEngine() {

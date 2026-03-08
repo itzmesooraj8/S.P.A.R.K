@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Shield, Eye, Fingerprint, Lock, AlertTriangle, CheckCircle, XCircle, Search, Wifi, Activity } from 'lucide-react';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
+import { useContextStore } from '@/store/useContextStore';
 
 const API = import.meta.env.VITE_API_URL ?? 'http://localhost:8000';
 
@@ -14,6 +15,7 @@ interface SecurityStatus {
 
 export default function SecurityModule() {
   const { auditMeta, threatLevel } = useSystemMetrics();
+  const { setSelectedItem } = useContextStore();
   const [scanProgress, setScanProgress] = useState(0);
   const [scanLine, setScanLine] = useState(0);
   const [fingerProgress, setFingerProgress] = useState(0);
@@ -255,8 +257,11 @@ export default function SecurityModule() {
                 <div className="text-[8px] text-hud-cyan/40 font-orbitron mb-1">LISTENING PORTS</div>
                 <div className="flex flex-wrap gap-1">
                   {secStatus.listening_ports.slice(0, 10).map(p => (
-                    <span key={p.port} className="text-[8px] font-mono-tech text-hud-cyan/70 bg-black/30 px-1.5 py-0.5 rounded border border-hud-cyan/15"
-                      title={p.process}>:{p.port}</span>
+                    <span key={p.port}
+                      className="text-[8px] font-mono-tech text-hud-cyan/70 bg-black/30 px-1.5 py-0.5 rounded border border-hud-cyan/15 cursor-pointer hover:border-hud-cyan/50 hover:text-hud-cyan transition-colors"
+                      title={p.process}
+                      onClick={() => setSelectedItem({ module: 'security', type: 'port', label: `:${p.port} (${p.process})`, data: { port: p.port, process: p.process } })}
+                    >:{p.port}</span>
                   ))}
                   {secStatus.listening_ports.length > 10 && (
                     <span className="text-[8px] text-hud-cyan/30 font-mono-tech">+{secStatus.listening_ports.length - 10}</span>
@@ -268,7 +273,10 @@ export default function SecurityModule() {
             <div>
               <div className="text-[8px] text-hud-cyan/40 font-orbitron mb-1">TOP PROCESSES</div>
               {secStatus.top_processes.slice(0, 4).map((p, i) => (
-                <div key={i} className="flex items-center gap-2 mb-0.5">
+                <div key={i}
+                  className="flex items-center gap-2 mb-0.5 cursor-pointer hover:bg-hud-cyan/5 rounded px-1 -mx-1 transition-colors"
+                  onClick={() => setSelectedItem({ module: 'security', type: 'process', label: p.name, data: { name: p.name, cpu: p.cpu, mem: p.mem, risk: p.risk } })}
+                >
                   <span className={`text-[7px] font-orbitron px-1 rounded ${p.risk === 'CRITICAL' ? 'text-hud-red bg-hud-red/10' : p.risk === 'HIGH' ? 'text-hud-amber bg-hud-amber/10' : 'text-hud-cyan/30 bg-transparent'}`}>{p.risk}</span>
                   <span className="flex-1 text-[9px] font-mono-tech text-hud-cyan/70 truncate">{p.name}</span>
                   <span className="text-[8px] font-mono-tech text-hud-cyan/50">{p.cpu}%</span>

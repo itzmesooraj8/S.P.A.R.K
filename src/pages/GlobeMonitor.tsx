@@ -18,6 +18,7 @@ import {
   ChevronLeft, ChevronRight, Eye,
 } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
+import { useContextStore } from '@/store/useContextStore';
 import { useUrlState } from '@/hooks/useUrlState';
 import { useGlobeSocket } from '@/hooks/useGlobeSocket';
 import { MapContainer } from '@/components/monitor/MapContainer';
@@ -142,6 +143,12 @@ const GlobeMonitor = () => {
   const realEventCount    = useMonitorStore((s) =>
     s.realEvents.length + s.realWorldEvents.length + s.realCyberEvents.length +
     s.realFireEvents.length + s.realClimateEvents.length);
+  const selectedEventId   = useMonitorStore((s) => s.selectedEventId);
+  const allRealEvents     = useMonitorStore((s) => [
+    ...s.realEvents, ...s.realWorldEvents, ...s.realCyberEvents, ...s.realClimateEvents,
+  ]);
+
+  const { setSelectedItem } = useContextStore();
 
   const accentColor = MODE_COLORS[mode] ?? '#00f5ff';
   const { open: cmdOpen, setOpen: setCmdOpen } = useCommandPalette();
@@ -162,6 +169,20 @@ const GlobeMonitor = () => {
     const id = setInterval(fetchRealTimeData, 30_000);
     return () => clearInterval(id);
   }, [fetchRealTimeData]);
+
+  // Sync selected globe event → global context store (enables pronoun resolution in Command Bar)
+  useEffect(() => {
+    if (!selectedEventId) return;
+    const event = allRealEvents.find((e) => e.id === selectedEventId);
+    if (event) {
+      setSelectedItem({
+        module: 'globe',
+        type: event.category ?? 'event',
+        label: event.title,
+        data: { id: event.id, location: event.location, severity: event.severity, description: event.description, lat: event.lat, lng: event.lng },
+      });
+    }
+  }, [selectedEventId, setSelectedItem]); // allRealEvents intentionally omitted to avoid thrash
 
   return (
     <div className="h-screen w-screen overflow-hidden flex flex-col" style={{ background: '#010812' }}>

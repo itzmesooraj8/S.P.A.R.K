@@ -14,6 +14,7 @@ from typing import Optional, List
 from ws.manager import ws_manager
 from orchestrator.brain import AIOrchestrator
 from system.monitor import SystemMonitor
+from system.history import history_buffer
 from tools.sandbox import init_sandbox, teardown_sandbox
 from intelligence.registry import project_registry
 from intelligence.cross_analyzer import cross_analyzer
@@ -35,12 +36,16 @@ from globe.predictor import threat_predictor
 
 # ── NEW SPARK FEATURE MODULES ──────────────────────────────────────────────────
 from voice.tts_router import tts_router
+from voice.stt_router import stt_router
+from voice.wakeword import start_wakeword_listener
 from neural_search.search import neural_router
+from neural_search.file_watcher import kb_watcher
 from plugins.manager import plugins_router
 from scheduler_service import scheduler_router, init_scheduler
 from agents.browser_agent import browser_router
 from security.firewall_router import router as security_router  # /api/security/*
 from music.router import router as music_router                  # /api/music/*
+from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -101,6 +106,14 @@ async def lifespan(app: FastAPI):
     await commander.startup()
     print("🎖️  [SPARK] Commander agents online.")
 
+    # ── Start knowledge base file watcher ──────────────────────────────────────
+    kb_watcher.start()
+    print("📚 [SPARK] Knowledge base file watcher active.")
+
+    # ── Start wake word listener (background thread) ────────────────────────────
+    start_wakeword_listener()
+    print("🎤 [SPARK] Wake word listener started in background thread.")
+
     # ── Auto-index knowledge base into ChromaDB ─────────────────────────────
     try:
         from neural_search.search import get_collection
@@ -117,6 +130,19 @@ async def lifespan(app: FastAPI):
                 print(f"🧠 [NeuralSearch] ChromaDB ready — {count} docs in spark_knowledge.")
     except Exception as e:
         print(f"⚠️ [NeuralSearch] ChromaDB init warning: {e}")
+
+    # ── Start system metrics history recorder (every 10s) ─────────────────────
+    async def _record_history_loop():
+        """Background task that samples system metrics every 10 seconds."""
+        while True:
+            try:
+                await history_buffer.record_sample()
+            except Exception as exc:
+                print(f"⚠️ [History] Sample error: {exc}")
+            await asyncio.sleep(10)
+    
+    asyncio.create_task(_record_history_loop())
+    print("📊 [SPARK] System history recorder started (10s intervals).")
 
     # Start threat predictor feed task (polls globe data every 5 min)
     asyncio.create_task(_threat_feed_loop())
@@ -240,7 +266,8 @@ app.add_middleware(
 app.include_router(globe_api_router)
 
 # ── New SPARK Feature Routers ─────────────────────────────────────────────────
-app.include_router(tts_router)       # /api/voice/*   — TTS + WS audio
+app.include_router(tts_router)       # /api/voice/speak — TTS synthesis
+app.include_router(stt_router)       # /api/voice/transcribe — STT transcription
 app.include_router(neural_router)    # /api/neural-search/* — ChromaDB semantic search
 app.include_router(plugins_router)   # /api/plugins/*  — plugin enable/disable
 app.include_router(scheduler_router) # /api/scheduler/* — reminders + cron jobs
@@ -535,6 +562,67 @@ class AgentDispatchRequest(BaseModel):
 async def agents_status():
     """Live status of all SPARK sub-agents."""
     return commander.get_status()
+
+
+@app.post("/api/command/route")
+@app.post("/api/command/route")
+async def route_command(req: RoutingRequest):
+    """
+    Intent Router endpoint: classify query and return routing decision.
+    
+    Request body:
+      {
+        "query": "play some jazz",
+        "context": {
+          "module": "globe",
+          "item_type": "earthquake",
+          "label": "M6.2 earthquake in Japan",
+          "data": {...}
+        }
+      }
+    
+    Response:
+      {
+        "target_module": "music",
+        "action": "play",
+        "parameters": {"query": "jazz"},
+        "confidence": 0.95,
+        "reasoning": "Pattern match (Layer 1)",
+        "enriched_query": "play some jazz",
+        "requires_llm": false
+      }
+    """
+    from command.intent_router import ContextItem
+    
+    # Build context object if provided
+    context = None
+    if req.context:
+        context = ContextItem(
+            module=req.context.module or '',
+            item_type=req.context.item_type or '',
+            data=req.context.data or {},
+            label=req.context.label or '',
+        )
+    
+    # Route the query
+    decision = await intent_router.route(req.query, context)
+    
+    return {
+        "success": True,
+        "target_module": decision.target_module.value,
+        "action": decision.action,
+        "parameters": decision.parameters,
+        "confidence": decision.confidence,
+        "reasoning": decision.reasoning,
+        "enriched_query": decision.enriched_query,
+        "requires_llm": decision.requires_llm,
+    }
+
+
+@app.get("/api/command/stats")
+async def command_stats():
+    """Router statistics: hit ratios by classification layer."""
+    return intent_router.get_stats()
 
 @app.post("/api/agents/dispatch")
 async def agents_dispatch(req: AgentDispatchRequest):
@@ -955,6 +1043,33 @@ async def os_status():
         "evolution": {
             "pending_proposals": len(self_evolution.get_proposals(status=ChangeStatus.PROPOSED)),
         },
+    }
+
+@app.get("/api/system/history")
+async def get_system_history():
+    """
+    Returns circular buffer of system metrics from the past ~10 minutes.
+    Used by HUD analytics chart to pre-fill on page load.
+    
+    Returns:
+      {
+        "history": [
+          {
+            "timestamp_ms": 1234567890123,
+            "cpu_percent": 45.2,
+            "memory_percent": 67.5,
+            "memory_available_gb": 8.2,
+            "gpu_percent": 12.5 or -1 (unavailable),
+            "net_sent_mbps": 1.2,
+            "net_recv_mbps": 3.4
+          },
+          ...
+        ]
+      }
+    """
+    return {
+        "history": history_buffer.get_history(),
+        "latest": history_buffer.get_latest(),
     }
 
 

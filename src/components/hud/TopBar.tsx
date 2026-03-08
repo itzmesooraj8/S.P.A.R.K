@@ -1,9 +1,10 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import { useHudTheme } from '@/contexts/ThemeContext';
-import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff, Volume2, VolumeX } from 'lucide-react';
+import { MapPin, Sun, Wind, Zap, FolderKey, LogOut, User, WifiOff, Volume2, VolumeX, Mic, MicOff } from 'lucide-react';
 import { useDevState } from '@/hooks/useDevState';
 import { useAuth } from '@/contexts/AuthContext';
 import { useConnectionStore } from '@/store/useConnectionStore';
+import { useVoiceMic } from '@/hooks/useVoiceMic';
 import type { WsStatus } from '@/store/useConnectionStore';
 
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
@@ -24,7 +25,15 @@ function FlipDigits({ value }: { value: string }) {
   );
 }
 
-export default function TopBar({ ttsEnabled, onToggleTts }: { ttsEnabled?: boolean; onToggleTts?: () => void } = {}) {
+export default function TopBar({ 
+  ttsEnabled, 
+  onToggleTts,
+  onMicTranscript 
+}: { 
+  ttsEnabled?: boolean; 
+  onToggleTts?: () => void;
+  onMicTranscript?: (transcript: string) => void;
+} = {}) {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
   const { user, isAuthenticated, logout } = useAuth();
   const coreOnline  = useConnectionStore((s) => s.coreOnline);
@@ -36,6 +45,9 @@ export default function TopBar({ ttsEnabled, onToggleTts }: { ttsEnabled?: boole
   const coreCode    = useConnectionStore((s) => s.coreLastCloseCode);
   const aiCode      = useConnectionStore((s) => s.aiLastCloseCode);
   const bumpRetry   = useConnectionStore((s) => s.bumpRetry);
+
+  // ── Microphone capture ────────────────────────────────────────────────────
+  const { isRecording, isTranscribing, transcript: micTranscript, error: micError, startRecording, stopRecording, reset: resetMic } = useVoiceMic();
 
   // ── Badge state derivation ────────────────────────────────────────────────
   const bothOnline       = coreOnline && aiOnline;
@@ -109,6 +121,24 @@ export default function TopBar({ ttsEnabled, onToggleTts }: { ttsEnabled?: boole
     navigator.clipboard.writeText(JSON.stringify(diag, null, 2)).catch(() => {});
     setShowConnFlyout(false);
   }, [coreStatus, aiStatus, coreLast, aiLast, coreCode, aiCode]);
+
+  // ── Mic button handler ────────────────────────────────────────────────────
+  const handleMicClick = useCallback(async () => {
+    if (isRecording) {
+      // Stop recording and transcribe
+      try {
+        const transcript = await stopRecording();
+        if (transcript && onMicTranscript) {
+          onMicTranscript(transcript);
+        }
+      } catch (err) {
+        console.error('Failed to stop recording:', err);
+      }
+    } else {
+      // Start recording
+      startRecording();
+    }
+  }, [isRecording, stopRecording, startRecording, onMicTranscript]);
   const [now, setNow] = useState(new Date());
 
   const [projects, setProjects] = useState<string[]>([]);
@@ -374,6 +404,31 @@ export default function TopBar({ ttsEnabled, onToggleTts }: { ttsEnabled?: boole
               {ttsEnabled ? 'TTS ON' : 'TTS OFF'}
             </span>
           </button>
+        )}
+
+        {/* Microphone capture */}
+        <button
+          onClick={handleMicClick}
+          disabled={isTranscribing}
+          title={isRecording ? 'Recording... Click to stop' : 'Click to start recording'}
+          className={`flex items-center gap-1 px-2 py-0.5 rounded border transition-all duration-200 ${
+            isRecording
+              ? 'border-hud-red/60 text-hud-red bg-hud-red/10 animate-pulse'
+              : isTranscribing
+              ? 'border-hud-amber/60 text-hud-amber/80 bg-hud-amber/10 cursor-wait'
+              : 'border-hud-cyan/20 text-hud-cyan/40 hover:border-hud-cyan/50 hover:text-hud-cyan/70'
+          }`}
+        >
+          {isRecording ? <Mic size={11} /> : <MicOff size={11} />}
+          <span className="font-orbitron text-[8px] tracking-wider">
+            {isRecording ? 'REC' : isTranscribing ? 'STT' : 'MIC'}
+          </span>
+        </button>
+
+        {micError && (
+          <div className="text-hud-red text-[8px] font-mono-tech px-2">
+            {micError}
+          </div>
         )}
 
         {/* Theme selector */}

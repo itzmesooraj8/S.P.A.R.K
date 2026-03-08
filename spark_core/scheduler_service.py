@@ -5,7 +5,7 @@ APScheduler-based task scheduler with:
   - One-shot reminders with system alerts
   - Interval-based periodic tasks
   - Cron-style scheduled jobs
-  - Persistent job storage (SQLite via jobstores)
+  - Persistent job storage (SQLite via jobstores + JSON for reminders)
 
 Endpoints:
   GET    /api/scheduler/reminders          — list all reminders
@@ -28,20 +28,26 @@ import time
 import uuid
 from datetime import datetime, timezone, timedelta
 from typing import Optional, List, Dict, Any
+from pathlib import Path
 
 from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.date import DateTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.cron import CronTrigger
+from apscheduler.jobstores.sqlalchemy import SQLAlchemyJobStore
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
-# ── Storage ────────────────────────────────────────────────────────────────────
-_REMINDERS_FILE = os.path.join(os.path.dirname(__file__), "reminders.json")
-_HISTORY_FILE   = os.path.join(os.path.dirname(__file__), "job_history.json")
+# ── Storage Paths ──────────────────────────────────────────────────────────────
+_CONFIG_DIR = Path(os.path.dirname(__file__)) / ".." / "config"
+_CONFIG_DIR.mkdir(exist_ok=True)
 
-def _load_json(path: str) -> list:
-    if os.path.exists(path):
+_REMINDERS_FILE = _CONFIG_DIR / "reminders.json"
+_HISTORY_FILE = _CONFIG_DIR / "job_history.json"
+_SCHEDULER_DB = f"sqlite:///{_CONFIG_DIR / 'apscheduler_jobs.sqlite'}"
+
+def _load_json(path: Path) -> list:
+    if path.exists():
         try:
             with open(path, "r") as f:
                 return json.load(f)
@@ -49,7 +55,8 @@ def _load_json(path: str) -> list:
             pass
     return []
 
-def _save_json(path: str, data: list):
+def _save_json(path: Path, data: list):
+    path.parent.mkdir(parents=True, exist_ok=True)
     with open(path, "w") as f:
         json.dump(data, f, indent=2)
 
@@ -181,18 +188,56 @@ def _schedule_reminder(reminder: dict):
 
 
 def init_scheduler():
-    """Start the scheduler and restore persisted reminders."""
-    scheduler = get_scheduler()
-    if not scheduler.running:
-        scheduler.start()
-        print("⏰ [SCHEDULER] APScheduler started.")
+    """
+    Start the scheduler with SQLite job store for persistence.
+    Jobs survive server restarts.
+    """
+    global _scheduler
+    
+    # Configure SQLAlchemy job store (SQLite database)
+    try:
+        jobstores = {
+            'default': SQLAlchemyJobStore(url=_SCHEDULER_DB)
+        }
+        
+        executors = {
+            'default': {'type': 'asyncio'},
+        }
+        
+        job_defaults = {
+            'coalesce': False,
+            'max_instances': 1
+        }
+        
+        _scheduler = AsyncIOScheduler(
+            jobstores=jobstores,
+            executors=executors,
+            job_defaults=job_defaults,
+            timezone="UTC"
+        )
+        
+        if not _scheduler.running:
+            _scheduler.start()
+            print("⏰ [SCHEDULER] APScheduler started with SQLite persistence.")
+        
+        # Restore persisted reminders from JSON
+        for reminder in _reminders.values():
+            if reminder.get("status") not in ("fired", "cancelled"):
+                _schedule_reminder(reminder)
+        
+        print(f"⏰ [SCHEDULER] Restored {len(_reminders)} reminders from JSON.")
+        
+    except Exception as e:
+        # Fallback to in-memory scheduler if SQLite fails
+        print(f"⚠️ [SCHEDULER] SQLite jobstore failed ({e}), using in-memory scheduler.")
+        _scheduler = AsyncIOScheduler(timezone="UTC")
+        if not _scheduler.running:
+            _scheduler.start()
+        
+        for reminder in _reminders.values():
+            if reminder.get("status") not in ("fired", "cancelled"):
+                _schedule_reminder(reminder)
 
-    # Restore persisted reminders
-    for reminder in _reminders.values():
-        if reminder.get("status") not in ("fired", "cancelled"):
-            _schedule_reminder(reminder)
-
-    print(f"⏰ [SCHEDULER] Restored {len(_reminders)} reminders.")
 
 
 # ── FastAPI Router ─────────────────────────────────────────────────────────────

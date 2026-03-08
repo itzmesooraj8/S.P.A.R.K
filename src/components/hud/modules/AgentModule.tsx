@@ -2,6 +2,7 @@ import { useState, useCallback } from 'react';
 import { Bot, AlertCircle, Clock, RefreshCw, ChevronRight } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
+import { useContextStore } from '@/store/useContextStore';
 
 type AgentState = 'IDLE' | 'THINKING' | 'EXECUTING' | 'WAITING' | 'ERROR';
 
@@ -60,6 +61,7 @@ function AgentCard({ id, info }: { id: string; info: AgentInfo }) {
 }
 
 export default function AgentModule() {
+  const { setSelectedItem } = useContextStore();
   const [taskInput, setTaskInput] = useState('');
   const [dispatching, setDispatching] = useState(false);
   const [lastResult, setLastResult] = useState<string | null>(null);
@@ -84,7 +86,9 @@ export default function AgentModule() {
       const res = await apiPost<{ output?: string; status?: string }>('/api/agents/ask', {
         text: taskInput, wait: false,
       });
-      setLastResult(res.output ?? (res.status === 'queued' ? 'Task queued.' : JSON.stringify(res)));
+      const resultText = res.output ?? (res.status === 'queued' ? 'Task queued.' : JSON.stringify(res));
+      setLastResult(resultText);
+      setSelectedItem({ module: 'agent', type: 'task_result', label: taskInput.slice(0, 60), data: { task: taskInput, output: resultText, status: res.status } });
       setTaskInput('');
     } catch (err: any) {
       setLastResult(`Error: ${err.message}`);
@@ -130,7 +134,11 @@ export default function AgentModule() {
       ) : (
         <div className="flex flex-col gap-2">
           <div className="font-orbitron text-[9px] text-hud-cyan/60">◈ AGENT NETWORK</div>
-          {agentList.map(([id, info]) => <AgentCard key={id} id={id} info={info} />)}
+          {agentList.map(([id, info]) => (
+            <div key={id} className="cursor-pointer" onClick={() => setSelectedItem({ module: 'agent', type: 'agent', label: `${info.name} [${info.state}]`, data: { id, ...info } })}>
+              <AgentCard id={id} info={info} />
+            </div>
+          ))}
         </div>
       )}
 

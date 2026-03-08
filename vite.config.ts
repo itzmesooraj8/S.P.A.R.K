@@ -34,6 +34,7 @@ export default defineConfig(({ mode }) => ({
     },
   },
   optimizeDeps: {
+    entries: ["index.html"],
     include: ["react", "react-dom"]
   }
 }));
