@@ -5,13 +5,14 @@
  * Cases are persisted via Zustand persist middleware.
  * Slides in from the right edge as a full-height drawer.
  */
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   FolderOpen, X, Plus, ChevronDown, ChevronUp, Trash2,
   Link, CheckCircle, Eye, Archive,
 } from 'lucide-react';
 import { useMonitorStore, type InvestigationCase } from '@/store/useMonitorStore';
+import { apiGet, apiPost, apiDelete, apiFetch } from '@/lib/api';
 
 const STATUS_COLORS: Record<InvestigationCase['status'], string> = {
   open:       '#f87171',
@@ -54,11 +55,41 @@ export const CaseDrawer = ({ accentColor = '#00f5ff' }: CaseDrawerProps) => {
     setNoteInput((prev) => ({ ...prev, [caseId]: '' }));
   };
 
-  const cycleStatus = (c: InvestigationCase) => {
+  // ── Backend sync: persist status/note changes ──
+  const handleRemoveCase = async (id: string) => {
+    removeCase(id);
+    try { await apiDelete(`/api/globe/cases/${id}`); } catch { /* offline ok */ }
+  };
+
+  const handleCycleStatus = async (c: InvestigationCase) => {
     const cycle: InvestigationCase['status'][] = ['open', 'monitoring', 'closed'];
     const next = cycle[(cycle.indexOf(c.status) + 1) % cycle.length];
     updateCaseStatus(c.id, next);
+    try {
+      await apiFetch(`/api/globe/cases/${c.id}`, {
+        method: 'PATCH',
+        body: JSON.stringify({ status: next }),
+      });
+    } catch { /* offline ok */ }
   };
+
+  // ── Sync new local cases to backend on mount ──
+  const synced = useRef(false);
+  useEffect(() => {
+    if (synced.current) return;
+    synced.current = true;
+    (async () => {
+      try {
+        for (const c of cases) {
+          await apiPost('/api/globe/cases', {
+            title: c.title,
+            severity: c.severity,
+            description: c.notes.map(n => n.content).join('\n'),
+          }).catch(() => {});
+        }
+      } catch { /* backend unavailable */ }
+    })();
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const openCount = cases.filter((c) => c.status === 'open').length;
 
@@ -180,7 +211,7 @@ export const CaseDrawer = ({ accentColor = '#00f5ff' }: CaseDrawerProps) => {
                           <div className="flex items-center gap-1.5 mb-1">
                             {/* Status cycle button */}
                             <button
-                              onClick={() => cycleStatus(c)}
+                              onClick={() => handleCycleStatus(c)}
                               className="flex items-center gap-1 px-1.5 py-0.5 rounded text-[7px] font-mono font-bold transition-all hover:opacity-80"
                               style={{
                                 background: `${STATUS_COLORS[c.status]}15`,
@@ -213,7 +244,7 @@ export const CaseDrawer = ({ accentColor = '#00f5ff' }: CaseDrawerProps) => {
                             {isExpanded ? <ChevronUp size={11} /> : <ChevronDown size={11} />}
                           </button>
                           <button
-                            onClick={() => removeCase(c.id)}
+                            onClick={() => handleRemoveCase(c.id)}
                             className="p-1 rounded hover:bg-red-900/30 text-foreground/30 hover:text-red-400 transition-all"
                           >
                             <Trash2 size={11} />

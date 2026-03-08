@@ -16,9 +16,10 @@ import { useSnapshotStore, type SnapshotData } from '@/hooks/useSnapshotStore';
 
 interface SnapshotPlaybackProps {
   accentColor?: string;
+  mode?: 'inline' | 'fixed';
 }
 
-export const SnapshotPlayback = ({ accentColor = '#00f5ff' }: SnapshotPlaybackProps) => {
+export const SnapshotPlayback = ({ accentColor = '#00f5ff', mode = 'fixed' }: SnapshotPlaybackProps) => {
   const { snapshots, playbackIndex, setPlaybackIndex, saveSnapshot, loadSnapshot, deleteSnapshot } =
     useSnapshotStore();
 
@@ -61,7 +62,7 @@ export const SnapshotPlayback = ({ accentColor = '#00f5ff' }: SnapshotPlaybackPr
 
   return (
     <div
-      className="fixed bottom-6 right-3 z-40 pointer-events-auto"
+      className={`${mode === 'fixed' ? 'fixed bottom-6 right-3 z-40' : 'relative'} pointer-events-auto`}
       style={{ width: '16rem' }}
     >
       {/* ── Collapsed mode: compact pill ─────────────────────────────────── */}

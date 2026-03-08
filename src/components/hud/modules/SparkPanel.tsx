@@ -276,14 +276,69 @@ function CognitionTab() {
   );
 }
 
+/* ── HISTORY tab ─────────────────────────────────────────────────────────── */
+interface Observation { id: string; content: string; created_at: string; entity?: string; }
+
+function HistoryTab() {
+  const { data, isLoading, refetch } = useQuery<{ observations: Observation[] }>({
+    queryKey: ['memory-observations'],
+    queryFn: () => apiGet<{ observations: Observation[] }>('/api/memory/observations'),
+    refetchInterval: 15_000,
+    retry: 1,
+  });
+
+  const observations = data?.observations ?? [];
+
+  return (
+    <div className="flex flex-col gap-3 p-3 h-full overflow-y-auto scrollbar-hud">
+      <div className="flex items-center justify-between shrink-0">
+        <span className="font-orbitron text-[9px] text-hud-cyan/60">◈ SESSION HISTORY</span>
+        <button onClick={() => refetch()} className="p-1 rounded border border-hud-cyan/25 text-hud-cyan/60 hover:text-hud-cyan">
+          <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
+        </button>
+      </div>
+
+      {isLoading && observations.length === 0 && (
+        <div className="text-center font-mono-tech text-[10px] text-hud-cyan/40 py-4">Loading history…</div>
+      )}
+
+      {!isLoading && observations.length === 0 && (
+        <div className="text-center py-8">
+          <Clock size={24} className="mx-auto mb-2 text-hud-cyan/20" />
+          <p className="font-mono-tech text-[10px] text-hud-cyan/40">No session history yet.</p>
+          <p className="font-mono-tech text-[8px] text-hud-cyan/25 mt-1">Memory observations will appear here.</p>
+        </div>
+      )}
+
+      <div className="flex flex-col gap-1.5">
+        {observations.slice(0, 50).map((obs) => (
+          <div
+            key={obs.id}
+            className="hud-panel rounded p-2 border-hud-cyan/10"
+          >
+            {obs.entity && (
+              <span className="font-orbitron text-[7px] text-hud-cyan/50 uppercase tracking-widest">{obs.entity}</span>
+            )}
+            <p className="font-mono-tech text-[9px] text-hud-cyan/80 leading-relaxed">{obs.content}</p>
+            <span className="font-mono-tech text-[7px] text-hud-cyan/30 mt-0.5 block">
+              {new Date(obs.created_at).toLocaleString()}
+            </span>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
 /* ── Main export ─────────────────────────────────────────────────────────── */
-type Tab = 'chat' | 'cognition';
+type Tab = 'chat' | 'cognition' | 'history';
 
 export default function SparkPanel() {
   const [tab, setTab] = useState<Tab>('chat');
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
     { id: 'chat',      label: 'CHAT',      icon: <Bot size={10} /> },
     { id: 'cognition', label: 'COGNITION', icon: <Brain size={10} /> },
+    { id: 'history',   label: 'HISTORY',   icon: <Clock size={10} /> },
   ];
 
   return (
@@ -309,6 +364,7 @@ export default function SparkPanel() {
       <div className="flex-1 min-h-0">
         {tab === 'chat'      && <ChatTab />}
         {tab === 'cognition' && <CognitionTab />}
+        {tab === 'history'   && <HistoryTab />}
       </div>
     </div>
   );

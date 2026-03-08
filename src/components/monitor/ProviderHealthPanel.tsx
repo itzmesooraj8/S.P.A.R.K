@@ -5,9 +5,10 @@
  */
 import { useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { ShieldCheck, ShieldAlert, ShieldX, KeyRound, RefreshCw } from 'lucide-react';
+import { ShieldCheck, ShieldAlert, ShieldX, KeyRound, RefreshCw, Key } from 'lucide-react';
 import { useMonitorStore, ProviderHealth } from '../../store/useMonitorStore';
 import { BasePanel } from './BasePanel';
+import { useConfigStatus, providerStatusColor, providerStatusLabel } from '@/hooks/useConfigStatus';
 
 interface Props {
   accentColor?: string;
@@ -65,6 +66,7 @@ export default function ProviderHealthPanel({ accentColor = '#00f5ff' }: Props) 
   const providerHealth        = useMonitorStore((s) => s.providerHealth);
   const providerHealthSummary = useMonitorStore((s) => s.providerHealthSummary);
   const fetchProviderHealth   = useMonitorStore((s) => s.fetchProviderHealth);
+  const { data: configStatus } = useConfigStatus();
 
   // ── Fetch on mount + every 5 minutes ─────────────────────────────────────
   useEffect(() => {
@@ -137,10 +139,36 @@ export default function ProviderHealthPanel({ accentColor = '#00f5ff' }: Props) 
       )}
 
       {/* ── No data yet ─────────────────────────────────────────── */}
-      {providerHealth.length === 0 && (
+      {providerHealth.length === 0 && !configStatus && (
         <p className="text-[10px] opacity-40 text-center py-3">
           Fetching provider status…
         </p>
+      )}
+
+      {/* ── Config key status from /api/config/status ─────────── */}
+      {configStatus && Object.keys(configStatus.providers).length > 0 && (
+        <div className="mb-2">
+          <div className="flex items-center gap-1.5 mb-1.5">
+            <Key size={8} style={{ color: 'rgba(255,255,255,0.3)' }} />
+            <span className="text-[8px] font-mono opacity-30 tracking-widest">API KEY STATUS</span>
+          </div>
+          <div className="flex flex-wrap gap-1">
+            {Object.entries(configStatus.providers).map(([name, status]) => (
+              <span
+                key={name}
+                className="text-[8px] font-mono px-1.5 py-0.5 rounded"
+                style={{
+                  background: status.available ? 'rgba(52,211,153,0.1)' : status.configured ? 'rgba(255,159,10,0.1)' : 'rgba(255,255,255,0.04)',
+                  color: providerStatusColor(status),
+                  border: `1px solid ${providerStatusColor(status)}30`,
+                }}
+                title={status.error || (status.available ? 'Connected' : status.configured ? 'Key set but unavailable' : 'No API key')}
+              >
+                {name}: {providerStatusLabel(status)}
+              </span>
+            ))}
+          </div>
+        </div>
       )}
 
       {/* ── Active providers ────────────────────────────────────── */}

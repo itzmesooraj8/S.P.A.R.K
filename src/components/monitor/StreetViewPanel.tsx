@@ -4,9 +4,9 @@
  * When streetViewMode is active, clicking the globe sets coords here.
  * Panel attempts an iframe embed; also provides a direct "Open in Google Maps" link.
  */
-import React, { useEffect, useRef, useState } from 'react';
+import React from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, ExternalLink, MapPin, Navigation, RefreshCw } from 'lucide-react';
+import { X, ExternalLink, MapPin, Navigation } from 'lucide-react';
 
 export interface StreetViewCoords {
   lat: number;
@@ -39,17 +39,9 @@ function buildMapillaryLink(lat: number, lng: number) {
 export const StreetViewPanel: React.FC<Props> = ({
   coords, onClose, accentColor = '#00f5ff',
 }) => {
-  const iframeRef = useRef<HTMLIFrameElement>(null);
-  const [loadState, setLoadState] = useState<'loading' | 'loaded' | 'error'>('loading');
-
-  useEffect(() => {
-    if (coords) setLoadState('loading');
-  }, [coords?.lat, coords?.lng]);
-
   if (!coords) return null;
 
   const { lat, lng, label } = coords;
-  const svUrl       = buildStreetViewUrl(lat, lng);
   const mapsLink    = buildMapsLink(lat, lng);
   const mapillaryLink = buildMapillaryLink(lat, lng);
   const coordStr    = `${Math.abs(lat).toFixed(4)}°${lat >= 0 ? 'N' : 'S'}, ${Math.abs(lng).toFixed(4)}°${lng >= 0 ? 'E' : 'W'}`;
@@ -95,8 +87,8 @@ export const StreetViewPanel: React.FC<Props> = ({
           <span
             className="w-1.5 h-1.5 rounded-full shrink-0"
             style={{
-              background: loadState === 'loaded' ? '#34d399' : loadState === 'error' ? '#f87171' : '#fbbf24',
-              boxShadow: loadState === 'loaded' ? '0 0 6px #34d39960' : 'none',
+              background: '#34d399',
+              boxShadow: '0 0 6px #34d39960',
             }}
           />
           <button
@@ -108,79 +100,65 @@ export const StreetViewPanel: React.FC<Props> = ({
           </button>
         </div>
 
-        {/* Iframe embed */}
-        <div className="relative flex-1 overflow-hidden">
-          {loadState === 'loading' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-3 z-10"
-              style={{ background: 'rgba(2,8,20,0.92)' }}>
-              <motion.div
-                animate={{ rotate: 360 }}
-                transition={{ duration: 1.2, repeat: Infinity, ease: 'linear' }}
-              >
-                <RefreshCw size={20} style={{ color: accentColor }} />
-              </motion.div>
-              <span className="text-[10px] font-mono text-gray-400 tracking-wider">LOADING STREET VIEW…</span>
-            </div>
-          )}
+        {/* Static map preview + action buttons (iframe blocked by X-Frame-Options) */}
+        <div className="relative flex-1 overflow-hidden flex flex-col items-center justify-center gap-4 px-6">
+          {/* OpenStreetMap static tile preview */}
+          <div className="w-full rounded overflow-hidden border" style={{ borderColor: `${accentColor}20` }}>
+            <img
+              src={`https://staticmap.openstreetmap.de/staticmap.php?center=${lat},${lng}&zoom=15&size=380x220&maptype=mapnik&markers=${lat},${lng},lightblue`}
+              alt={`Map at ${coordStr}`}
+              className="w-full h-auto"
+              style={{ minHeight: 140 }}
+              onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+            />
+          </div>
 
-          {loadState === 'error' && (
-            <div className="absolute inset-0 flex flex-col items-center justify-center gap-4 px-6">
-              <MapPin size={32} style={{ color: `${accentColor}50` }} />
-              <div className="text-center">
-                <p className="text-[11px] font-mono text-gray-300 mb-1">Street view unavailable</p>
-                <p className="text-[9px] font-mono text-gray-500">No street-level imagery at this location, or Google blocked the embed. Use the links below.</p>
-              </div>
-            </div>
-          )}
+          <div className="text-center">
+            <MapPin size={28} style={{ color: `${accentColor}80` }} className="mx-auto mb-2" />
+            <p className="text-[11px] font-mono text-gray-300 mb-1">Street-level imagery</p>
+            <p className="text-[9px] font-mono text-gray-500">Open in an external viewer below</p>
+          </div>
 
-          <iframe
-            ref={iframeRef}
-            src={svUrl}
-            className="w-full h-full border-0"
-            allow="fullscreen"
-            onLoad={() => setLoadState('loaded')}
-            onError={() => setLoadState('error')}
-            title="Google Maps Street View"
-            sandbox="allow-scripts allow-same-origin allow-popups"
-          />
+          <div className="flex flex-col gap-2 w-full">
+            <a
+              href={mapsLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-mono font-bold
+                         tracking-widest transition-all duration-200 hover:opacity-90"
+              style={{
+                background: `${accentColor}20`,
+                border: `1px solid ${accentColor}45`,
+                color: accentColor,
+              }}
+            >
+              <ExternalLink size={12} />
+              OPEN GOOGLE STREET VIEW
+            </a>
+            <a
+              href={mapillaryLink}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-2 py-2.5 rounded-lg text-[10px] font-mono font-bold
+                         tracking-widest transition-all duration-200 hover:opacity-90"
+              style={{
+                background: 'rgba(255,255,255,0.04)',
+                border: '1px solid rgba(255,255,255,0.12)',
+                color: 'rgba(255,255,255,0.5)',
+              }}
+            >
+              <ExternalLink size={12} />
+              OPEN MAPILLARY
+            </a>
+          </div>
         </div>
 
-        {/* Footer actions */}
+        {/* Footer: coordinates */}
         <div
-          className="flex items-center gap-2 px-3 py-2 shrink-0"
+          className="flex items-center justify-center px-3 py-2 shrink-0"
           style={{ borderTop: `1px solid ${accentColor}14` }}
         >
-          <a
-            href={mapsLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex-1 flex items-center justify-center gap-1.5 py-2 rounded-lg text-[10px] font-mono font-bold
-                       tracking-widest transition-all duration-200 hover:opacity-90"
-            style={{
-              background: `${accentColor}20`,
-              border: `1px solid ${accentColor}45`,
-              color: accentColor,
-            }}
-          >
-            <ExternalLink size={11} />
-            OPEN IN GOOGLE MAPS
-          </a>
-          <a
-            href={mapillaryLink}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-[10px] font-mono font-bold
-                       tracking-widest transition-all duration-200 hover:opacity-90"
-            style={{
-              background: 'rgba(255,255,255,0.04)',
-              border: '1px solid rgba(255,255,255,0.12)',
-              color: 'rgba(255,255,255,0.5)',
-            }}
-            title="Open in Mapillary (free street-level imagery)"
-          >
-            <ExternalLink size={11} />
-            MAPILLARY
-          </a>
+          <span className="text-[9px] font-mono text-gray-500">{coordStr}</span>
         </div>
       </motion.div>
     </AnimatePresence>

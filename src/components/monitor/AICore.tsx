@@ -8,60 +8,7 @@ import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Send, X, Sparkles } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
-
-// ========== MOCK AI RESPONSE DATABASE ==========
-const AI_RESPONSES: Record<string, { text: string; lat?: number; lng?: number }> = {
-  'black sea': {
-    text: '🔴 ALERT: Black Sea region shows elevated naval activity. NATO maritime patrols increased 40% this quarter. Russian Black Sea Fleet conducting exercises near Sevastopol. Monitoring 3 active conflict vectors.',
-    lat: 44.0,
-    lng: 34.0,
-  },
-  ukraine: {
-    text: '⚠️ Ukraine situation: Front line activity concentrated in Zaporizhzhia and Donetsk oblasts. Satellite imagery confirms infrastructure damage in 12 locations. Humanitarian corridors intermittently operational. Risk level: CRITICAL.',
-    lat: 48.38,
-    lng: 31.17,
-  },
-  taiwan: {
-    text: '🟡 Taiwan Strait: PLA naval exercises detected in eastern approaches. USINDOPACOM assets repositioned. Semiconductor supply chain risk elevated to AMBER. TSMC production unaffected.',
-    lat: 24.0,
-    lng: 121.0,
-  },
-  gaza: {
-    text: '🔴 CRITICAL: Gaza humanitarian crisis at Level 5. Active conflict in northern and central sectors. Medical infrastructure at 15% capacity. 4 active ceasefire negotiation tracks being monitored.',
-    lat: 31.35,
-    lng: 34.31,
-  },
-  market: {
-    text: '📊 Global Market Summary: Risk-off sentiment dominant. VIX elevated at 28.5. Safe haven flows into USD, Gold, CHF. EM currencies under pressure. BTC showing decorrelation at 0.42.',
-  },
-  ai: {
-    text: '💻 AI Development Tracker: 3 new foundation models this week. Global compute demand up 200% YoY. Regulatory proposals active in EU, US, CN. OpenAI cluster utilization at peak.',
-    lat: 37.77,
-    lng: -122.42,
-  },
-  crypto: {
-    text: '🪙 Crypto Intelligence: BTC whale accumulation phase detected. On-chain metrics show 73% of supply unmoved 6+ months. ETH staking ratio at all-time high. DeFi TVL recovering.',
-    lat: 47.37,
-    lng: 8.54,
-  },
-  sudan: {
-    text: '🔴 Sudan Crisis: RSF forces advancing on Khartoum from three vectors. Civilian displacement exceeds 8M. International intervention calls escalating. Humanitarian access severely restricted.',
-    lat: 15.6,
-    lng: 32.5,
-  },
-  default: {
-    text: '🌐 Globe Monitor online. All systems nominal. Tracking active events across conflict, hazards, finance, and intelligence domains. Global threat level: ELEVATED. Type a region, country, or topic for detailed analysis.',
-  },
-};
-
-/** Match user input to an AI response */
-const findResponse = (input: string) => {
-  const lower = input.toLowerCase();
-  for (const [key, resp] of Object.entries(AI_RESPONSES)) {
-    if (key !== 'default' && lower.includes(key)) return resp;
-  }
-  return AI_RESPONSES.default;
-};
+import { apiFetch } from '@/lib/api';
 
 export const AICore = () => {
   const aiCoreExpanded = useMonitorStore((s) => s.aiCoreExpanded);
@@ -76,36 +23,67 @@ export const AICore = () => {
   const scrollRef = useRef<HTMLDivElement>(null);
   const intervalRef = useRef<number | null>(null);
 
-  /** Submit user query and generate mock AI response with typewriter effect */
-  const handleSubmit = useCallback(() => {
+  /** Typewriter animation for a completed text string */
+  const typewriterEffect = useCallback((text: string, onDone: () => void) => {
+    let i = 0;
+    setDisplayedResponse('');
+    intervalRef.current = window.setInterval(() => {
+      if (i < text.length) {
+        setDisplayedResponse(text.slice(0, i + 1));
+        i++;
+      } else {
+        if (intervalRef.current) clearInterval(intervalRef.current);
+        onDone();
+      }
+    }, 18);
+  }, []);
+
+  /** Submit user query to backend /api/commander/run */
+  const handleSubmit = useCallback(async () => {
     if (!input.trim() || isTyping) return;
 
     const query = input.trim();
     setInput('');
     addAIMessage('user', query);
-
-    const response = findResponse(query);
     setIsTyping(true);
     setDisplayedResponse('');
 
-    let i = 0;
-    intervalRef.current = window.setInterval(() => {
-      if (i < response.text.length) {
-        setDisplayedResponse(response.text.slice(0, i + 1));
-        i++;
-      } else {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        addAIMessage('ai', response.text);
+    try {
+      const res = await apiFetch('/api/commander/run', {
+        method: 'POST',
+        body: JSON.stringify({ text: query }),
+      });
+
+      if (!res.ok) throw new Error(`${res.status}`);
+
+      const data = await res.json();
+
+      // Extract the reply text — adapt to your backend response shape
+      const reply: string =
+        data.reply ?? data.response ?? data.result ?? data.message ??
+        (typeof data === 'string' ? data : JSON.stringify(data));
+
+      // Extract optional coordinates for flyTo
+      const lat = data.lat ?? data.latitude;
+      const lng = data.lng ?? data.longitude;
+
+      typewriterEffect(reply, () => {
+        addAIMessage('ai', reply);
         setIsTyping(false);
         setDisplayedResponse('');
-
-        // Agentic: fly to location if response has coordinates
-        if (response.lat != null && response.lng != null) {
-          setTimeout(() => flyTo(response.lng!, response.lat!, 5), 500);
+        if (lat != null && lng != null) {
+          setTimeout(() => flyTo(lng, lat, 5), 500);
         }
-      }
-    }, 18);
-  }, [input, isTyping, addAIMessage, flyTo]);
+      });
+    } catch {
+      const fallback = '⚠️ Backend unreachable — check that SPARK core is running on localhost:8000.';
+      typewriterEffect(fallback, () => {
+        addAIMessage('ai', fallback);
+        setIsTyping(false);
+        setDisplayedResponse('');
+      });
+    }
+  }, [input, isTyping, addAIMessage, flyTo, typewriterEffect]);
 
   // Cleanup interval on unmount
   useEffect(() => {

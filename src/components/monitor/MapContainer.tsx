@@ -76,6 +76,8 @@ export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number;
   const mapView         = useMonitorStore((s) => s.mapView);
   const mapStyle        = useMonitorStore((s) => s.mapStyle);
   const mapLabels       = useMonitorStore((s) => s.mapLabels);
+  const selectEvent     = useMonitorStore((s) => s.selectEvent);
+  const flyTo           = useMonitorStore((s) => s.flyTo);
 
   const realWorldEvents   = useMonitorStore((s) => s.realWorldEvents);
   const realEvents        = useMonitorStore((s) => s.realEvents);
@@ -307,7 +309,12 @@ export const MapContainer = ({ onMapClick }: { onMapClick?: (loc: { lat: number;
         layers={layers}
         getCursor={() => 'default'}
         onClick={(info: any) => {
-          if (!info.layer && info.coordinate) {
+          if (info.object?.id) {
+            selectEvent(info.object.id);
+            const lng = info.object.lng ?? info.object.longitude ?? info.coordinate?.[0];
+            const lat = info.object.lat ?? info.object.latitude ?? info.coordinate?.[1];
+            if (lng != null && lat != null) flyTo(lng, lat, 6);
+          } else if (!info.layer && info.coordinate) {
             onMapClick?.({ lat: info.coordinate[1], lng: info.coordinate[0] });
           }
         }}

@@ -3,7 +3,7 @@
  * Shows LIVE real-time events (GDELT conflict, USGS earthquakes, NASA EONET,
  * OpenSky military flights). Falls back to curated demo data while loading.
  */
-import { useMemo, useRef } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, Zap, Shield, Globe, Cpu, TrendingUp, Heart, Flame, Wind, FolderPlus,
@@ -14,6 +14,7 @@ import type { RealEvent, Severity, TimeWindow } from '@/store/useMonitorStore';
 import { getEventsForMode, type MonitorEvent } from '@/data/mockData';
 import { BasePanel } from './BasePanel';
 import { ScrollArea } from '@/components/ui/scroll-area';
+import { ProvenanceTooltip } from './ProvenanceTooltip';
 
 const severityClasses: Record<Severity, string> = {
   critical: 'text-neon-crimson',
@@ -140,6 +141,7 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
   const setTimeWindow   = useMonitorStore((s) => s.setTimeWindow);
 
   const { isNew, observe, newCount } = useActivityTracker();
+  const [hoveredEventId, setHoveredEventId] = useState<string | null>(null);
 
   const isLive = lastFetch > 0;
 
@@ -251,13 +253,22 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
                           exit={{ opacity: 0, x: -20 }}
                           transition={{ delay: i * 0.03, type: 'spring', stiffness: 300, damping: 25 }}
                           onClick={() => handleClick(event)}
+                          onMouseEnter={() => setHoveredEventId(event.id)}
+                          onMouseLeave={() => setHoveredEventId(null)}
                           role="button"
                           tabIndex={0}
                           onKeyDown={(e) => e.key === 'Enter' && handleClick(event)}
-                          className={`event-row w-full text-left transition-all duration-200 group ${
+                          className={`event-row w-full text-left transition-all duration-200 group relative ${
                             isSelected ? 'selected' : ''
                           }`}
                         >
+                          {/* Provenance tooltip on hover */}
+                          {(event as any)._provenance && (
+                            <ProvenanceTooltip
+                              provenance={(event as any)._provenance}
+                              visible={hoveredEventId === event.id}
+                            />
+                          )}
                           {/* Left severity stripe */}
                           <div
                             className={`self-stretch w-0.5 rounded-full flex-shrink-0 ${

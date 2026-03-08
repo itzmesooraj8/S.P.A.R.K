@@ -228,7 +228,7 @@ const GlobeMonitor = () => {
                 animate={{ opacity: 1, x: 0, scale: 1 }}
                 exit={{ opacity: 0, x: -40, scale: 0.96 }}
                 transition={{ type: 'spring', stiffness: 300, damping: 28 }}
-                className="pointer-events-auto hidden md:flex flex-col shrink-0"
+                className="pointer-events-auto hidden md:flex flex-col shrink-0 group"
                 style={{ width: '19rem', height: '100%' }}
               >
                 <PanelShell accentColor={accentColor} width="19rem">
@@ -310,7 +310,7 @@ const GlobeMonitor = () => {
                       )}
                       {rightTab === 'archive' && (
                         <motion.div key="archive" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
-                          <SnapshotPlayback accentColor={accentColor} />
+                          <SnapshotPlayback accentColor={accentColor} mode="inline" />
                         </motion.div>
                       )}
                     </AnimatePresence>
@@ -419,6 +419,7 @@ const GlobeMonitor = () => {
                 <>
                   <ThreatMatrix accentColor={accentColor} />
                   <LiveNewsPanel accentColor={accentColor} />
+                  <GdeltIntelPanel accentColor={accentColor} />
                   <CustomMonitorPanel accentColor={accentColor} />
                 </>
               )}

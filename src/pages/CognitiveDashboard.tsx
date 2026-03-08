@@ -5,8 +5,9 @@
  */
 import { useEffect, useState, useCallback } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useNavigate } from 'react-router-dom';
 import { apiPost, apiGet } from '@/lib/api';
-import { CheckCircle, XCircle } from 'lucide-react';
+import { CheckCircle, XCircle, ArrowLeft } from 'lucide-react';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -159,6 +160,7 @@ function AgentCard({ agent }: { agent: AgentStatus }) {
 export default function CognitiveDashboard() {
   const [tick, setTick] = useState(0);
   const qc = useQueryClient();
+  const navigate = useNavigate();
 
   const { data: osData, isLoading } = useQuery<OsStatus>({
     queryKey: ['os-status', tick],
@@ -235,6 +237,12 @@ export default function CognitiveDashboard() {
             className="px-2 py-1 rounded border text-[9px] tracking-widest uppercase transition-all hover:bg-white/10"
             style={{ borderColor: '#00f5ff40', color: '#00f5ff80' }}>
             ↻ REFRESH
+          </button>
+          <button onClick={() => navigate('/')}
+            className="px-2 py-1 rounded border text-[9px] tracking-widest uppercase transition-all hover:bg-white/10 flex items-center gap-1"
+            style={{ borderColor: '#00f5ff40', color: '#00f5ff80' }}>
+            <ArrowLeft size={10} />
+            BACK TO HUD
           </button>
         </div>
       </div>
