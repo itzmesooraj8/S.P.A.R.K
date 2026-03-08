@@ -3,8 +3,10 @@ SPARK Auth — JWT Access + Refresh Tokens, bcrypt, RBAC
 """
 import os
 import time
+import json
 import secrets
 import hashlib
+import pathlib
 from typing import Dict, Any, Optional
 
 import jwt
@@ -21,8 +23,29 @@ ALGORITHM = "HS256"
 ACCESS_TOKEN_TTL  = int(os.getenv("SPARK_ACCESS_TTL",  "3600"))    # 1 hour
 REFRESH_TOKEN_TTL = int(os.getenv("SPARK_REFRESH_TTL", "604800"))  # 7 days
 
-# ── In-memory refresh token store (replace with Redis in prod) ────────────────
-_refresh_store: Dict[str, Dict[str, Any]] = {}  # token_hash → {sub, role, exp}
+# ── Persistent refresh token store ───────────────────────────────────────────
+# Survives backend restarts so the browser session stays alive.
+_STORE_PATH = pathlib.Path(__file__).parent.parent / "spark_memory_db" / "refresh_tokens.json"
+
+def _load_store() -> Dict[str, Dict[str, Any]]:
+    try:
+        if _STORE_PATH.exists():
+            data = json.loads(_STORE_PATH.read_text())
+            # Drop already-expired tokens on load
+            now = time.time()
+            return {k: v for k, v in data.items() if v.get("exp", 0) > now}
+    except Exception:
+        pass
+    return {}
+
+def _save_store(store: Dict[str, Dict[str, Any]]) -> None:
+    try:
+        _STORE_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _STORE_PATH.write_text(json.dumps(store))
+    except Exception:
+        pass
+
+_refresh_store: Dict[str, Dict[str, Any]] = _load_store()
 
 # ── Role hierarchy ────────────────────────────────────────────────────────────
 ROLE_LEVELS = {
@@ -56,6 +79,7 @@ def create_refresh_token(sub: str, role: str) -> str:
     token_hash = hashlib.sha256(raw.encode()).hexdigest()
     exp = time.time() + REFRESH_TOKEN_TTL
     _refresh_store[token_hash] = {"sub": sub, "role": role, "exp": exp}
+    _save_store(_refresh_store)
     return raw  # return raw; store only the hash
 
 
@@ -92,7 +116,10 @@ def refresh_access_token(refresh_raw: str) -> Optional[Dict[str, str]]:
 
 def revoke_refresh_token(refresh_raw: str) -> bool:
     token_hash = hashlib.sha256(refresh_raw.encode()).hexdigest()
-    return _refresh_store.pop(token_hash, None) is not None
+    removed = _refresh_store.pop(token_hash, None) is not None
+    if removed:
+        _save_store(_refresh_store)
+    return removed
 
 
 # ── RBAC helpers ─────────────────────────────────────────────────────────────

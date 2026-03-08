@@ -9,7 +9,8 @@
  *   Overlays:     AICore (floating center), CaseDrawer (slide-in right edge)
  *   Mobile:       bottom tab nav instead of side drawers
  */
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useShallow } from 'zustand/react/shallow';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   AlertTriangle, Newspaper, Settings2,
@@ -144,9 +145,11 @@ const GlobeMonitor = () => {
     s.realEvents.length + s.realWorldEvents.length + s.realCyberEvents.length +
     s.realFireEvents.length + s.realClimateEvents.length);
   const selectedEventId   = useMonitorStore((s) => s.selectedEventId);
-  const allRealEvents     = useMonitorStore((s) => [
-    ...s.realEvents, ...s.realWorldEvents, ...s.realCyberEvents, ...s.realClimateEvents,
-  ]);
+  const allRealEvents     = useMonitorStore(
+    useShallow((s) => [
+      ...s.realEvents, ...s.realWorldEvents, ...s.realCyberEvents, ...s.realClimateEvents,
+    ])
+  );
 
   const { setSelectedItem } = useContextStore();
 

@@ -35,6 +35,7 @@ spark_dev_memory/
 .vite/
 
 scrapy/
+*.sqlite
 *.sqlite3
 spark_core/spark_dev_memory/
 *.log

@@ -39,6 +39,8 @@ export function useVoiceMic(options?: { onAutoSubmit?: (transcript: string) => v
   const silenceTimerRef = useRef<number | null>(null);
   const lastAudioLevelRef = useRef<number>(0);
   const audioContextRef = useRef<AudioContext | null>(null);
+  // Ref mirrors isRecording state so silence-detection closure gets live value
+  const isRecordingRef = useRef(false);
 
   const startRecording = useCallback(async () => {
     try {
@@ -92,6 +94,7 @@ export function useVoiceMic(options?: { onAutoSubmit?: (transcript: string) => v
 
       mediaRecorderRef.current = mediaRecorder;
       mediaRecorder.start();
+      isRecordingRef.current = true;
       setIsRecording(true);
 
       // Start silence detection loop
@@ -122,6 +125,7 @@ export function useVoiceMic(options?: { onAutoSubmit?: (transcript: string) => v
         // Stop all tracks to clean up
         streamRef.current?.getTracks().forEach(track => track.stop());
         streamRef.current = null;
+        isRecordingRef.current = false;
         setIsRecording(false);
 
         // Combine audio chunks into a single blob
@@ -201,7 +205,7 @@ export function useVoiceMic(options?: { onAutoSubmit?: (transcript: string) => v
       // Check if below silence threshold
       if (rms < SILENCE_THRESHOLD) {
         consecutiveSilenceTime += 100;
-        if (consecutiveSilenceTime >= SILENCE_DURATION_MS && isRecording) {
+        if (consecutiveSilenceTime >= SILENCE_DURATION_MS && isRecordingRef.current) {
           console.log('🎤 Silence detected — auto-stopping recording');
           stopRecording(true).catch((err) => {
             console.error('Auto-stop error:', err);
@@ -214,7 +218,7 @@ export function useVoiceMic(options?: { onAutoSubmit?: (transcript: string) => v
       }
 
       // Continue detecting
-      if (isRecording) {
+      if (isRecordingRef.current) {
         silenceTimerRef.current = window.setTimeout(detectSilence, 100);
       }
     };
@@ -233,10 +237,11 @@ export function useVoiceMic(options?: { onAutoSubmit?: (transcript: string) => v
       clearTimeout(silenceTimerRef.current);
       silenceTimerRef.current = null;
     }
-    if (isRecording) {
+    if (isRecordingRef.current) {
+      isRecordingRef.current = false;
       mediaRecorderRef.current?.stop();
     }
-  }, [isRecording]);
+  }, []);
 
   // Cleanup on unmount
   useEffect(() => {

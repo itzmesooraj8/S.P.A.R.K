@@ -243,7 +243,7 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
                       const alreadyCased = cases.some((c) => c.eventId === event.id);
 
                       return (
-                        <motion.button
+                        <motion.div
                           key={event.id}
                           ref={(el) => observe(el, event.id)}
                           initial={{ opacity: 0, x: -20 }}
@@ -251,6 +251,9 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
                           exit={{ opacity: 0, x: -20 }}
                           transition={{ delay: i * 0.03, type: 'spring', stiffness: 300, damping: 25 }}
                           onClick={() => handleClick(event)}
+                          role="button"
+                          tabIndex={0}
+                          onKeyDown={(e) => e.key === 'Enter' && handleClick(event)}
                           className={`event-row w-full text-left transition-all duration-200 group ${
                             isSelected ? 'selected' : ''
                           }`}
@@ -304,7 +307,7 @@ export const ThreatMatrix = ({ accentColor = 'hsl(186 100% 50%)' }: { accentColo
                           >
                             {sev.slice(0, 3)}
                           </span>
-                        </motion.button>
+                        </motion.div>
                       );
                     })}
                   </div>
