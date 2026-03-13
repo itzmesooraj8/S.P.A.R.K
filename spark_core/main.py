@@ -47,10 +47,7 @@ from security.firewall_router import router as security_router  # /api/security/
 from music.router import router as music_router                  # /api/music/*
 from combat.router import router as combat_router                # /api/combat/* — Sovereign OSINT Platform
 from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
-
-# ── SPARK PERSONAL AI ──────────────────────────────────────────────────────────
-from personal import personal_api_router
-from personal import personal_ws_router
+from personal import personal_api_router, personal_ws_router
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -280,6 +277,10 @@ app.include_router(browser_router)   # /api/browser/*  — Playwright web agent
 app.include_router(security_router)  # /api/security/* — firewall + network telemetry
 app.include_router(music_router)     # /api/music/*    — local audio file browser
 app.include_router(combat_router)    # /api/combat/*   — Sovereign Cyber Intelligence Platform
+
+# SPARK Personal AI Backend Foundation
+app.include_router(personal_api_router) # /api/personal/*
+app.include_router(personal_ws_router)  # /ws/personal/*
 
 # -----------------
 # API ENDPOINTS
