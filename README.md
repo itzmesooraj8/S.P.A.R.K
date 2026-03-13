@@ -39,6 +39,64 @@ SPARK Globe Monitor is a **fully-independent, real-time geospatial intelligence 
 - AI Chat with streaming responses and tool execution feedback
 - Voice Engine: Wake-Word + STT (Whisper) + TTS
 
+---
+
+## 🚀 SPARK Personal AI (New Layer)
+
+SPARK Personal AI transforms the sovereign OS into a proactive, full-duplex personal assistant (better than Jarvis).
+
+### The Complete SPARK Personal AI Architecture
+
+```text
+SPARK Personal AI
+│
+├── 🧠 BRAIN
+│   ├── bitnet.cpp (local 100B, CPU-only via subprocess)
+│   ├── Gemini 2.0 Flash (online fallback)
+│   └── ChromaDB (persistent memory)
+│
+├── 🎙️ VOICE
+│   ├── PersonaPlex-7B (full-duplex conversational engine)
+│   ├── Voicebox (local voice cloning from 5s audio)
+│   ├── OpenWakeWord ("Hey SPARK" background listener)
+│   └── faster-whisper (real-time low-latency STT stream)
+│
+├── 🔍 RESEARCH
+│   ├── Vane (local Perplexity replacement)
+│   ├── LangExtract (document intelligence AI)
+│   └── Web crawler (async multi-source fetcher)
+│
+├── 🤖 AGENTS (PentAGI Pipeline)
+│   ├── Planner agent     — Breaks task into sub-tasks
+│   ├── Researcher agent  — Finds information / pulls data
+│   ├── Executor agent    — Takes actions (apps, files, emails)
+│   ├── Reviewer agent    — Checks output for hallucinations
+│   └── Reporter agent    — Synthesizes final summary
+│
+├── 📱 APP CONTROL
+│   ├── OS integration (subprocess hooks)
+│   ├── Browser control (Playwright integration)
+│   └── File system access (secure local sandbox)
+│
+├── 📅 LIFE INTEGRATION
+│   ├── Google Calendar API integration
+│   ├── Gmail interaction
+│   └── Spotify local control
+│
+└── 👁️ AWARENESS
+    ├── WiFi-DensePose (presence detection without cameras)
+    ├── Time-based routines (Morning brief at 8 AM)
+    └── Continuous Context Memory
+```
+
+### Advanced Capabilities
+
+1. **Full-Duplex Voice:** SPARK listens and speaks simultaneously. You don't need to take turns. You can interrupt SPARK mid-sentence, and it will pivot naturally incorporating your new context immediately.
+2. **CPU-First Brain:** Utilizing `bitnet.cpp`, the underlying model runs highly efficiently on pure CPU without a massive GPU rig.
+3. **Multi-Agent Execution:** When given complex tasks, a PentAGI team of five sub-agents splits the workload to plan, search, execute, review, and report the task natively.
+4. **Presence Awareness:** Utilizes WiFi-DensePose signals to track human presence through walls, auto-starting sessions without visual sensors.
+
+
 ### Sovereign AI Backend
 
 - Local-First AI: Ollama with cloud fallback (OpenAI / Anthropic / Gemini)

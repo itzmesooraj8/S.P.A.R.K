@@ -1,0 +1,367 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>SPARK Personal AI</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-panel: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-glow: rgba(59, 130, 246, 0.5);
+            --success: #10b981;
+        }
+
+        body {
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            font-family: 'Inter', system-ui, sans-serif;
+            margin: 0;
+            padding: 2rem;
+            display: grid;
+            grid-template-columns: 1fr 350px;
+            gap: 2rem;
+            height: 100vh;
+            box-sizing: border-box;
+            overflow: hidden;
+        }
+
+        .main-col {
+            display: flex;
+            flex-direction: column;
+            gap: 2rem;
+        }
+
+        .side-col {
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+        }
+
+        .panel {
+            background: var(--bg-panel);
+            border-radius: 12px;
+            padding: 1.5rem;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.3);
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .header {
+            text-align: center;
+        }
+
+        .greeting {
+            font-size: 2rem;
+            font-weight: bold;
+            margin: 0 0 0.5rem 0;
+            background: linear-gradient(to right, #60a5fa, #a78bfa);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+        }
+
+        .quote {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+
+        .chat-container {
+            flex: 1;
+            display: flex;
+            flex-direction: column;
+            overflow: hidden;
+        }
+
+        .chat-log {
+            flex: 1;
+            overflow-y: auto;
+            margin-bottom: 1rem;
+            display: flex;
+            flex-direction: column;
+            gap: 1rem;
+            padding-right: 1rem;
+        }
+
+        .msg {
+            padding: 1rem;
+            border-radius: 8px;
+            line-height: 1.5;
+            max-width: 85%;
+            animation: fadeIn 0.3s ease;
+        }
+
+        .msg.user {
+            background: rgba(59, 130, 246, 0.1);
+            border: 1px solid rgba(59, 130, 246, 0.2);
+            align-self: flex-end;
+            border-bottom-right-radius: 0;
+        }
+
+        .msg.ai {
+            background: rgba(16, 185, 129, 0.1);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+            align-self: flex-start;
+            border-bottom-left-radius: 0;
+        }
+
+        .command-bar {
+            display: flex;
+            gap: 0.5rem;
+        }
+
+        input[type="text"] {
+            flex: 1;
+            background: rgba(0,0,0,0.2);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: white;
+            padding: 1rem;
+            border-radius: 8px;
+            font-size: 1rem;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        input[type="text"]:focus {
+            border-color: var(--accent);
+            box-shadow: 0 0 10px var(--accent-glow);
+        }
+
+        button {
+            background: var(--accent);
+            color: white;
+            border: none;
+            padding: 1rem 1.5rem;
+            border-radius: 8px;
+            font-weight: bold;
+            cursor: pointer;
+            transition: filter 0.2s, transform 0.1s;
+        }
+
+        button:hover {
+            filter: brightness(1.2);
+        }
+
+        button:active {
+            transform: scale(0.95);
+        }
+
+        .apps-grid {
+            display: grid;
+            grid-template-columns: repeat(2, 1fr);
+            gap: 0.5rem;
+        }
+
+        .app-btn {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            padding: 0.75rem;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+        }
+
+        .tasks ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        .tasks li {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            padding: 0.5rem 0;
+            border-bottom: 1px solid rgba(255,255,255,0.05);
+        }
+
+        .activity-log {
+            font-family: monospace;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            flex: 1;
+            overflow-y: auto;
+        }
+
+        .connection-status {
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.8rem;
+            color: var(--text-muted);
+            justify-content: flex-end;
+        }
+
+        .status-dot {
+            width: 8px;
+            height: 8px;
+            border-radius: 50%;
+            background: #ef4444; /* red initially */
+        }
+        .status-dot.connected {
+            background: var(--success);
+            box-shadow: 0 0 8px rgba(16, 185, 129, 0.5);
+        }
+
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(10px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+    </style>
+</head>
+<body>
+
+    <div class="main-col">
+        <div class="panel header">
+            <h1 class="greeting" id="greeting">Good Morning, Sir.</h1>
+            <p class="quote" id="quote">"Systems check complete. Ready for action."</p>
+            <div class="connection-status">
+                <div class="status-dot" id="ws-dot"></div> WS
+                <div class="status-dot connected" id="api-dot"></div> API
+            </div>
+        </div>
+
+        <div class="panel chat-container">
+            <div class="chat-log" id="chat-log">
+                <div class="msg ai">SPARK Personal AI initialized. Ready for your command.</div>
+            </div>
+            <form class="command-bar" id="cmd-form">
+                <input type="text" id="cmd-input" placeholder="Type a command or ask a question..." autocomplete="off">
+                <button type="submit">Execute</button>
+            </form>
+        </div>
+    </div>
+
+    <div class="side-col">
+        <div class="panel">
+            <h3>Quick Launch</h3>
+            <div class="apps-grid">
+                <button class="app-btn" onclick="window.open('https://github.com')">GitHub</button>
+                <button class="app-btn" onclick="window.open('https://calendar.google.com')">Calendar</button>
+                <button class="app-btn" onclick="window.open('https://gmail.com')">Mail</button>
+                <button class="app-btn" onclick="window.open('https://youtube.com')">YouTube</button>
+            </div>
+        </div>
+
+        <div class="panel tasks">
+            <h3>Active Tasks</h3>
+            <ul id="task-list">
+                <li><input type="checkbox"> Build Brain Layer</li>
+                <li><input type="checkbox"> Connect Duplex Voice</li>
+                <li><input type="checkbox"> Agentic Execution</li>
+            </ul>
+        </div>
+
+        <div class="panel" style="flex: 1; display:flex; flex-direction:column;">
+            <h3>Activity Log</h3>
+            <div class="activity-log" id="activity-log">
+                [SYSTEM] SPARK Boot sequence initiated.<br>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatLog = document.getElementById('chat-log');
+        const cmdForm = document.getElementById('cmd-form');
+        const cmdInput = document.getElementById('cmd-input');
+        const wsDot = document.getElementById('ws-dot');
+        const activityLog = document.getElementById('activity-log');
+
+        const quotes = [
+            "The best way to predict the future is to invent it.",
+            "Focus is a matter of deciding what things you're not going to do.",
+            "Any sufficiently advanced technology is indistinguishable from magic."
+        ];
+        document.getElementById('quote').innerText = '"' + quotes[Math.floor(Math.random() * quotes.length)] + '"';
+
+        function updateGreeting() {
+            const hour = new Date().getHours();
+            let greeting = 'Good Evening, Sir.';
+            if (hour < 12) greeting = 'Good Morning, Sir.';
+            else if (hour < 18) greeting = 'Good Afternoon, Sir.';
+            document.getElementById('greeting').innerText = greeting;
+        }
+        updateGreeting();
+
+        function logActivity(msg) {
+            const time = new Date().toLocaleTimeString();
+            activityLog.innerHTML += `[${time}] ${msg}<br>`;
+            activityLog.scrollTop = activityLog.scrollHeight;
+        }
+
+        function appendMessage(sender, text) {
+            const div = document.createElement('div');
+            div.className = `msg ${sender}`;
+            div.innerHTML = text;
+            chatLog.appendChild(div);
+            chatLog.scrollTop = chatLog.scrollHeight;
+            logActivity(`${sender.toUpperCase()} message added.`);
+        }
+
+        // --- BACKEND CONNECTION (API + WS) ---
+        let ws;
+        function connectWS() {
+            ws = new WebSocket('ws://localhost:8000/ws/personal/chat');
+            ws.onopen = () => {
+                wsDot.classList.add('connected');
+                logActivity('WebSocket Connected (Duplex Stream Ready)');
+            };
+            ws.onclose = () => {
+                wsDot.classList.remove('connected');
+                logActivity('WebSocket Disconnected. Reconnecting...');
+                setTimeout(connectWS, 3000);
+            };
+            ws.onmessage = (e) => {
+                // PersonaPlex stream logic can go here. For now, just append.
+                appendMessage('ai', e.data);
+            };
+        }
+        connectWS();
+
+        async function sendToBrain(message) {
+            appendMessage('user', message);
+            
+            // Check for local routing commands
+            if (message.toLowerCase().startsWith('search ')) {
+                const query = message.substring(7);
+                logActivity(`Routing to web search: ${query}`);
+                window.open(`https://google.com/search?q=${encodeURIComponent(query)}`);
+                appendMessage('ai', 'Opening search results for you.');
+                return;
+            }
+
+            // Real backend connection
+            logActivity('Sending request to SPARK Core...');
+            try {
+                const res = await fetch('http://localhost:8000/api/personal/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: message, requires_online: true })
+                });
+                const data = await res.json();
+                appendMessage('ai', `<b>[${data.source}]</b><br/>${data.response}`);
+            } catch (err) {
+                logActivity('API Error: ' + err.message);
+                
+                // Fallback to WS if API fails
+                if (ws && ws.readyState === WebSocket.OPEN) {
+                    logActivity('Falling back to WebSocket tunnel...');
+                    ws.send(message);
+                } else {
+                    appendMessage('ai', '[System Status] Backend offline. Please start SPARK Core.');
+                }
+            }
+        }
+
+        cmdForm.onsubmit = (e) => {
+            e.preventDefault();
+            const text = cmdInput.value.trim();
+            if(!text) return;
+            cmdInput.value = '';
+            sendToBrain(text);
+        };
+    </script>
+</body>
+</html>

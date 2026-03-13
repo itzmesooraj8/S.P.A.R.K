@@ -42,7 +42,7 @@ async def websocket_endpoint(websocket: WebSocket):
         while True:
             data = await websocket.receive_text()
             # PersonaPlex handles streams, for now we will send chunks back
-            reply = personal_brain.route(data)
+            reply = await personal_brain.route(data)
             await personal_ws_manager.send_personal_message(reply, websocket)
     except WebSocketDisconnect:
         personal_ws_manager.disconnect(websocket)

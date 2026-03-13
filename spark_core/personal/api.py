@@ -19,7 +19,7 @@ class ChatResponse(BaseModel):
 async def chat(request: ChatRequest):
     """Entry point for the Personal AI chat interface."""
     try:
-        reply = personal_brain.route(request.message, requires_online=request.requires_online)
+        reply = await personal_brain.route(request.message, requires_online=request.requires_online)
         return ChatResponse(
             response=reply,
             source="LocalBrain" if hasattr(personal_brain, "local") and personal_brain.local.ready else "GeminiFallback"
