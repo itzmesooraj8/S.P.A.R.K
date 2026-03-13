@@ -99,7 +99,8 @@ python -m venv venv
 .\venv\Scripts\Activate.ps1
 pip install -r requirements.txt
 npm install
-cp .env.example .env   # optional: add keys to unlock extra layers
+cp .env.example .env   # op 
+.0tional: add keys to unlock extra layers
 ```
 
 ### Running

@@ -48,6 +48,10 @@ from music.router import router as music_router                  # /api/music/*
 from combat.router import router as combat_router                # /api/combat/* — Sovereign OSINT Platform
 from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
 
+# ── SPARK PERSONAL AI ──────────────────────────────────────────────────────────
+from personal import personal_api_router
+from personal import personal_ws_router
+
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
