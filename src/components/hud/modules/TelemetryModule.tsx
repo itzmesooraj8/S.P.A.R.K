@@ -32,15 +32,7 @@ const FEED_MSGS: Record<string, string[]> = {
   AI:  ['Inference: nominal', 'Context tokens OK', 'KnowledgeGraph: online'],
 };
 
-function mockLine(): StreamLine {
-  const src  = FEED_SOURCES[Math.floor(Math.random() * FEED_SOURCES.length)];
-  const msgs = FEED_MSGS[src];
-  return {
-    id: `mock-${Date.now()}-${Math.random()}`, color: COLORS[src],
-    text: `[${src}] ${msgs[Math.floor(Math.random() * msgs.length)]}`,
-    ts: new Date().toLocaleTimeString('en', { hour12: false }), src, realtime: false,
-  };
-}
+// Removed mockLine generator
 
 /* ── LIVE tab ────────────────────────────────────────────────────────────── */
 function LiveTab() {
@@ -80,13 +72,7 @@ function LiveTab() {
   }, []);
 
   useEffect(() => {
-    if (connected) { if (mockTimer.current) { clearInterval(mockTimer.current); mockTimer.current = null; } return; }
-    if (!paused) {
-      mockTimer.current = setInterval(() => {
-        setLines(prev => [...prev.slice(-300), mockLine()]);
-      }, 300);
-    }
-    return () => { if (mockTimer.current) clearInterval(mockTimer.current); };
+    // Mock simulation removed
   }, [connected, paused]);
 
   useEffect(() => { if (!paused) bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [lines, paused]);
@@ -97,7 +83,7 @@ function LiveTab() {
     <div className="flex flex-col gap-2 p-3 h-full">
       <div className="flex items-center justify-between shrink-0">
         <div className="flex items-center gap-2">
-          {connected ? <><Wifi size={10} className="text-hud-green" /><span className="font-orbitron text-[7px] text-hud-green">LIVE</span></> : <><WifiOff size={10} className="text-hud-amber" /><span className="font-orbitron text-[7px] text-hud-amber">MOCK</span></>}
+          {connected ? <><Wifi size={10} className="text-hud-green" /><span className="font-orbitron text-[7px] text-hud-green">LIVE</span></> : <><WifiOff size={10} className="text-hud-amber" /><span className="font-orbitron text-[7px] text-hud-amber">OFFLINE</span></>}
           {!paused && <div className="w-1.5 h-1.5 rounded-full bg-hud-red animate-pulse" />}
         </div>
         <button onClick={() => setPaused(v => !v)} className="font-orbitron text-[8px] px-2 py-0.5 rounded border border-hud-cyan/25 text-hud-cyan/60 hover:text-hud-cyan">

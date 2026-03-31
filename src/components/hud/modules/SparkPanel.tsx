@@ -41,19 +41,8 @@ const PHASE_COLORS: Record<string, string> = {
   OBSERVING: '#00f5ff', ANALYZING: '#bf5af2', PLANNING: '#ffd60a',
   EXECUTING: '#ff9f0a', REFLECTING: '#30d158', UPDATING: '#0a84ff', IDLE: '#ffffff40',
 };
-const MOCK_PHASES = [
-  [0, 'INIT: Loading semantic memory layer...'],
-  [0, 'LOAD: Contextual embeddings ready'],
-  [1, 'OK: Knowledge graph online'],
-  [2, 'THINK: Analyzing query intent...'],
-  [0, 'RECALL: Fetching related concepts...'],
-  [1, 'MATCH: High confidence'],
-  [2, 'PLAN: Generating response strategy...'],
-  [1, 'EVAL: Logical consistency check PASSED'],
-  [1, 'OUTPUT: Response compiled'],
-  [0, 'IDLE: Awaiting next input...'],
-];
-const MOCK_COLORS = ['#00f5ff', '#00ff88', '#ffb800', '#ff3b3b', '#8b00ff'];
+const MOCK_PHASES: any[] = [];
+const MOCK_COLORS: string[] = [];
 
 /* ── Agent card ──────────────────────────────────────────────────────────── */
 function AgentCard({ id, info }: { id: string; info: AgentInfo }) {
@@ -216,15 +205,7 @@ function CognitionTab() {
     }
   }, [data, lastCycle]);
 
-  useEffect(() => {
-    if (isRunning) return;
-    const t = setInterval(() => {
-      const line = MOCK_PHASES[mockIdx % MOCK_PHASES.length];
-      setLogLines(prev => [...prev.slice(-100), { id: `mock-${Date.now()}`, color: MOCK_COLORS[line[0] as number], text: line[1] as string, ts: Date.now(), real: false }]);
-      setMockIdx(i => i + 1);
-    }, 400);
-    return () => clearInterval(t);
-  }, [isRunning, mockIdx]);
+    // Mock interval removed based on user sovereign request
 
   useEffect(() => { bottomRef.current?.scrollIntoView({ behavior: 'smooth' }); }, [logLines]);
 

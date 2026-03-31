@@ -15,18 +15,9 @@ const SUGGESTIONS = [
   'Run Diagnostics', 'Current Time', 'Help'
 ];
 
-const MOCK_CALENDAR = [
-  { time: '14:30', title: 'Neural sync calibration', priority: 'high' },
-  { time: '16:00', title: 'Mission briefing — Sector 7', priority: 'medium' },
-  { time: '18:45', title: 'System maintenance window', priority: 'low' },
-];
+const MOCK_CALENDAR: any[] = [];
 
-const MOCK_REMINDERS = [
-  { text: 'Update firewall signatures', priority: 'high', done: false },
-  { text: 'Review anomaly report #2847', priority: 'medium', done: false },
-  { text: 'Backup neural weights', priority: 'low', done: true },
-  { text: 'Deploy patch 4.1.7', priority: 'high', done: false },
-];
+const MOCK_REMINDERS: any[] = [];
 
 const DEVICES = [
   { icon: <Smartphone size={14} />, name: 'Mobile', active: true },
@@ -35,13 +26,7 @@ const DEVICES = [
   { icon: <Thermometer size={14} />, name: 'Climate', active: true },
 ];
 
-const TASK_LOG = [
-  { color: '#00ff88', text: '[OK] Neural net initialized', time: '00:00:01' },
-  { color: '#00f5ff', text: '[INFO] Loading knowledge base...', time: '00:00:03' },
-  { color: '#00f5ff', text: '[INFO] Quantum DB connected', time: '00:00:05' },
-  { color: '#ffb800', text: '[WARN] Firewall learning mode', time: '00:00:08' },
-  { color: '#00ff88', text: '[OK] All systems operational', time: '00:00:12' },
-];
+const TASK_LOG: any[] = [];
 
 export default function ControlPanel({ commandHistory, aiResponse, transcript, onProcessInput, status }: Props) {
   const [inputText, setInputText] = useState('');

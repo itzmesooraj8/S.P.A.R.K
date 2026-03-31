@@ -43,51 +43,8 @@ export const FusionPanel = ({ accentColor = '#a78bfa' }: FusionPanelProps) => {
     if (lastFetch > 0) fetchFusion();
   }, [lastFetch, fetchFusion]);
 
-  // Placeholder items when backend is not yet available
-  const displayItems: FusionItem[] = fusionItems.length > 0 ? fusionItems : [
-    {
-      id: 'fus-demo-1',
-      title: 'Seismic Cluster Near Tectonic Boundary',
-      summary: 'Three M5+ earthquakes within 200km in 6h suggest possible foreshock sequence near Pacific Ring of Fire.',
-      confidence: 0.72,
-      evidenceLinks: [],
-      entities: ['USGS', 'Pacific Plate'],
-      regions: ['Pacific Ocean'],
-      cause: 'Tectonic stress accumulation',
-      effect: 'Elevated aftershock probability (72h)',
-      dataGaps: ['Nearby GPS strain data unavailable'],
-      severity: 'high',
-      updatedAt: Date.now(),
-    },
-    {
-      id: 'fus-demo-2',
-      title: 'Conflict Escalation Pattern Detected',
-      summary: 'GDELT conflict event surge (+340%) correlates with military flight increase in same theatre.',
-      confidence: 0.61,
-      evidenceLinks: [],
-      entities: ['GDELT', 'OpenSky'],
-      regions: ['Eastern Europe'],
-      cause: 'Political instability signal from news volume',
-      effect: 'Potential supply chain disruption',
-      dataGaps: ['Ground-truth confirmation missing'],
-      severity: 'critical',
-      updatedAt: Date.now(),
-    },
-    {
-      id: 'fus-demo-3',
-      title: 'Wildfire-Drought Compound Risk',
-      summary: 'NASA EONET wildfire detections overlap with climate anomaly drought zones, compounding risk rating.',
-      confidence: 0.85,
-      evidenceLinks: [],
-      entities: ['NASA EONET'],
-      regions: ['North America'],
-      cause: 'Prolonged drought + high FRP readings',
-      effect: 'Infrastructure and displacement risk elevated',
-      dataGaps: [],
-      severity: 'high',
-      updatedAt: Date.now(),
-    },
-  ];
+  // Return empty array instead of fake data
+  const displayItems: FusionItem[] = fusionItems;
 
   return (
     <BasePanel
