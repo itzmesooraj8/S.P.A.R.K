@@ -271,9 +271,9 @@ class ModelRouter:
             # Task strength match
             if task_type in p.task_strengths:
                 s += 10.0
-            # Prefer local if flag is set
+            # Prefer local if flag is set (Massive boost for Jarvis Local-First)
             if prefer_local and p.provider == "ollama":
-                s += 5.0
+                s += 5000.0
             # Lower cost is better
             s -= p.cost_tier * 2.0
             # Lower latency is better (for realtime)
@@ -371,17 +371,23 @@ class ModelRouter:
                             continue
 
     async def _gen_google(self, profile: ModelProfile, sys: str, user: str):
-        import google.generativeai as genai
-        genai.configure(api_key=self._google_api_key)
-        model = genai.GenerativeModel(
-            profile.name,
-            system_instruction=sys,
-        )
-        response = await asyncio.to_thread(
-            model.generate_content, user, stream=True
-        )
-        for chunk in response:
-            if hasattr(chunk, "text") and chunk.text:
+        from google import genai
+        from google.genai import types
+        client = genai.Client(api_key=self._google_api_key)
+        
+        # Async-to-sync wrapping since SDK generator is synchronous
+        def _get_stream():
+            return client.models.generate_content_stream(
+                model=profile.name,
+                contents=user,
+                config=types.GenerateContentConfig(
+                    system_instruction=sys,
+                )
+            )
+            
+        stream = await asyncio.to_thread(_get_stream)
+        for chunk in stream:
+            if chunk.text:
                 yield chunk.text
 
     async def _gen_openai(self, profile: ModelProfile, sys: str, user: str):

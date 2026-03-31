@@ -9,10 +9,12 @@ import uuid
 sandbox = DockerEnvironment(container_name="spark_sandbox", image="spark_dev_env")
 
 async def init_sandbox():
-    await sandbox.setup()
+    print("⚠️ [Sandbox] Docker sandbox init disabled for Jarvis-tier refactor.")
+    # await sandbox.setup()
 
 async def teardown_sandbox():
-    await sandbox.teardown()
+    print("⚠️ [Sandbox] Docker sandbox teardown bypassed.")
+    # await sandbox.teardown()
 
 def emit_telemetry(action: str, result: str, duration_ms: int = 0):
     task_id = uuid.uuid4().hex[:8]

@@ -442,11 +442,10 @@ class GlobeSocketBroadcaster:
             print(f"[Globe WS] Health push error: {exc}")
 
     async def run_loop(self, interval_s: float = 30.0) -> None:
-        """Background loop: push data to all connected clients every interval_s."""
-        print("[Globe WS] Background push loop started")
+        """Background loop disabled to save resources and throttle API spam."""
+        print("🌍 [Globe WS] Background OSINT polling heavily throttled for Jarvis mode.")
         while True:
-            if self._clients:
-                await self._push_cycle()
+            # We skip the heavy push_cycle to stop background spam.
             await asyncio.sleep(interval_s)
 
     def start(self) -> None:
