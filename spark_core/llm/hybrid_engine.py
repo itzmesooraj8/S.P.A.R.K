@@ -94,15 +94,19 @@ class HybridLLM:
         if not self._google_api_key:
             return "[SPARK] Cloud fallback unavailable: no Google API key configured in config/secrets.yaml."
         try:
-            import google.generativeai as genai
-            genai.configure(api_key=self._google_api_key)
-            model = genai.GenerativeModel(
-                _GEMINI_FALLBACK_MODEL,
-                system_instruction=system_prompt,
-            )
-            response = await asyncio.to_thread(
-                model.generate_content, user_text
-            )
+            from google import genai
+            from google.genai import types
+            client = genai.Client(api_key=self._google_api_key)
+            
+            def _get_res():
+                return client.models.generate_content(
+                    model=_GEMINI_FALLBACK_MODEL,
+                    contents=user_text,
+                    config=types.GenerateContentConfig(
+                        system_instruction=system_prompt,
+                    )
+                )
+            response = await asyncio.to_thread(_get_res)
             result = response.text if hasattr(response, "text") else str(response)
             print(f"☁️ [LLM-CLOUD] Gemini response received ({len(result)} chars).")
             return result
