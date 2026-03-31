@@ -112,27 +112,9 @@ class DensePoseClient:
                 await asyncio.sleep(5)
 
     async def _mock_loop(self, ws_manager) -> None:
-        """Emit synthetic frames every 2 seconds when websockets unavailable (WiFi-DensePose Simulation)."""
-        import random
-        person_id = 1
-        while self._running:
-            await asyncio.sleep(2)
-            frame = SensorFrame(
-                timestamp    = time.time(),
-                person_count = 1,
-                persons      = [{
-                    "id":     person_id,
-                    "bbox":   [100, 50, 300, 450],
-                    "action": random.choice(["standing", "walking", "sitting"]),
-                    "heart_rate": random.randint(60, 100),
-                    "keypoints": [],
-                }],
-                rssi = random.randint(-80, -40),
-            )
-            await ws_manager.broadcast("combat", {
-                "type":  "SENSOR_FRAME",
-                "frame": frame,
-            })
+        """Removed: A sovereign OS never invents fake data."""
+        log.error("DependencyError: WiFi-DensePose camera server offline and strict raw-feed required.")
+        await asyncio.sleep(86400) # Sleep forever silently
 
 
 # Global singleton

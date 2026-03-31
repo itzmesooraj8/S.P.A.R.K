@@ -18,11 +18,6 @@ import time
 from typing import Any, Dict, List, Optional
 
 from agents.base_agent import BaseAgent, AgentTask, AgentResult
-from agents.research_agent import ResearchAgent
-from agents.code_agent import CodeAgent
-from agents.intelligence_agent import IntelligenceAgent
-from agents.risk_agent import RiskAgent
-from agents.optimization_agent import OptimizationAgent
 from llm.model_router import model_router, TaskType, LatencyClass
 from system.event_bus import event_bus
 
@@ -37,19 +32,9 @@ class Commander:
         print("🎖️  [Commander] Initializing multi-agent system...")
 
         self._agents: Dict[str, BaseAgent] = {}
-        self._pending_results: Dict[str, asyncio.Future] = {}
-
-        # Register all sub-agents
-        for agent in [
-            ResearchAgent(),
-            CodeAgent(),
-            IntelligenceAgent(),
-            RiskAgent(),
-            OptimizationAgent(),
-        ]:
-            self._register(agent)
-
-        # Subscribe to agent results
+        # A pure intent router does not blindly instantiate heavy background agents!
+        # Swarm effectively neutered by Jarvis protocols. 
+        print(f"🎖️  [Commander] Swarm background execution disabled. Operating as direct Intent Router.")
         event_bus.subscribe("agent_result")(self._handle_result)
         print(f"🎖️  [Commander] {len(self._agents)} agents registered: {list(self._agents.keys())}")
 

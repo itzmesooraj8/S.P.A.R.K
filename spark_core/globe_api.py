@@ -140,13 +140,7 @@ class CircuitBreaker:
 _CB: dict[str, CircuitBreaker] = {
     name: CircuitBreaker(name) for name in [
         # Free providers
-        "usgs", "opensky", "eonet", "gdelt_conflict",
-        "gdelt_intel", "gdelt_news", "gdelt_cyber", "gdelt_sanctions", "gdelt_news_geo",
-        "coingecko", "frankfurter",
-        # Free new providers
-        "who_rss", "waqi", "ripe_bgp", "meteoalarm",
-        # Keyed providers
-        "acled", "finnhub", "eia", "nasa_firms", "newsdata", "cloudflare",
+        "usgs", "waqi", "newsdata"
     ]
 }
 
@@ -369,62 +363,8 @@ class GlobeSocketBroadcaster:
         except Exception as exc:
             print(f"[Globe WS] EQ push error: {exc}")
 
-        # ── Conflict ───────────────────────────────────────────
-        try:
-            cf_data = await guarded_fetch(
-                "gdelt_conflict",
-                "https://api.gdeltproject.org/api/v2/doc/doc",
-                params={"query": "conflict war explosion attack", "mode": "artgeo",
-                        "format": "json", "maxrecords": "40", "timespan": "24h", "sort": "ToneDesc"},
-                ttl=300,
-            )
-            if cf_data:
-                events = []
-                for a in (cf_data.get("articles", []) or [])[:40]:
-                    lat = a.get("actiongeo_lat")
-                    lon = a.get("actiongeo_long")
-                    if not lat or not lon:
-                        continue
-                    try:
-                        lat, lon = float(lat), float(lon)
-                    except (ValueError, TypeError):
-                        continue
-                    tone = float(a.get("tone", 0) or 0)
-                    events.append({
-                        "id":       (a.get("url") or "")[:64],
-                        "title":    (a.get("title") or "")[:120],
-                        "lat":      lat, "lng": lon,
-                        "severity": "critical" if tone < -10 else "high" if tone < -5 else "medium",
-                        "category": "conflict",
-                    })
-                _stamp(events, "gdelt_conflict")
-                delta = self._delta("conflict", events)
-                if delta:
-                    await self._broadcast({"type": "GLOBE_DELTA", "layer": "conflict", "events": delta, "timestamp": now})
-        except Exception as exc:
-            print(f"[Globe WS] Conflict push error: {exc}")
-
-        # ── Market tickers ─────────────────────────────────────
-        try:
-            cg = await guarded_fetch(
-                "coingecko",
-                "https://api.coingecko.com/api/v3/simple/price",
-                params={"ids": "bitcoin,ethereum,solana", "vs_currencies": "usd",
-                        "include_24hr_change": "true"},
-                ttl=60,
-            )
-            if cg:
-                tickers = []
-                for coin_id, vals in cg.items():
-                    sym = {"bitcoin": "BTC", "ethereum": "ETH", "solana": "SOL"}.get(coin_id, coin_id.upper()[:4])
-                    price  = vals.get("usd", 0)
-                    change = vals.get("usd_24h_change", 0) or 0
-                    tickers.append({"symbol": sym, "value": round(price, 2),
-                                    "delta": round(change * price / 100, 2),
-                                    "deltaPercent": round(change, 2), "source": "coingecko"})
-                await self._broadcast({"type": "GLOBE_TICKER", "tickers": tickers, "timestamp": now})
-        except Exception as exc:
-            print(f"[Globe WS] Market push error: {exc}")
+        # ── Intelligence push removed (Jarvis refactor) ─────────────────
+        pass
 
         # ── Provider health ────────────────────────────────────
         try:
