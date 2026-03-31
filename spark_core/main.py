@@ -1222,6 +1222,18 @@ async def switch_project(project_id: str):
 # SERVE REACT FRONTEND (STATIC)
 # -----------------
 frontend_build_path = os.path.join(os.path.dirname(__file__), "..", "dist")
+
+from starlette.exceptions import HTTPException as StarletteHTTPException
+from fastapi.responses import FileResponse, JSONResponse
+
+@app.exception_handler(StarletteHTTPException)
+async def spa_fallback(request, exc):
+    if exc.status_code == 404 and not request.url.path.startswith("/api") and not request.url.path.startswith("/ws"):
+        index_path = os.path.join(frontend_build_path, "index.html")
+        if os.path.exists(index_path):
+            return FileResponse(index_path)
+    return JSONResponse(status_code=exc.status_code, content={"detail": exc.detail})
+
 if os.path.exists(frontend_build_path):
     app.mount("/", StaticFiles(directory=frontend_build_path, html=True), name="frontend")
 else:

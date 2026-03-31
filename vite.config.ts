@@ -31,6 +31,9 @@ export default defineConfig(({ mode }) => ({
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),
+      "@deck.gl/core": path.resolve(__dirname, "node_modules/@deck.gl/core/dist/index.js"),
+      "@deck.gl/layers": path.resolve(__dirname, "node_modules/@deck.gl/layers/dist/index.js"),
+      "@deck.gl/react": path.resolve(__dirname, "node_modules/@deck.gl/react/dist/index.js")
     },
   },
   optimizeDeps: {

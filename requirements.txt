@@ -50,7 +50,7 @@ scikit-learn==1.7.0
 
 # ── Scheduling ─────────────────────────────────
 APScheduler==3.11.0
-SQLAlchemy==2.1.5
+SQLAlchemy==2.0.35
 
 # ── File watching / System monitoring ──────────
 watchdog==5.1.0

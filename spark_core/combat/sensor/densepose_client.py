@@ -2,7 +2,7 @@
 WiFi-DensePose WebSocket Bridge
 ================================
 Connects to a local WiFi-DensePose inference server (e.g. ruvnet/wifi-densepose)
-and forwards physical-presence frames to SPARK's 'combat' WebSocket namespace
+and forwards physical-presence frames parsed from router WiFi signals to SPARK's 'combat' WebSocket namespace
 for rendering in the SENSOR tab of the SentinelModule.
 
 The inference server exposes:
@@ -63,8 +63,8 @@ class DensePoseClient:
         if self._running:
             return
         self._running = True
-        self._task = asyncio.create_task(self._bridge_loop(), name="densepose_bridge")
-        log.info("DensePose bridge started → %s", self.url)
+        self._task = asyncio.create_task(self._bridge_loop(), name="wifi_densepose_bridge")
+        log.info("WiFi-DensePose Bridge Started [Router Sniffing Active] → %s", self.url)
 
     async def stop(self) -> None:
         self._running = False
@@ -112,7 +112,7 @@ class DensePoseClient:
                 await asyncio.sleep(5)
 
     async def _mock_loop(self, ws_manager) -> None:
-        """Emit synthetic frames every 2 seconds when websockets unavailable."""
+        """Emit synthetic frames every 2 seconds when websockets unavailable (WiFi-DensePose Simulation)."""
         import random
         person_id = 1
         while self._running:

@@ -8,6 +8,7 @@ import GlobeMonitor from "./pages/GlobeMonitor";
 import CognitiveDashboard from "./pages/CognitiveDashboard";
 import Login from "./pages/Login";
 import NotFound from "./pages/NotFound";
+import PersonalAI from "./pages/PersonalAI";
 import { AuthProvider, useAuth } from "./contexts/AuthContext";
 
 const queryClient = new QueryClient();
@@ -104,6 +105,7 @@ const App = () => (
               <Route path="/globe-monitor" element={<ProtectedRoute><GlobeMonitor /></ProtectedRoute>} />
               <Route path="/cognitive" element={<ProtectedRoute><CognitiveDashboard /></ProtectedRoute>} />
               <Route path="/os" element={<ProtectedRoute><CognitiveDashboard /></ProtectedRoute>} />
+              <Route path="/personal" element={<ProtectedRoute><PersonalAI /></ProtectedRoute>} />
 
               {/* Catch-all */}
               <Route path="*" element={<NotFound />} />

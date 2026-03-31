@@ -42,6 +42,7 @@ export default function BottomDock({ onOpenModule, activeModule, uptime, process
     { id: 'browser',   icon: <Globe2 size={15} />,   label: 'BROWSER',  color: '#0066ff' },
     { id: 'mind',      icon: <Network size={15} />,  label: 'MIND',     color: '#00ff88' },
     { id: 'music',     icon: <Music size={15} />,    label: 'MUSIC',    color: '#bf5af2' },
+    { id: 'personal',  icon: <Brain size={15} />,    label: 'AI LINK',  color: '#ff00ff', isLink: true },
   ] as const;
 
   // ── Utility tray (secondary) ─────────────────────────────────────────────
@@ -127,7 +128,7 @@ export default function BottomDock({ onOpenModule, activeModule, uptime, process
                   <div className="w-px h-5 mx-1" style={{ background: 'rgba(0,245,255,0.1)' }} />
                 )}
                 <button
-                  onClick={() => onOpenModule(btn.id)}
+                  onClick={() => 'isLink' in btn && btn.isLink ? window.location.href = '/personal' : onOpenModule(btn.id)}
                   className="relative flex flex-col items-center gap-0.5 px-2.5 py-1.5 rounded transition-all"
                   style={{ color: isActive ? btn.color : 'rgba(0,245,255,0.4)' }}
                 >

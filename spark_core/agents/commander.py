@@ -6,10 +6,10 @@ Maintains a registry of all agents and their capabilities.
 
 Architecture:
     Commander AI
-     ├── Research Agent     (OSINT, web, news)
+     ├── Research Agent     (Vane Local Deep Research Engine)
      ├── Code Agent         (code gen, debug, review)
      ├── Intelligence Agent (globe events, geopolitical)
-     ├── Risk Agent         (risk scoring, escalation)
+     ├── Risk Agent         (PentAGI Red Team Orchestrator)
      └── Optimization Agent (performance, strategy)
 """
 import asyncio
