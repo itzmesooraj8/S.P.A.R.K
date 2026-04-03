@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
-import { useTaskStore, Task } from '../store/useTaskStore';
-import { createTask, updateTask, deleteTask, completeTask } from '../lib/tasks';
+import { useTaskStore, Task } from '../../../store/useTaskStore';
+import { createTask, updateTask, deleteTask, completeTask } from '../../../lib/tasks';
 import './TaskPanel.css';
 
 export const TaskPanel: React.FC = () => {

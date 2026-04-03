@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
   Globe, Terminal, Shield, Music, ChevronUp, ChevronDown, Cpu,
-  Activity, Wifi, Clock, Network, Brain, Bell, Wrench, Zap, Puzzle, Globe2, Satellite
+  Activity, Wifi, Clock, Network, Brain, Bell, Wrench, Zap, Puzzle, Globe2, Satellite, CheckSquare
 } from 'lucide-react';
 import { useAlertStore } from '@/store/useAlertStore';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
@@ -48,6 +48,7 @@ export default function BottomDock({ onOpenModule, activeModule, uptime, process
   const utilityButtons = [
     { id: 'satellite',  icon: <Satellite size={13} />, label: 'SATELLITE',   badge: 0,          color: '#aaaaaa' },
     { id: 'devgraph',   icon: <Cpu size={13} />,       label: 'DEVGRAPH',    badge: 0,          color: '#bf5af2' },
+    { id: 'tasks',      icon: <CheckSquare size={13} />, label: 'TASKS',      badge: 0,          color: '#00ff88' },
     { id: 'alertlog',   icon: <Bell size={13} />,      label: 'ALERTS',      badge: alertCount,  color: alertCount   > 0 ? '#ff9f0a' : '#aaaaaa' },
     { id: 'tools',      icon: <Wrench size={13} />,    label: 'TOOLS',       badge: pendingTools,color: pendingTools > 0 ? '#00f5ff' : '#aaaaaa' },
     { id: 'actionfeed', icon: <Zap size={13} />,       label: 'ACTION FEED', badge: activePlans, color: activePlans  > 0 ? '#00f5ff' : '#aaaaaa' },
