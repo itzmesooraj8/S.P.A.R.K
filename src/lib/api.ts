@@ -85,3 +85,15 @@ export async function apiDelete<T>(path: string): Promise<T> {
   if (!res.ok) throw new Error(`DELETE ${path} → ${res.status}`);
   return res.json() as Promise<T>;
 }
+
+export async function apiPut<T>(path: string, body?: unknown): Promise<T> {
+  const res = await apiFetch(path, {
+    method: 'PUT',
+    body: body !== undefined ? JSON.stringify(body) : undefined,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => res.statusText);
+    throw new Error(text || `PUT ${path} → ${res.status}`);
+  }
+  return res.json() as Promise<T>;
+}
