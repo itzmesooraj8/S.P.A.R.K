@@ -89,51 +89,79 @@ class WakeWordListener:
         """
         try:
             # Initialize openwakeword model
-            self.model = Model(
-                wakeword_models=[self.wake_word_name],
-                inference_framework="onnx"
-            )
-            
-            # Open audio stream
-            self.stream = sd.InputStream(
-                samplerate=self.SAMPLE_RATE,
-                channels=1,
-                blocksize=self.CHUNK_SIZE,
-                dtype=np.float32
-            )
-            self.stream.start()
-            print(f"🎤 [WakeWord] Audio stream opened – listening for '{self.display_name}'")
-            
-            # Inference loop
+            try:
+                self.model = Model(
+                    wakeword_models=[self.wake_word_name],
+                    inference_framework="onnx"
+                )
+            except Exception as model_err:
+                print(f"❌ [WakeWord] Failed to load model: {model_err}")
+                print("   Voice wake word detection disabled")
+                self.running = False
+                return
+
+            # Open audio stream with better error handling
+            max_retries = 3
+            for attempt in range(max_retries):
+                try:
+                    self.stream = sd.InputStream(
+                        samplerate=self.SAMPLE_RATE,
+                        channels=1,
+                        blocksize=self.CHUNK_SIZE,
+                        dtype=np.float32,
+                        latency='low',
+                        blocksize_mode='fixed'
+                    )
+                    self.stream.start()
+                    print(f"🎤 [WakeWord] Audio stream opened – listening for '{self.display_name}'")
+                    break
+                except Exception as stream_err:
+                    print(f"⚠️ [WakeWord] Audio stream error (attempt {attempt+1}/{max_retries}): {stream_err}")
+                    if attempt == max_retries - 1:
+                        print("   Audio wake word detection disabled")
+                        self.running = False
+                        return
+                    time.sleep(1)
+
+            # Inference loop with robust error handling
+            consecutive_errors = 0
+            max_consecutive_errors = 10
+
             while self.running:
                 try:
                     # Read audio chunk
                     chunk, overflowed = self.stream.read(self.CHUNK_SIZE)
-                    
+                    consecutive_errors = 0  # Reset error counter on success
+
                     if overflowed:
                         # Audio buffer overflowed; skip this chunk
                         continue
-                    
+
                     # Flatten to 1D if needed
                     if chunk.ndim > 1:
                         chunk = chunk.squeeze()
-                    
+
                     # Run inference
                     prediction = self.model.predict(chunk)
-                    
+
                     # prediction is a dict: {'model_name': confidence_score}
                     confidence = prediction.get(self.wake_word_name, 0.0)
-                    
+
                     # Check for wake word detection
                     if confidence > self.DETECTION_THRESHOLD:
                         print(f"🎤 [WakeWord] DETECTED '{self.display_name}' (confidence: {confidence:.2f})")
                         self._publish_wake_word_event(confidence)
-                    
+
                 except Exception as audio_err:
-                    print(f"⚠️ [WakeWord] Audio processing error: {audio_err}")
-                    # Continue listening despite transient errors
+                    consecutive_errors += 1
+                    if consecutive_errors <= 3:  # Only log first 3 errors to avoid spam
+                        print(f"⚠️ [WakeWord] Audio processing error: {str(audio_err)[:100]}")
+                    if consecutive_errors >= max_consecutive_errors:
+                        print(f"❌ [WakeWord] Too many consecutive errors - disabling wake word")
+                        self.running = False
+                        return
                     time.sleep(0.1)
-        
+
         except Exception as init_err:
             print(f"❌ [WakeWord] Initialization failed: {init_err}")
             print("   Audio will not trigger Command Bar. Voice input available via explicit mic button.")
