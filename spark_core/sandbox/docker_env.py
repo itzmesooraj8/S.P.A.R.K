@@ -88,10 +88,13 @@ class DockerEnvironment(ExecutionEnvironment):
     async def setup(self) -> bool:
         # Check if running, if yes, we can just use it
         res = await self._run_subprocess("docker", "ps", "-q", "-f", f"name={self.container_name}")
-        if res.stdout:
+        if res.stdout.strip():
             self.is_running = True
             self._sync()
             return True
+        
+        # Clean up any existing container with the same name
+        await self._run_subprocess("docker", "rm", "-f", self.container_name)
         
         # Start a persistent container that sleeps forever so we can exec into it
         print(f"🐳 [DOCKER] Starting sandbox container '{self.container_name}'...")

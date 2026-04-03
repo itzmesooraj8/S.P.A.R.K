@@ -229,25 +229,26 @@ async def _threat_feed_loop():
     and feed them to the threat predictor for risk analysis.
     """
     await asyncio.sleep(60)  # Wait for globe broadcaster to warm up
+    port = os.getenv("SPARK_PORT", "8000")
     while True:
         try:
             async with __import__("httpx").AsyncClient(timeout=15.0) as c:
                 # Feed earthquake data
-                eq_r = await c.post("http://localhost:8000/api/seismology/v1/listEarthquakes",
+                eq_r = await c.post(f"http://localhost:{port}/api/seismology/v1/listEarthquakes",
                                     json={"layers": ["earthquake"]}, timeout=15.0)
                 if eq_r.status_code == 200:
                     events = eq_r.json().get("events", [])
                     threat_predictor.ingest(events, "earthquake")
 
                 # Feed conflict data
-                cf_r = await c.post("http://localhost:8000/api/conflict/v1/listConflictEvents",
+                cf_r = await c.post(f"http://localhost:{port}/api/conflict/v1/listConflictEvents",
                                     json={"layers": ["conflict"]}, timeout=15.0)
                 if cf_r.status_code == 200:
                     events = cf_r.json().get("events", [])
                     threat_predictor.ingest(events, "conflict")
 
                 # Feed wildfire data
-                wf_r = await c.post("http://localhost:8000/api/wildfire/v1/listFireDetections",
+                wf_r = await c.post(f"http://localhost:{port}/api/wildfire/v1/listFireDetections",
                                     json={"layers": ["fires"]}, timeout=15.0)
                 if wf_r.status_code == 200:
                     events = wf_r.json().get("detections", [])

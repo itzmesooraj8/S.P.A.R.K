@@ -109,8 +109,7 @@ class WakeWordListener:
                         channels=1,
                         blocksize=self.CHUNK_SIZE,
                         dtype=np.float32,
-                        latency='low',
-                        blocksize_mode='fixed'
+                        latency='low'
                     )
                     self.stream.start()
                     print(f"🎤 [WakeWord] Audio stream opened – listening for '{self.display_name}'")

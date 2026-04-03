@@ -58,6 +58,7 @@ if __name__ == "__main__":
     if available_port != default_port:
         print(f"⚠️ [SPARK] Port {default_port} in use, using {available_port} instead")
 
+    os.environ["SPARK_PORT"] = str(available_port)
     print(f"🚀 [SPARK] Starting backend on {host}:{available_port}")
 
     uvicorn.run(
