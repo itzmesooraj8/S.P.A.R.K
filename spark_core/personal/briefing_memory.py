@@ -4,7 +4,7 @@ Stores at: spark_memory_db/personal_briefings.db
 """
 
 from __future__ import annotations
-import asyncio, json, os, sqlite3, time, uuid
+import asyncio, json, os, sqlite3, time, uuid, threading
 from typing import List, Optional
 
 _DB_PATH = os.path.join(
@@ -12,15 +12,8 @@ _DB_PATH = os.path.join(
     "spark_memory_db", "personal_briefings.db"
 )
 
-_lock = None
+_lock = threading.Lock()  # Use threading.Lock instead of asyncio.Lock
 _db_initialized = False
-
-def _get_lock():
-    """Lazy initialize lock in the current event loop context."""
-    global _lock
-    if _lock is None:
-        _lock = asyncio.Lock()
-    return _lock
 
 def _ensure_dir():
     os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
@@ -117,29 +110,29 @@ def _sync_delete_briefing(briefing_id):
 
 # Async wrappers using executor
 async def create_briefing(content_text, title="Morning Briefing", content_audio_url=None, mood="NEUTRAL", tags=None, meta=None):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         briefing_id = await loop.run_in_executor(None, _sync_create_briefing, content_text, title, content_audio_url, mood, tags, meta)
     return await get_briefing(briefing_id)
 
 async def get_briefing(briefing_id):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_briefing, briefing_id)
 
 async def get_latest_briefing():
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_latest_briefing)
 
 async def list_briefings(mood=None, limit=100, offset=0):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_list_briefings, mood, limit, offset)
 
 async def update_briefing(briefing_id, **fields):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _sync_update_briefing, briefing_id, fields)
 
 async def delete_briefing(briefing_id):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _sync_delete_briefing, briefing_id)

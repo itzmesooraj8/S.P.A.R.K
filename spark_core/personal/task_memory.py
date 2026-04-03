@@ -4,7 +4,7 @@ Stores at: spark_memory_db/personal_tasks.db
 """
 
 from __future__ import annotations
-import asyncio, json, os, sqlite3, time, uuid
+import asyncio, json, os, sqlite3, time, uuid, threading
 from typing import List, Optional
 
 _DB_PATH = os.path.join(
@@ -12,15 +12,8 @@ _DB_PATH = os.path.join(
     "spark_memory_db", "personal_tasks.db"
 )
 
-_lock = None
+_lock = threading.Lock()  # Use threading.Lock instead of asyncio.Lock
 _db_initialized = False
-
-def _get_lock():
-    """Lazy initialize lock in the current event loop context."""
-    global _lock
-    if _lock is None:
-        _lock = asyncio.Lock()
-    return _lock
 
 def _ensure_dir():
     os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
@@ -62,17 +55,23 @@ def _row_to_dict(row):
     return d
 
 def _sync_create_task(title, description="", status="PENDING", priority=1, due_date=None, tags=None, recurring=None, meta=None):
-    _init_db()
-    task_id, now = str(uuid.uuid4()), time.time()
-    tags, meta = tags or [], meta or {}
-    conn = sqlite3.connect(_DB_PATH)
-    conn.execute(
-        "INSERT INTO tasks (id,title,description,status,priority,due_date,tags,recurring,created_at,updated_at,meta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
-        (task_id, title, description, status, priority, due_date, json.dumps(tags), recurring, now, now, json.dumps(meta))
-    )
-    conn.commit()
-    conn.close()
-    return task_id
+    try:
+        _init_db()
+        task_id, now = str(uuid.uuid4()), time.time()
+        tags, meta = tags or [], meta or {}
+        conn = sqlite3.connect(_DB_PATH)
+        conn.execute(
+            "INSERT INTO tasks (id,title,description,status,priority,due_date,tags,recurring,created_at,updated_at,meta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
+            (task_id, title, description, status, priority, due_date, json.dumps(tags), recurring, now, now, json.dumps(meta))
+        )
+        conn.commit()
+        conn.close()
+        return task_id
+    except Exception as e:
+        import traceback
+        print(f"[SYNC ERROR] _sync_create_task failed: {e}")
+        print(traceback.format_exc())
+        raise
 
 def _sync_get_task(task_id):
     _init_db()
@@ -153,36 +152,36 @@ def _sync_get_task_history(task_id=None, limit=100, offset=0):
 
 # Async wrappers using executor to avoid threading issues
 async def create_task(title, description="", status="PENDING", priority=1, due_date=None, tags=None, recurring=None, meta=None):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         task_id = await loop.run_in_executor(None, _sync_create_task, title, description, status, priority, due_date, tags, recurring, meta)
     return await get_task(task_id)
 
 async def get_task(task_id):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_task, task_id)
 
 async def list_tasks(status=None, priority=None, tags=None, limit=100, offset=0):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     tasks, total = await loop.run_in_executor(None, _sync_list_tasks, status, priority, limit, offset)
     if tags: tasks = [t for t in tasks if any(tag in t["tags"] for tag in tags)]
     return (tasks, total)
 
 async def update_task(task_id, **fields):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _sync_update_task, task_id, fields)
 
 async def delete_task(task_id):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _sync_delete_task, task_id)
 
 async def complete_task(task_id):
-    async with _get_lock():
-        loop = asyncio.get_event_loop()
+    with _lock:
+        loop = asyncio.get_running_loop()
         return await loop.run_in_executor(None, _sync_complete_task, task_id)
 
 async def get_task_history(task_id=None, limit=100, offset=0):
-    loop = asyncio.get_event_loop()
+    loop = asyncio.get_running_loop()
     return await loop.run_in_executor(None, _sync_get_task_history, task_id, limit, offset)
