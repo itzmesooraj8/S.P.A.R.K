@@ -263,7 +263,8 @@ async def _threat_feed_loop():
             })
 
         except Exception as exc:
-            print(f"⚠️  [ThreatFeed] Error: {exc}")
+            import traceback
+            print(f"⚠️  [ThreatFeed] Error: {type(exc).__name__}: {exc}\n{traceback.format_exc()}")
 
         await asyncio.sleep(300)  # 5 minutes
 

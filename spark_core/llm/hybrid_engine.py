@@ -5,7 +5,7 @@ import httpx
 from typing import Optional
 
 # Model can be overridden via env var (loaded from .env by run_server.py)
-_DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "llama3:8b")
+_DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 _GEMINI_FALLBACK_MODEL = "gemini-2.0-flash"
 
 

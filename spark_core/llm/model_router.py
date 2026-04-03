@@ -85,7 +85,7 @@ class ProviderStats:
 _CATALOG: List[ModelProfile] = [
     # ── Local (Ollama) ────────────────────────────
     ModelProfile(
-        name="llama3:8b", provider="ollama",
+        name="gemma3:4b", provider="ollama",
         task_strengths=[TaskType.CODE, TaskType.REASONING, TaskType.FAST],
         max_context_tokens=8192, cost_tier=0,
         latency_class=LatencyClass.REALTIME, requires_key="",

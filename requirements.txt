@@ -61,7 +61,7 @@ psutil==7.0.0
 faster-whisper==1.1.1
 edge-tts==7.0.2
 SpeechRecognition==3.14.3
-openwakeword==0.5.0
+openwakeword==0.5.0; python_version < "3.12"
 sounddevice==0.4.6
 
 # ── Dev / Tooling ──────────────────────────────

@@ -32,6 +32,7 @@ class Commander:
         print("🎖️  [Commander] Initializing multi-agent system...")
 
         self._agents: Dict[str, BaseAgent] = {}
+        self._pending_results: Dict[str, asyncio.Future] = {}
         # A pure intent router does not blindly instantiate heavy background agents!
         # Swarm effectively neutered by SPARK protocols. 
         print(f"🎖️  [Commander] Swarm background execution disabled. Operating as direct Intent Router.")

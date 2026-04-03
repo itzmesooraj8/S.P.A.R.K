@@ -127,10 +127,37 @@ async def speak(req: SpeakRequest):
         media_type = "audio/wav"
     else:
         async def audio_stream():  # type: ignore[no-redef]
-            communicate = edge_tts.Communicate(req.text, voice, rate=rate, pitch=pitch)
-            async for chunk in communicate.stream():
-                if chunk["type"] == "audio":
-                    yield chunk["data"]
+            try:
+                communicate = edge_tts.Communicate(req.text, voice, rate=rate, pitch=pitch)
+                async for chunk in communicate.stream():
+                    if chunk["type"] == "audio":
+                        yield chunk["data"]
+            except Exception as e:
+                import asyncio
+                print(f"[TTS] edge-tts DNS failed: {e}. Falling back to offline pyttsx3.")
+
+                def _sync_tts():
+                    import pyttsx3
+                    import tempfile
+                    import os
+                    engine = pyttsx3.init()
+                    fd, path = tempfile.mkstemp(suffix='.wav')
+                    os.close(fd)  # Close the OS file handle so pyttsx3 can write to it
+                    engine.save_to_file(req.text, path)
+                    engine.runAndWait()
+                    with open(path, 'rb') as f:
+                        data = f.read()
+                    os.unlink(path)
+                    return data
+                
+                try:
+                    audio_data = await asyncio.to_thread(_sync_tts)
+                    yield audio_data
+                except Exception as pyttsx3_err:
+                    import traceback
+                    print(f"[TTS] pyttsx3 threaded offline failed: {pyttsx3_err}")
+                    traceback.print_exc()
+                    yield b""
         media_type = "audio/mpeg"
 
     return StreamingResponse(
@@ -199,9 +226,36 @@ async def tts_websocket(websocket: WebSocket):
                     json.dumps({"type": "tts_done", "chunks": chunk_count})
                 )
             except Exception as e:
-                await websocket.send_text(
-                    json.dumps({"type": "tts_error", "error": str(e)})
-                )
+                import asyncio
+                print(f"[TTS WS] edge-tts DNS failed: {e}. Falling back to offline pyttsx3.")
+
+                def _sync_tts_ws():
+                    import pyttsx3
+                    import tempfile
+                    import os
+                    engine = pyttsx3.init()
+                    fd, path = tempfile.mkstemp(suffix='.wav')
+                    os.close(fd)
+                    engine.save_to_file(text, path)
+                    engine.runAndWait()
+                    with open(path, 'rb') as f:
+                        data = f.read()
+                    os.unlink(path)
+                    return data
+
+                try:
+                    data = await asyncio.to_thread(_sync_tts_ws)
+                    await websocket.send_bytes(data)
+                    await websocket.send_text(
+                        json.dumps({"type": "tts_done", "chunks": 1})
+                    )
+                except Exception as pyttsx3_err:
+                    import traceback
+                    print(f"⚠️ [TTS WS] Fallback error: {pyttsx3_err}")
+                    traceback.print_exc()
+                    await websocket.send_text(
+                        json.dumps({"type": "tts_error", "error": str(pyttsx3_err)})
+                    )
 
     except WebSocketDisconnect:
         pass

@@ -48,9 +48,9 @@ class WakeWordListener:
         
         # Model key must match the .onnx filename stem (e.g. hey_spark_v0.1.onnx → "hey_spark_v0.1")
         # Swap for a custom "hey_spark" model once trained.
-        self.wake_word_name = "hey_spark_v0.1"
+        self.wake_word_name = "alexa"
         # Human-readable name shown in logs and broadcast to the frontend
-        self.display_name = "Hey Spark"
+        self.display_name = "Alexa"
     
     def start(self):
         """Start the wake word listener in a background daemon thread."""
