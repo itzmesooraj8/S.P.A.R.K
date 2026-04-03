@@ -88,6 +88,24 @@ async def create_task(req: CreateTaskRequest):
         raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 
+@router.get("/tasks/history", response_model=TaskHistoryResponse)
+async def list_task_history(
+    task_id: Optional[str] = Query(None),
+    limit: int = Query(50, ge=1, le=100),
+    offset: int = Query(0, ge=0),
+):
+    """Get task completion history."""
+    try:
+        history, total = await task_memory.get_task_history(
+            task_id=task_id,
+            limit=limit,
+            offset=offset,
+        )
+        return TaskHistoryResponse(history=history, total=total, offset=offset, limit=limit)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
+
+
 @router.get("/tasks/{task_id}", response_model=TaskResponse)
 async def get_task(task_id: str):
     """Get a specific task by ID."""
@@ -199,21 +217,3 @@ async def complete_task(task_id: str):
         raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Failed to complete task: {str(e)}")
-
-
-@router.get("/tasks/history", response_model=TaskHistoryResponse)
-async def list_task_history(
-    task_id: Optional[str] = Query(None),
-    limit: int = Query(50, ge=1, le=100),
-    offset: int = Query(0, ge=0),
-):
-    """Get task completion history."""
-    try:
-        history, total = await task_memory.get_task_history(
-            task_id=task_id,
-            limit=limit,
-            offset=offset,
-        )
-        return TaskHistoryResponse(history=history, total=total, offset=offset, limit=limit)
-    except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Failed to get history: {str(e)}")
