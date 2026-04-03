@@ -233,3 +233,108 @@ class CaseItem(BaseModel):
 class CaseListResponse(BaseModel):
     cases: List[CaseItem]
     total: int
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# TASKS — personal task management
+# ──────────────────────────────────────────────────────────────────────────────
+
+class CreateTaskRequest(BaseModel):
+    """Request to create a new task."""
+    title: str
+    description: Optional[str] = None
+    status: Optional[str] = "PENDING"
+    priority: Optional[int] = 1
+    due_date: Optional[float] = None
+    tags: Optional[List[str]] = []
+    recurring: Optional[str] = None
+    meta: Optional[Dict[str, Any]] = {}
+
+class UpdateTaskRequest(BaseModel):
+    """Request to update a task (partial)."""
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    priority: Optional[int] = None
+    due_date: Optional[float] = None
+    tags: Optional[List[str]] = None
+    recurring: Optional[str] = None
+    meta: Optional[Dict[str, Any]] = None
+
+class TaskResponse(BaseModel):
+    """Single task response."""
+    id: str
+    title: str
+    description: Optional[str] = None
+    status: str
+    priority: int
+    due_date: Optional[float] = None
+    tags: List[str] = []
+    recurring: Optional[str] = None
+    created_at: float
+    updated_at: float
+    meta: Dict[str, Any] = {}
+
+class TaskListResponse(BaseModel):
+    """List of tasks with pagination."""
+    tasks: List[TaskResponse]
+    total: int
+    offset: int
+    limit: int
+
+class TaskHistoryItem(BaseModel):
+    """Completed task history record."""
+    id: str
+    original_task_id: str
+    status_snapshot: Dict[str, Any]
+    completed_at: float
+    duration_seconds: Optional[int] = None
+    meta: Dict[str, Any] = {}
+
+class TaskHistoryResponse(BaseModel):
+    """List of task history with pagination."""
+    history: List[TaskHistoryItem]
+    total: int
+    offset: int
+    limit: int
+
+
+# ──────────────────────────────────────────────────────────────────────────────
+# BRIEFINGS — personal morning briefing
+# ──────────────────────────────────────────────────────────────────────────────
+
+class CreateBriefingRequest(BaseModel):
+    """Request to create a new briefing."""
+    content_text: str
+    title: Optional[str] = "Morning Briefing"
+    content_audio_url: Optional[str] = None
+    mood: Optional[str] = "NEUTRAL"
+    tags: Optional[List[str]] = []
+    meta: Optional[Dict[str, Any]] = {}
+
+class UpdateBriefingRequest(BaseModel):
+    """Request to update a briefing (partial)."""
+    title: Optional[str] = None
+    content_text: Optional[str] = None
+    content_audio_url: Optional[str] = None
+    mood: Optional[str] = None
+    tags: Optional[List[str]] = None
+    meta: Optional[Dict[str, Any]] = None
+
+class BriefingResponse(BaseModel):
+    """Single briefing response."""
+    id: str
+    title: str
+    content_text: str
+    content_audio_url: Optional[str] = None
+    generated_at: float
+    mood: str
+    tags: List[str] = []
+    meta: Dict[str, Any] = {}
+
+class BriefingListResponse(BaseModel):
+    """List of briefings with pagination."""
+    briefings: List[BriefingResponse]
+    total: int
+    offset: int
+    limit: int

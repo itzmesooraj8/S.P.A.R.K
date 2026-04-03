@@ -44,8 +44,10 @@ import { CombatDock } from '@/components/combat/CombatDock';
 import { VaultPanel } from '@/components/combat/VaultPanel';
 import WiFiAuditPanel from '@/components/combat/WiFiAuditPanel';
 import PasswordAuditPanel from '@/components/combat/PasswordAuditPanel';
+import TaskPanel from './modules/TaskPanel';
+import { useFetchTasks } from '@/hooks/useFetchTasks';
 
-type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music';
+type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music' | 'tasks';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
   spark:      '⚡ SPARK AGENT',
@@ -60,6 +62,7 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
   plugins:    '🧩 PLUGIN MANAGER',
   browser:    '🌐 BROWSER AGENT',
   music:      '🎵 MUSIC PLAYER',
+  tasks:      '📋 TASKS',
 };
 
 export default function HudLayout() {
@@ -104,6 +107,7 @@ export default function HudLayout() {
   // ── Global event listeners ───────────────────────────────────────────────
   useAIEvents();                                   // listens to /ws/ai → tool store
   useWakeWordListener();                           // listens for WAKE_WORD_DETECTED → opens CommandBar
+  useFetchTasks();                                 // fetch tasks and listen for updates
   const { pendingRequest, setPending } = useAgentConfirmStore();
   // ── SPARK FX queue consumer ───────────────────────────────────────
   const fxQueue      = useFxStore((s) => s.queue);
@@ -318,6 +322,7 @@ export default function HudLayout() {
                   {activeModule === 'plugins'    && <PluginsModule />}
                   {activeModule === 'browser'    && <BrowserModule />}
                   {activeModule === 'music'      && <MusicModule />}
+                  {activeModule === 'tasks'      && <TaskPanel />}
                 </div>
               </motion.div>
             )}

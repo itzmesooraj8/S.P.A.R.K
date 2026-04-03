@@ -1,0 +1,252 @@
+.task-panel {
+  display: flex;
+  flex-direction: column;
+  height: 100%;
+  background: #1a1a2e;
+  color: #e0e0e0;
+  border: 1px solid #404060;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.task-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 16px;
+  border-bottom: 1px solid #404060;
+  background: #0f0f1e;
+}
+
+.task-panel-header h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.task-count {
+  background: #3b82f6;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.task-quick-add {
+  display: flex;
+  gap: 8px;
+  padding: 12px;
+  border-bottom: 1px solid #404060;
+}
+
+.task-quick-add input {
+  flex: 1;
+  padding: 6px 10px;
+  background: #262641;
+  border: 1px solid #404060;
+  border-radius: 4px;
+  color: #e0e0e0;
+  font-size: 12px;
+}
+
+.task-quick-add input::placeholder {
+  color: #888;
+}
+
+.task-quick-add input:focus {
+  outline: none;
+  border-color: #3b82f6;
+}
+
+.task-quick-add button {
+  padding: 6px 12px;
+  background: #3b82f6;
+  color: white;
+  border: none;
+  border-radius: 4px;
+  cursor: pointer;
+  font-weight: 600;
+  font-size: 12px;
+}
+
+.task-quick-add button:hover:not(:disabled) {
+  background: #2563eb;
+}
+
+.task-quick-add button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.task-sections {
+  flex: 1;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.task-section {
+  border-bottom: 1px solid #404060;
+}
+
+.task-section:last-child {
+  border-bottom: none;
+}
+
+.task-section-header {
+  padding: 10px 12px;
+  background: #16213e;
+  cursor: pointer;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  font-size: 12px;
+  font-weight: 600;
+  user-select: none;
+}
+
+.task-section-header:hover {
+  background: #1e2d4a;
+}
+
+.section-title {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.section-count {
+  background: #404060;
+  color: #b0b0c0;
+  padding: 2px 6px;
+  border-radius: 10px;
+  font-size: 11px;
+}
+
+.task-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.task-empty {
+  padding: 12px;
+  text-align: center;
+  color: #666;
+  font-size: 12px;
+  font-style: italic;
+}
+
+.task-item {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  padding: 10px 12px;
+  border-bottom: 1px solid #2a2a40;
+  background: #1a1a2e;
+}
+
+.task-item:hover {
+  background: #222238;
+}
+
+.task-info {
+  flex: 1;
+  min-width: 0;
+}
+
+.task-title-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 4px;
+}
+
+.priority-badge {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.task-title {
+  font-size: 12px;
+  font-weight: 500;
+  word-break: break-word;
+}
+
+.task-description {
+  margin: 4px 0 0 0;
+  font-size: 11px;
+  color: #999;
+  word-break: break-word;
+}
+
+.task-tags {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 6px;
+}
+
+.tag {
+  display: inline-block;
+  padding: 2px 6px;
+  background: #2a4a6a;
+  color: #80b0e0;
+  border-radius: 3px;
+  font-size: 10px;
+}
+
+.task-actions {
+  display: flex;
+  gap: 4px;
+  margin-left: 8px;
+  flex-shrink: 0;
+}
+
+.btn-complete,
+.btn-delete {
+  padding: 4px 6px;
+  background: transparent;
+  border: 1px solid #404060;
+  border-radius: 3px;
+  color: #b0b0c0;
+  cursor: pointer;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.2s;
+}
+
+.btn-complete:hover {
+  background: #2ea872;
+  border-color: #2ea872;
+  color: white;
+}
+
+.btn-delete:hover {
+  background: #ef4444;
+  border-color: #ef4444;
+  color: white;
+}
+
+.task-list::-webkit-scrollbar {
+  width: 6px;
+}
+
+.task-list::-webkit-scrollbar-track {
+  background: #1a1a2e;
+}
+
+.task-list::-webkit-scrollbar-thumb {
+  background: #404060;
+  border-radius: 3px;
+}
+
+.task-list::-webkit-scrollbar-thumb:hover {
+  background: #606080;
+}
