@@ -65,6 +65,5 @@ if __name__ == "__main__":
         host=host,
         port=available_port,
         reload=False,
-        app_dir="spark_core",
-        loop="proactor" if sys.platform == 'win32' else "auto"
+        app_dir="spark_core"
     )
