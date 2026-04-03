@@ -12,8 +12,15 @@ _DB_PATH = os.path.join(
     "spark_memory_db", "personal_tasks.db"
 )
 
-_lock = asyncio.Lock()
+_lock = None
 _db_initialized = False
+
+def _get_lock():
+    """Lazy initialize lock in the current event loop context."""
+    global _lock
+    if _lock is None:
+        _lock = asyncio.Lock()
+    return _lock
 
 def _ensure_dir():
     os.makedirs(os.path.dirname(_DB_PATH), exist_ok=True)
@@ -146,7 +153,7 @@ def _sync_get_task_history(task_id=None, limit=100, offset=0):
 
 # Async wrappers using executor to avoid threading issues
 async def create_task(title, description="", status="PENDING", priority=1, due_date=None, tags=None, recurring=None, meta=None):
-    async with _lock:
+    async with _get_lock():
         loop = asyncio.get_event_loop()
         task_id = await loop.run_in_executor(None, _sync_create_task, title, description, status, priority, due_date, tags, recurring, meta)
     return await get_task(task_id)
@@ -162,17 +169,17 @@ async def list_tasks(status=None, priority=None, tags=None, limit=100, offset=0)
     return (tasks, total)
 
 async def update_task(task_id, **fields):
-    async with _lock:
+    async with _get_lock():
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_update_task, task_id, fields)
 
 async def delete_task(task_id):
-    async with _lock:
+    async with _get_lock():
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_delete_task, task_id)
 
 async def complete_task(task_id):
-    async with _lock:
+    async with _get_lock():
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_complete_task, task_id)
 

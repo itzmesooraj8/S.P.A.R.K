@@ -82,6 +82,9 @@ async def create_task(req: CreateTaskRequest):
 
         return TaskResponse(**task)
     except Exception as e:
+        import traceback
+        print(f"[ERROR] Task creation failed:")
+        print(traceback.format_exc())
         raise HTTPException(status_code=500, detail=f"Failed to create task: {str(e)}")
 
 
