@@ -1,10 +1,10 @@
 """
-Tasks persistence — Synchronous SQLite with asyncio executor (Windows compatible).
+Tasks persistence — Synchronous SQLite with asyncio.to_thread (Windows compatible).
 Stores at: spark_memory_db/personal_tasks.db
 """
 
 from __future__ import annotations
-import asyncio, json, os, sqlite3, time, uuid, threading
+import asyncio, json, os, sqlite3, time, uuid
 from typing import List, Optional
 
 _DB_PATH = os.path.join(
@@ -12,7 +12,6 @@ _DB_PATH = os.path.join(
     "spark_memory_db", "personal_tasks.db"
 )
 
-_lock = threading.Lock()  # Use threading.Lock instead of asyncio.Lock
 _db_initialized = False
 
 def _ensure_dir():
@@ -59,7 +58,7 @@ def _sync_create_task(title, description="", status="PENDING", priority=1, due_d
         _init_db()
         task_id, now = str(uuid.uuid4()), time.time()
         tags, meta = tags or [], meta or {}
-        conn = sqlite3.connect(_DB_PATH)
+        conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
         conn.execute(
             "INSERT INTO tasks (id,title,description,status,priority,due_date,tags,recurring,created_at,updated_at,meta) VALUES (?,?,?,?,?,?,?,?,?,?,?)",
             (task_id, title, description, status, priority, due_date, json.dumps(tags), recurring, now, now, json.dumps(meta))
@@ -75,7 +74,7 @@ def _sync_create_task(title, description="", status="PENDING", priority=1, due_d
 
 def _sync_get_task(task_id):
     _init_db()
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM tasks WHERE id=?", (task_id,)).fetchone()
     conn.close()
@@ -87,7 +86,7 @@ def _sync_list_tasks(status=None, priority=None, limit=100, offset=0):
     if status: clauses.append("status=?"); params.append(status)
     if priority is not None: clauses.append("priority=?"); params.append(priority)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     total = conn.execute(f"SELECT COUNT(*) FROM tasks {where}", params).fetchone()[0]
     rows = conn.execute(f"SELECT * FROM tasks {where} ORDER BY created_at DESC LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
@@ -103,7 +102,7 @@ def _sync_update_task(task_id, updates):
     if "meta" in upd: upd["meta"] = json.dumps(upd["meta"])
     upd["updated_at"] = time.time()
     set_clause = ", ".join(f"{k} = ?" for k in upd)
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.execute(f"UPDATE tasks SET {set_clause} WHERE id = ?", list(upd.values()) + [task_id])
     conn.commit()
     conn.close()
@@ -111,7 +110,7 @@ def _sync_update_task(task_id, updates):
 
 def _sync_delete_task(task_id):
     _init_db()
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     cur = conn.execute("DELETE FROM tasks WHERE id=?", (task_id,))
     conn.commit()
     result = cur.rowcount > 0
@@ -124,7 +123,7 @@ def _sync_complete_task(task_id):
     if not task: return None
     history_id, now = str(uuid.uuid4()), time.time()
     duration = int(now - task.get("created_at", now))
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.execute("UPDATE tasks SET status = ?, updated_at = ? WHERE id = ?", ("COMPLETED", now, task_id))
     conn.execute("INSERT INTO task_history (id,original_task_id,status_snapshot,completed_at,duration_seconds,meta) VALUES (?,?,?,?,?,?)",
                 (history_id, task_id, json.dumps(task), now, duration, json.dumps({})))
@@ -137,7 +136,7 @@ def _sync_get_task_history(task_id=None, limit=100, offset=0):
     clauses, params = [], []
     if task_id: clauses.append("original_task_id=?"); params.append(task_id)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     total = conn.execute(f"SELECT COUNT(*) FROM task_history {where}", params).fetchone()[0]
     rows = conn.execute(f"SELECT * FROM task_history {where} ORDER BY completed_at DESC LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
@@ -150,38 +149,27 @@ def _sync_get_task_history(task_id=None, limit=100, offset=0):
         history.append(h)
     return (history, total)
 
-# Async wrappers using executor to avoid threading issues
+# Async wrappers - use asyncio.to_thread instead of run_in_executor
 async def create_task(title, description="", status="PENDING", priority=1, due_date=None, tags=None, recurring=None, meta=None):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        task_id = await loop.run_in_executor(None, _sync_create_task, title, description, status, priority, due_date, tags, recurring, meta)
+    task_id = await asyncio.to_thread(_sync_create_task, title, description, status, priority, due_date, tags, recurring, meta)
     return await get_task(task_id)
 
 async def get_task(task_id):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_get_task, task_id)
+    return await asyncio.to_thread(_sync_get_task, task_id)
 
 async def list_tasks(status=None, priority=None, tags=None, limit=100, offset=0):
-    loop = asyncio.get_running_loop()
-    tasks, total = await loop.run_in_executor(None, _sync_list_tasks, status, priority, limit, offset)
+    tasks, total = await asyncio.to_thread(_sync_list_tasks, status, priority, limit, offset)
     if tags: tasks = [t for t in tasks if any(tag in t["tags"] for tag in tags)]
     return (tasks, total)
 
 async def update_task(task_id, **fields):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _sync_update_task, task_id, fields)
+    return await asyncio.to_thread(_sync_update_task, task_id, fields)
 
 async def delete_task(task_id):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _sync_delete_task, task_id)
+    return await asyncio.to_thread(_sync_delete_task, task_id)
 
 async def complete_task(task_id):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _sync_complete_task, task_id)
+    return await asyncio.to_thread(_sync_complete_task, task_id)
 
 async def get_task_history(task_id=None, limit=100, offset=0):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_get_task_history, task_id, limit, offset)
+    return await asyncio.to_thread(_sync_get_task_history, task_id, limit, offset)

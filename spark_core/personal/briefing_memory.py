@@ -1,10 +1,10 @@
 """
-Briefings persistence — Synchronous SQLite with asyncio executor (Windows compatible).
+Briefings persistence — Synchronous SQLite with asyncio.to_thread (Windows compatible).
 Stores at: spark_memory_db/personal_briefings.db
 """
 
 from __future__ import annotations
-import asyncio, json, os, sqlite3, time, uuid, threading
+import asyncio, json, os, sqlite3, time, uuid
 from typing import List, Optional
 
 _DB_PATH = os.path.join(
@@ -12,7 +12,6 @@ _DB_PATH = os.path.join(
     "spark_memory_db", "personal_briefings.db"
 )
 
-_lock = threading.Lock()  # Use threading.Lock instead of asyncio.Lock
 _db_initialized = False
 
 def _ensure_dir():
@@ -48,7 +47,7 @@ def _sync_create_briefing(content_text, title="Morning Briefing", content_audio_
     _init_db()
     briefing_id, now = str(uuid.uuid4()), time.time()
     tags, meta = tags or [], meta or {}
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.execute(
         "INSERT INTO briefings (id,title,content_text,content_audio_url,generated_at,mood,tags,meta) VALUES (?,?,?,?,?,?,?,?)",
         (briefing_id, title, content_text, content_audio_url, now, mood, json.dumps(tags), json.dumps(meta))
@@ -59,7 +58,7 @@ def _sync_create_briefing(content_text, title="Morning Briefing", content_audio_
 
 def _sync_get_briefing(briefing_id):
     _init_db()
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM briefings WHERE id=?", (briefing_id,)).fetchone()
     conn.close()
@@ -67,7 +66,7 @@ def _sync_get_briefing(briefing_id):
 
 def _sync_get_latest_briefing():
     _init_db()
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     row = conn.execute("SELECT * FROM briefings ORDER BY generated_at DESC LIMIT 1").fetchone()
     conn.close()
@@ -78,7 +77,7 @@ def _sync_list_briefings(mood=None, limit=100, offset=0):
     clauses, params = [], []
     if mood: clauses.append("mood=?"); params.append(mood)
     where = ("WHERE " + " AND ".join(clauses)) if clauses else ""
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     total = conn.execute(f"SELECT COUNT(*) FROM briefings {where}", params).fetchone()[0]
     rows = conn.execute(f"SELECT * FROM briefings {where} ORDER BY generated_at DESC LIMIT ? OFFSET ?", params + [limit, offset]).fetchall()
@@ -93,7 +92,7 @@ def _sync_update_briefing(briefing_id, updates):
     if "tags" in upd: upd["tags"] = json.dumps(upd["tags"])
     if "meta" in upd: upd["meta"] = json.dumps(upd["meta"])
     set_clause = ", ".join(f"{k} = ?" for k in upd)
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     conn.execute(f"UPDATE briefings SET {set_clause} WHERE id = ?", list(upd.values()) + [briefing_id])
     conn.commit()
     conn.close()
@@ -101,38 +100,29 @@ def _sync_update_briefing(briefing_id, updates):
 
 def _sync_delete_briefing(briefing_id):
     _init_db()
-    conn = sqlite3.connect(_DB_PATH)
+    conn = sqlite3.connect(_DB_PATH, timeout=5.0, check_same_thread=False)
     cur = conn.execute("DELETE FROM briefings WHERE id=?", (briefing_id,))
     conn.commit()
     result = cur.rowcount > 0
     conn.close()
     return result
 
-# Async wrappers using executor
+# Async wrappers - use asyncio.to_thread instead of run_in_executor
 async def create_briefing(content_text, title="Morning Briefing", content_audio_url=None, mood="NEUTRAL", tags=None, meta=None):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        briefing_id = await loop.run_in_executor(None, _sync_create_briefing, content_text, title, content_audio_url, mood, tags, meta)
+    briefing_id = await asyncio.to_thread(_sync_create_briefing, content_text, title, content_audio_url, mood, tags, meta)
     return await get_briefing(briefing_id)
 
 async def get_briefing(briefing_id):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_get_briefing, briefing_id)
+    return await asyncio.to_thread(_sync_get_briefing, briefing_id)
 
 async def get_latest_briefing():
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_get_latest_briefing)
+    return await asyncio.to_thread(_sync_get_latest_briefing)
 
 async def list_briefings(mood=None, limit=100, offset=0):
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, _sync_list_briefings, mood, limit, offset)
+    return await asyncio.to_thread(_sync_list_briefings, mood, limit, offset)
 
 async def update_briefing(briefing_id, **fields):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _sync_update_briefing, briefing_id, fields)
+    return await asyncio.to_thread(_sync_update_briefing, briefing_id, fields)
 
 async def delete_briefing(briefing_id):
-    with _lock:
-        loop = asyncio.get_running_loop()
-        return await loop.run_in_executor(None, _sync_delete_briefing, briefing_id)
+    return await asyncio.to_thread(_sync_delete_briefing, briefing_id)
