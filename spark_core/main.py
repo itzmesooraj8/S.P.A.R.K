@@ -49,6 +49,22 @@ from combat.router import router as combat_router                # /api/combat/*
 from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
 from personal import personal_api_router, personal_ws_router
 
+# SPARK Personal AI — Core Features
+from spark_core.personal.greeting_router   import router as greeting_router
+from spark_core.personal.quote_router      import router as quote_router
+from spark_core.personal.briefing_router   import router as briefing_router
+from spark_core.personal.task_router       import router as task_router
+from spark_core.personal.app_router        import router as app_router
+from spark_core.personal.mood_router       import router as mood_router
+from spark_core.personal.notes_router      import router as notes_router
+from spark_core.personal.search_router     import router as search_router
+from spark_core.personal.weather_router    import router as weather_router
+from spark_core.personal.focus_router      import router as focus_router
+from spark_core.personal.presence_router   import router as presence_router
+from spark_core.personal.knowledge_router  import router as knowledge_router
+from spark_core.personal.identity_router   import router as identity_router
+from spark_core.personal.voice_clone_router import router as voice_clone_router
+
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
 
@@ -281,6 +297,22 @@ app.include_router(combat_router)    # /api/combat/*   — Sovereign Cyber Intel
 # SPARK Personal AI Backend Foundation
 app.include_router(personal_api_router) # /api/personal/*
 app.include_router(personal_ws_router)  # /ws/personal/*
+
+# Activate 14 Personal AI Features
+app.include_router(greeting_router,    prefix="/api/personal")
+app.include_router(quote_router,       prefix="/api/personal")
+app.include_router(briefing_router,    prefix="/api/personal")
+app.include_router(task_router,        prefix="/api/personal")
+app.include_router(app_router,         prefix="/api/personal")
+app.include_router(mood_router,        prefix="/api/personal")
+app.include_router(notes_router,       prefix="/api/personal")
+app.include_router(search_router,      prefix="/api/personal")
+app.include_router(weather_router,     prefix="/api/personal")
+app.include_router(focus_router,       prefix="/api/personal")
+app.include_router(presence_router,    prefix="/api/personal")
+app.include_router(knowledge_router,   prefix="/api/personal")
+app.include_router(identity_router,    prefix="/api/personal")
+app.include_router(voice_clone_router, prefix="/api/personal")
 
 # -----------------
 # API ENDPOINTS
@@ -682,7 +714,7 @@ async def agents_ask(req: AskRequest):
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
-# COMMANDER ROUTER — JARVIS-style intent routing + Action Feed
+# COMMANDER ROUTER — SPARK-style intent routing + Action Feed
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 
 class CommanderRunRequest(BaseModel):
@@ -693,7 +725,7 @@ class CommanderRunRequest(BaseModel):
 @app.post("/api/commander/run")
 async def commander_run(req: CommanderRunRequest):
     """
-    JARVIS Command entry-point.
+    SPARK Command entry-point.
     Classifies intent, builds plan, emits PLAN→STEP WS frames, executes.
     """
     result = await commander_router.run(

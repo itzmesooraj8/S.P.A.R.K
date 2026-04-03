@@ -1,5 +1,5 @@
 """
-Jarvis Proactive Briefing Engine
+SPARK Proactive Briefing Engine
 ==================================
 Generates contextual spoken briefings using SPARK's local Ollama backend.
 Briefings are timed (morning/evening/on-event) and mode-aware.
@@ -15,7 +15,7 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-_JARVIS_SYSTEM = """You are Jarvis — SPARK's proactive AI assistant.
+_SPARK_SYSTEM = """You are SPARK — SPARK's proactive AI assistant.
 You speak in brief, confident, informative sentences. No filler words.
 You always:
   • Open with a time-aware greeting (Good morning / Afternoon / Evening)
@@ -35,7 +35,7 @@ async def generate_briefing(
     speak: bool = True,
 ) -> dict:
     """
-    Generate and optionally TTS-synthesise a Jarvis briefing.
+    Generate and optionally TTS-synthesise a SPARK briefing.
 
     context keys (all optional):
       active_threats, globe_events, system_status, operator_name,
@@ -76,7 +76,7 @@ async def generate_briefing(
         payload = {
             "model":    model,
             "messages": [
-                {"role": "system", "content": _JARVIS_SYSTEM},
+                {"role": "system", "content": _SPARK_SYSTEM},
                 {"role": "user",   "content": user_prompt},
             ],
             "stream": False,
@@ -86,7 +86,7 @@ async def generate_briefing(
             res.raise_for_status()
             text = res.json().get("message", {}).get("content", "").strip()
     except Exception as exc:
-        log.warning("Jarvis LLM unavailable: %s", exc)
+        log.warning("SPARK LLM unavailable: %s", exc)
         text = (
             f"Good {greeting_time}, {operator}. "
             f"System status is {sys_status}. "
@@ -99,7 +99,7 @@ async def generate_briefing(
         try:
             audio_url = await _synthesize_briefing(text)
         except Exception as exc:
-            log.warning("Jarvis TTS failed: %s", exc)
+            log.warning("SPARK TTS failed: %s", exc)
 
     return {
         "text":      text,
@@ -158,13 +158,13 @@ async def schedule_briefing(
                 briefing = await generate_briefing(mode=mode, context=context)
                 from spark_core.ws.manager import ws_manager
                 await ws_manager.broadcast("ai", {
-                    "type":    "JARVIS_BRIEFING",
+                    "type":    "SPARK_BRIEFING",
                     "briefing": briefing,
                 })
             except Exception as exc:
                 log.error("Scheduled briefing failed: %s", exc)
 
-    task = asyncio.create_task(_daily_loop(), name=f"jarvis_briefing_{job_id}")
+    task = asyncio.create_task(_daily_loop(), name=f"spark_briefing_{job_id}")
     _scheduled_tasks[job_id] = task
-    log.info("Jarvis daily briefing scheduled at %02d:%02d (job %s)", hour, minute, job_id)
+    log.info("SPARK daily briefing scheduled at %02d:%02d (job %s)", hour, minute, job_id)
     return job_id

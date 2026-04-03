@@ -1,5 +1,5 @@
 /**
- * CommandBar — Global JARVIS command overlay
+ * CommandBar — Global SPARK command overlay
  * ─────────────────────────────────────────────────────────────────────────────
  * Triggered by Ctrl+Space (or programmatically via open prop).
  * Accepts natural-language commands, classifies intent in real-time,

@@ -89,6 +89,6 @@ pymisp>=2.4.195               # MISP threat intelligence platform
 # websockets already listed above (v15.x)
 # wifi-densepose  ← git clone https://github.com/ruvnet/wifi-densepose
 
-# ── Combat Mode — Jarvis Voice Upgrade ─────────
+# ── Combat Mode — SPARK Voice Upgrade ─────────
 # luxtts  ← pip install luxtts  (requires CUDA GPU with ≥1 GB VRAM)
 # torch   ← pip install torch   (for LuxTTS CUDA probe)

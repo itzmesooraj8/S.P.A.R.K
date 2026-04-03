@@ -2,7 +2,7 @@
 SPARK Wake Word Listener
 ────────────────────────────────────────────────────────────────────────────────
 Runs openwakeword on a continuous microphone stream in a background thread.
-Detects "Hey SPARK" (using 'hey jarvis' as placeholder) and publishes events.
+Detects "Hey SPARK" (using 'hey spark' as placeholder) and publishes events.
 """
 
 import threading
@@ -46,9 +46,9 @@ class WakeWordListener:
         self.model: Optional[object] = None  # openwakeword.model.Model when loaded
         self.stream = None
         
-        # Model key must match the .onnx filename stem (e.g. hey_jarvis_v0.1.onnx → "hey_jarvis_v0.1")
+        # Model key must match the .onnx filename stem (e.g. hey_spark_v0.1.onnx → "hey_spark_v0.1")
         # Swap for a custom "hey_spark" model once trained.
-        self.wake_word_name = "hey_jarvis_v0.1"
+        self.wake_word_name = "hey_spark_v0.1"
         # Human-readable name shown in logs and broadcast to the frontend
         self.display_name = "Hey Spark"
     

@@ -271,7 +271,7 @@ class ModelRouter:
             # Task strength match
             if task_type in p.task_strengths:
                 s += 10.0
-            # Prefer local if flag is set (Massive boost for Jarvis Local-First)
+            # Prefer local if flag is set (Massive boost for SPARK Local-First)
             if prefer_local and p.provider == "ollama":
                 s += 5000.0
             # Lower cost is better

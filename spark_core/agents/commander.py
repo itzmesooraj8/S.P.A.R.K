@@ -33,7 +33,7 @@ class Commander:
 
         self._agents: Dict[str, BaseAgent] = {}
         # A pure intent router does not blindly instantiate heavy background agents!
-        # Swarm effectively neutered by Jarvis protocols. 
+        # Swarm effectively neutered by SPARK protocols. 
         print(f"🎖️  [Commander] Swarm background execution disabled. Operating as direct Intent Router.")
         event_bus.subscribe("agent_result")(self._handle_result)
         print(f"🎖️  [Commander] {len(self._agents)} agents registered: {list(self._agents.keys())}")

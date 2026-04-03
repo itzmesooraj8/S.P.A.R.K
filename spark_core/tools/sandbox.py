@@ -12,6 +12,22 @@ async def init_sandbox():
 async def teardown_sandbox():
     pass
 
+class _StateHook:
+    def get_state(self):
+        from system.state import unified_state
+        return unified_state.get_state()
+    def update(self, key, val):
+        from system.state import unified_state
+        unified_state.update(key, val)
+
+class _MockSandbox:
+    def __init__(self):
+        self.host_workspace_dir = None
+        self.workspace_dir = "/workspace"
+        self.state_hook = _StateHook()
+
+sandbox = _MockSandbox()
+
 def emit_telemetry(action: str, result: str, duration_ms: int = 0):
     task_id = uuid.uuid4().hex[:8]
     state = unified_state.get_state()

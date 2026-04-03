@@ -1,5 +1,5 @@
 /**
- * SPARK Cognitive Dashboard — JARVIS-Level AI OS Status Panel
+ * SPARK Cognitive Dashboard — SPARK-Level AI OS Status Panel
  * Shows: Cognitive Loop, Multi-Agent status, Model Router, Graph Memory,
  *         Threat Intelligence, Self-Evolution proposals.
  */

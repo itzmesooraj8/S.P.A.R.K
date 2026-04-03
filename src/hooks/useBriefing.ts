@@ -1,6 +1,6 @@
 /**
- * useBriefing — Jarvis proactive briefing hook
- * Fetches and caches a Jarvis briefing, re-fetching on combat activation.
+ * useBriefing — SPARK proactive briefing hook
+ * Fetches and caches a SPARK briefing, re-fetching on combat activation.
  */
 import { useState, useEffect, useCallback } from 'react'
 import { useCombatStore } from '@/store/useCombatStore'
@@ -23,7 +23,7 @@ export function useBriefing(autoSpeak = false) {
     setLoading(true); setError(null)
     try {
       const res = await fetch(
-        `${window.location.protocol}//${window.location.hostname}:8000/api/combat/jarvis/briefing`,
+        `${window.location.protocol}//${window.location.hostname}:8000/api/combat/spark/briefing`,
         {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'X-Combat-Token': sessionToken },

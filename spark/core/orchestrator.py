@@ -48,7 +48,7 @@ class Orchestrator:
                 return OrchestratorEvent(EventType.RESPONSE, "Action cancelled.")
             else:
                 # User said something unrelated -> Clear state? Or keep waiting?
-                # "Jarvis Safe Rule": If ambiguous, cancel.
+                # "SPARK Safe Rule": If ambiguous, cancel.
                 self.pending_action = None
                 return OrchestratorEvent(EventType.RESPONSE, "I didn't hear a confirmation, so I cancelled the action.")
 

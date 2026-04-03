@@ -3,7 +3,7 @@
  * Tabs: CHAT (AgentModule) | COGNITION (ReasoningLogModule)
  */
 import { useState, useCallback, useEffect, useRef } from 'react';
-import { Bot, Brain, AlertCircle, Clock, RefreshCw, ChevronRight, Terminal, Activity } from 'lucide-react';
+import { Bot, Brain, AlertCircle, Clock, RefreshCw, ChevronRight, Terminal, Activity, User } from 'lucide-react';
 import { useQuery } from '@tanstack/react-query';
 import { apiGet, apiPost } from '@/lib/api';
 import { useContextStore } from '@/store/useContextStore';
@@ -311,12 +311,54 @@ function HistoryTab() {
   );
 }
 
+/* ── PERSONAL tab ────────────────────────────────────────────────────────── */
+function PersonalTab() {
+  const { data: qData, refetch: refetchQ } = useQuery<{status: string, module: string}>({
+    queryKey: ['personal-quotes'],
+    queryFn: () => apiGet('/api/personal/status'),
+    refetchInterval: 60000,
+  });
+
+  return (
+    <div className="flex flex-col gap-3 p-3 h-full overflow-y-auto scrollbar-hud">
+      <div className="flex items-center justify-between shrink-0">
+        <span className="font-orbitron text-[9px] text-hud-cyan/60">◈ SPARK PERSONAL AI</span>
+        <button className="p-1 rounded border border-hud-cyan/25 text-hud-cyan/60 hover:text-hud-cyan">
+          <RefreshCw size={10} />
+        </button>
+      </div>
+
+      <div className="hud-panel rounded p-3 border-hud-cyan/20 bg-black/40">
+        <div className="font-orbitron text-[10px] text-hud-cyan mb-2">MORNING BRIEFING</div>
+        <p className="font-mono-tech text-[9px] text-hud-cyan/80">Welcome back. All systems are currently nominal. Your presence is logged and recognized.</p>
+      </div>
+
+      <div className="hud-panel rounded p-3 border-hud-purple/20 bg-black/40">
+        <div className="font-orbitron text-[10px] text-hud-purple mb-2">MOTIVATION</div>
+        <p className="font-mono-tech text-[9px] text-hud-purple/80 italic">"The best way to predict the future is to invent it."</p>
+      </div>
+
+      <div className="grid grid-cols-2 gap-2">
+        <div className="hud-panel rounded p-2 text-center">
+          <div className="font-orbitron text-lg font-bold text-hud-amber">0</div>
+          <div className="font-orbitron text-[7px] text-hud-cyan/50">ACTIVE TASKS</div>
+        </div>
+        <div className="hud-panel rounded p-2 text-center">
+          <div className="font-orbitron text-lg font-bold text-hud-green">98%</div>
+          <div className="font-orbitron text-[7px] text-hud-cyan/50">FOCUS SCORE</div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main export ─────────────────────────────────────────────────────────── */
-type Tab = 'chat' | 'cognition' | 'history';
+type Tab = 'chat' | 'cognition' | 'history' | 'personal';
 
 export default function SparkPanel() {
   const [tab, setTab] = useState<Tab>('chat');
   const TABS: { id: Tab; label: string; icon: React.ReactNode }[] = [
+    { id: 'personal',  label: 'PERSONAL',  icon: <User size={10} /> },
     { id: 'chat',      label: 'CHAT',      icon: <Bot size={10} /> },
     { id: 'cognition', label: 'COGNITION', icon: <Brain size={10} /> },
     { id: 'history',   label: 'HISTORY',   icon: <Clock size={10} /> },
@@ -343,6 +385,7 @@ export default function SparkPanel() {
       </div>
       {/* Content */}
       <div className="flex-1 min-h-0">
+        {tab === 'personal'  && <PersonalTab />}
         {tab === 'chat'      && <ChatTab />}
         {tab === 'cognition' && <CognitionTab />}
         {tab === 'history'   && <HistoryTab />}

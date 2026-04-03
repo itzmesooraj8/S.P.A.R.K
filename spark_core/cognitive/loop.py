@@ -66,7 +66,7 @@ class AutonomousCognitiveLoop:
         print(f"🔮 [CognitiveLoop] Initialized. Cycle interval: {cycle_interval_s}s")
 
     def start(self):
-        print("🔮 [CognitiveLoop] Autonomous reasoning DISABLED by Jarvis config (waiting for explicit user command).")
+        print("🔮 [CognitiveLoop] Autonomous reasoning DISABLED by SPARK config (waiting for explicit user command).")
         # if not self._running:
         #     self._running = True
         #     self._task = asyncio.create_task(self._loop())

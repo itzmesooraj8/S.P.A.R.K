@@ -170,11 +170,11 @@ _PROVIDER_META: dict[str, dict] = {
 }
 
 # Mark key-required providers immediately
-if not _KEYS["acled"]:       _CB["acled"].set_key_required()
-if not _KEYS["finnhub"]:     _CB["finnhub"].set_key_required()
-if not _KEYS["eia"]:         _CB["eia"].set_key_required()
-if not _KEYS["nasa_firms"]:  _CB["nasa_firms"].set_key_required()
-if not _KEYS["cloudflare"]:  _CB["cloudflare"].set_key_required()
+if not _KEYS["acled"]:       _CB.setdefault("acled", CircuitBreaker("acled")).set_key_required()
+if not _KEYS["finnhub"]:     _CB.setdefault("finnhub", CircuitBreaker("finnhub")).set_key_required()
+if not _KEYS["eia"]:         _CB.setdefault("eia", CircuitBreaker("eia")).set_key_required()
+if not _KEYS["nasa_firms"]:  _CB.setdefault("nasa_firms", CircuitBreaker("nasa_firms")).set_key_required()
+if not _KEYS["cloudflare"]:  _CB.setdefault("cloudflare", CircuitBreaker("cloudflare")).set_key_required()
 # newsdata is optional: no key = graceful GDELT fallback, so don't set key_required
 
 # Log which keyed providers are active
@@ -363,7 +363,7 @@ class GlobeSocketBroadcaster:
         except Exception as exc:
             print(f"[Globe WS] EQ push error: {exc}")
 
-        # ── Intelligence push removed (Jarvis refactor) ─────────────────
+        # ── Intelligence push removed (SPARK refactor) ─────────────────
         pass
 
         # ── Provider health ────────────────────────────────────
@@ -383,7 +383,7 @@ class GlobeSocketBroadcaster:
 
     async def run_loop(self, interval_s: float = 30.0) -> None:
         """Background loop disabled to save resources and throttle API spam."""
-        print("🌍 [Globe WS] Background OSINT polling heavily throttled for Jarvis mode.")
+        print("🌍 [Globe WS] Background OSINT polling heavily throttled for SPARK mode.")
         while True:
             # We skip the heavy push_cycle to stop background spam.
             await asyncio.sleep(interval_s)

@@ -61,7 +61,7 @@ DEFAULT_RATE   = "+5%"
 DEFAULT_PITCH  = "-10Hz"
 
 # LuxTTS model name (high-quality male voice)
-LUXTTS_VOICE   = "en_male_jarvis"
+LUXTTS_VOICE   = "en_male_spark"
 
 
 class SpeakRequest(BaseModel):

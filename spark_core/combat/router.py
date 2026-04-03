@@ -549,7 +549,7 @@ async def sensor_disconnect(_token: str = Depends(require_combat_mode)):
 
 
 # ─────────────────────────────────────────────────────────────────────────────
-#  JARVIS BRIEFING  (Commit 8)
+#  SPARK BRIEFING  (Commit 8)
 # ─────────────────────────────────────────────────────────────────────────────
 
 class BriefingRequest(BaseModel):
@@ -564,16 +564,16 @@ class ScheduleBriefingRequest(BaseModel):
     mode:   str  = "PASSIVE"
 
 
-@router.post("/jarvis/briefing")
+@router.post("/spark/briefing")
 async def get_briefing(req: BriefingRequest, _token: str = Depends(require_combat_mode)):
-    """Generate a Jarvis situational briefing (text + optional TTS audio)."""
-    from .jarvis.briefing import generate_briefing
+    """Generate a SPARK situational briefing (text + optional TTS audio)."""
+    from .spark.briefing import generate_briefing
     return await generate_briefing(mode=req.mode, context=req.context, speak=req.speak, model=req.model)
 
 
-@router.post("/jarvis/schedule")
+@router.post("/spark/schedule")
 async def schedule_daily_briefing(req: ScheduleBriefingRequest, _token: str = Depends(require_combat_mode)):
-    """Schedule a daily Jarvis briefing at a given local time."""
-    from .jarvis.briefing import schedule_briefing
+    """Schedule a daily SPARK briefing at a given local time."""
+    from .spark.briefing import schedule_briefing
     job_id = await schedule_briefing(hour=req.hour, minute=req.minute, mode=req.mode)
     return {"job_id": job_id, "scheduled_at": f"{req.hour:02d}:{req.minute:02d}"}

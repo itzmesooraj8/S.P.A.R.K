@@ -7,7 +7,7 @@ class VoiceboxCloner:
     """
     def __init__(self):
         self.models_dir = os.getenv("SPARK_VOICE_MODELS", "models/voicebox/")
-        self.active_voice_id = "default_jarvis"
+        self.active_voice_id = "default_spark"
 
     def clone_voice(self, audio_sample_path: str, voice_name: str) -> bool:
         """Extracts features from the audio sample to create a new voice model."""

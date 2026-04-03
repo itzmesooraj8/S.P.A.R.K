@@ -35,7 +35,7 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
     setBriefingLoading(true)
     try {
       const res = await fetch(
-        `${window.location.protocol}//${window.location.hostname}:8000/api/combat/jarvis/briefing`,
+        `${window.location.protocol}//${window.location.hostname}:8000/api/combat/spark/briefing`,
         {
           method:  'POST',
           headers: { 'Content-Type': 'application/json', 'X-Combat-Token': sessionToken },
@@ -273,7 +273,7 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
         ))}
       </div>
 
-      {/* Jarvis briefing strip */}
+      {/* SPARK briefing strip */}
       {combatActive && (
         <div style={{
           maxWidth: 280, textAlign: 'center', color: '#FF9F0A',
@@ -283,7 +283,7 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
             <span style={{ color: '#3a1520' }}>Generating briefing…</span>
           ) : briefing ? (
             <>
-              <span style={{ color: '#555', fontSize: 9 }}>JARVIS: </span>
+              <span style={{ color: '#555', fontSize: 9 }}>SPARK: </span>
               {briefing}
             </>
           ) : (
