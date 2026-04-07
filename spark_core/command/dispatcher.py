@@ -50,6 +50,9 @@ async def execute_routing_decision(decision: RoutingDecision) -> DispatchResult:
         elif decision.target_module == ModuleTarget.GLOBE:
             return await _execute_globe(decision)
         
+        elif decision.target_module == ModuleTarget.APP:
+            return await _execute_app(decision)
+        
         elif decision.target_module == ModuleTarget.MODE:
             return await _execute_mode(decision)
         
@@ -209,6 +212,93 @@ async def _execute_globe(decision: RoutingDecision) -> DispatchResult:
         },
         message=message
     )
+
+
+async def _execute_app(decision: RoutingDecision) -> DispatchResult:
+    """Route to application launcher."""
+    import httpx
+    import re
+    
+    # Extract app name from query
+    query = decision.enriched_query or decision.parameters.get('query', '')
+    app_name = decision.parameters.get('app_name')
+    
+    # Try to extract app name from query if not provided
+    if not app_name:
+        # Common app names
+        app_names = ['chrome', 'firefox', 'edge', 'notepad', 'calculator', 'explorer', 
+                     'cmd', 'powershell', 'terminal', 'vscode', 'outlook', 'word', 
+                     'excel', 'powerpoint', 'teams', 'spotify', 'discord', 'slack']
+        
+        query_lower = query.lower()
+        for name in app_names:
+            if name in query_lower:
+                app_name = name
+                break
+        
+        # Also check for "google chrome", "microsoft edge", etc.
+        if not app_name:
+            if 'google chrome' in query_lower:
+                app_name = 'chrome'
+            elif 'microsoft edge' in query_lower:
+                app_name = 'edge'
+            elif 'visual studio code' in query_lower:
+                app_name = 'vscode'
+            elif 'file explorer' in query_lower:
+                app_name = 'explorer'
+            elif 'command prompt' in query_lower:
+                app_name = 'cmd'
+            elif 'windows terminal' in query_lower:
+                app_name = 'terminal'
+    
+    if not app_name:
+        return DispatchResult(
+            success=False,
+            module='app',
+            action='launch',
+            error="Could not identify application to launch",
+            message=f"Please specify which application to open from: {query}"
+        )
+    
+    # Call the app launcher API
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(
+                "http://localhost:8000/api/personal/app/launch",
+                json={"app_name": app_name}
+            )
+            
+            if response.status_code == 200:
+                data = response.json()
+                return DispatchResult(
+                    success=True,
+                    module='app',
+                    action='launch',
+                    result={
+                        'module': 'app',
+                        'action': 'launch',
+                        'app_name': app_name,
+                        'instruction': f"Launched {app_name}",
+                    },
+                    message=f"✓ Opened {app_name}"
+                )
+            else:
+                error_detail = response.json().get('detail', 'Unknown error')
+                return DispatchResult(
+                    success=False,
+                    module='app',
+                    action='launch',
+                    error=error_detail,
+                    message=f"Failed to launch {app_name}: {error_detail}"
+                )
+    except Exception as e:
+        return DispatchResult(
+            success=False,
+            module='app',
+            action='launch',
+            error=str(e),
+            message=f"Error launching {app_name}: {str(e)}"
+        )
 
 
 async def _execute_mode(decision: RoutingDecision) -> DispatchResult:

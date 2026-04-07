@@ -32,6 +32,7 @@ class ModuleTarget(str, Enum):
     SCHEDULER = "scheduler"
     BROWSER = "browser"
     GLOBE = "globe"
+    APP = "app"  # Application launcher
     LLM = "llm"  # Direct LLM conversation
     MODE = "mode"  # Routine/mode management
     PLUGIN = "plugin"  # Plugin management
@@ -91,6 +92,10 @@ _PATTERNS = {
         r'\b(?:mode|routine|activate|switch|focus|dev mode|monitor mode)\b',
         r'\b(?:/mode)\b',
     ],
+    ModuleTarget.APP: [
+        r'\b(?:open|launch|start|run|execute)\s+(?:chrome|firefox|edge|notepad|calculator|explorer|terminal|vscode|outlook|word|excel|powerpoint|teams|spotify|discord|slack|cmd|powershell)\b',
+        r'\b(?:open|launch|start)\s+(?:google\s+chrome|microsoft\s+edge|visual\s+studio\s+code|file\s+explorer|command\s+prompt|windows\s+terminal)\b',
+    ],
 }
 
 # Compile regex patterns with case-insensitive matching
@@ -125,6 +130,10 @@ _KEYWORD_MAP = {
     ModuleTarget.GLOBE: {
         'keywords': ['globe', 'world', 'country', 'event', 'conflict', 'geopolit', 'earthquake'],
         'weight': 0.85
+    },
+    ModuleTarget.APP: {
+        'keywords': ['open', 'launch', 'start', 'run', 'execute', 'chrome', 'firefox', 'notepad', 'calculator', 'application', 'app', 'program'],
+        'weight': 0.95
     },
 }
 

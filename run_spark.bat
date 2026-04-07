@@ -1,37 +1,48 @@
 @echo off
-title S.P.A.R.K Launcher
-color 0B
-
+title S.P.A.R.K - Complete Startup
+color 0A
 echo.
-echo  ====================================================
-echo   S.P.A.R.K  ^|  Sovereign AI OS
-echo  ====================================================
+echo  ███████╗██████╗  █████╗ ██████╗ ██╗  ██╗
+echo  ██╔════╝██╔══██╗██╔══██╗██╔══██╗██║ ██╔╝
+echo  ███████╗██████╔╝███████║██████╔╝█████╔╝ 
+echo  ╚════██║██╔═══╝ ██╔══██║██╔══██╗██╔═██╗ 
+echo  ███████║██║     ██║  ██║██║  ██║██║  ██╗
+echo  ╚══════╝╚═╝     ╚═╝  ╚═╝╚═╝  ╚═╝╚═╝  ╚═╝
 echo.
-
-:: Activate virtual environment
-call "%~dp0venv\Scripts\activate.bat"
-if errorlevel 1 (
-    echo [ERROR] venv not found. Run: python -m venv venv ^& pip install -r requirements.txt
-    pause
-    exit /b 1
-)
+echo  Smart Personal AI with Remote Knowledge
+echo  ==========================================
+echo.
+pause
 
 :: Start Backend in a new window
-echo [1/2] Starting backend (port 8000)...
-start "SPARK Backend" cmd /k "cd /d %~dp0 && call venv\Scripts\activate.bat && python run_server.py"
+echo [1/2] Starting Backend Server...
+start "SPARK Backend" cmd /k "cd /d %~dp0 && python run_server.py"
 
-:: Small delay so backend starts first
-timeout /t 3 /nobreak >nul
+echo Waiting for backend to initialize...
+timeout /t 5 /nobreak > nul
 
 :: Start Frontend in a new window
-echo [2/2] Starting frontend (port 8080)...
+echo [2/2] Starting Frontend Server...
 start "SPARK Frontend" cmd /k "cd /d %~dp0 && npm run dev"
 
 echo.
-echo  Both services are starting up:
-echo    Backend  ^-^>  http://localhost:8000
-echo    Frontend ^-^>  http://localhost:8080
-echo    API Docs ^-^>  http://localhost:8000/docs
+echo ====================================
+echo  Starting SPARK Servers...
+echo ====================================
 echo.
-echo  Close this window or press any key to exit launcher.
-pause >nul
+echo Two windows have been opened:
+echo   1. SPARK Backend (Python FastAPI)
+echo   2. SPARK Frontend (Vite React)
+echo.
+echo Waiting for servers to be ready...
+timeout /t 10 /nobreak > nul
+
+echo.
+echo Checking if servers are running...
+python check_servers.py
+
+echo.
+echo You can close this window now.
+echo The SPARK servers will continue running.
+echo.
+pause
