@@ -133,11 +133,11 @@ async def lifespan(app: FastAPI):
     print("🎤 [SPARK] Wake word listener started in background thread.")
 
     # ── Start Skill Engine Watchdog ─────────────────────────────────────────────
-    from spark_core.skills.watchdog import SkillWatchdog
-    skills_dir = os.path.join(workspace_root, "spark_core", "skills")
-    watchdog = SkillWatchdog(skills_dir)
-    watchdog.start()
-    print("🧩 [SPARK] Skill Engine watchdog online.")
+    from skills.watchdog import SkillWatchdog
+    skills_dir = os.path.join(os.path.dirname(__file__), "skills")
+    skill_watchdog = SkillWatchdog(skills_dir)
+    skill_watchdog.start()
+    print("🧩 [SPARK] SkillWatchdog active. Hot-loading enabled.")
 
     # ── Auto-index knowledge base into ChromaDB ─────────────────────────────
     try:
