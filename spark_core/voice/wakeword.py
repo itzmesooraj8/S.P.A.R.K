@@ -90,15 +90,26 @@ class WakeWordListener:
         try:
             # Initialize openwakeword model
             try:
+                # Primary Wake Word Model (attempts network download if missing)
                 self.model = Model(
                     wakeword_models=[self.wake_word_name],
                     inference_framework="onnx"
                 )
             except Exception as model_err:
-                print(f"❌ [WakeWord] Failed to load model: {model_err}")
-                print("   Voice wake word detection disabled")
-                self.running = False
-                return
+                print(f"⚠️ [WakeWord] Primary model failed ({model_err}). Attempting fallback...")
+                try:
+                    # Fallback: attempt to load a basic built-in model like "hey_spark"
+                    self.model = Model(
+                        wakeword_models=["hey_spark"],
+                        inference_framework="onnx"
+                    )
+                    self.wake_word_name = "hey_spark"
+                    self.display_name = "SPARK"
+                except Exception as fallback_err:
+                    print(f"❌ [WakeWord] Fallback also failed: {fallback_err}")
+                    print("   Voice wake word detection disabled")
+                    self.running = False
+                    return
 
             # Open audio stream with better error handling
             max_retries = 3

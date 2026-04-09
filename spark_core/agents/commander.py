@@ -145,9 +145,14 @@ class Commander:
     # ── Status ────────────────────────────────────────────────────────────────
 
     def get_status(self) -> Dict[str, Any]:
+        try:
+            pending = len(list(self._pending_results.keys()))
+        except Exception:
+            pending = len(self._pending_results)
+            
         return {
             "agents": {name: agent.get_status() for name, agent in self._agents.items()},
-            "pending_tasks": len(self._pending_results),
+            "pending_tasks": pending,
         }
 
     def get_agent(self, name: str) -> Optional[BaseAgent]:

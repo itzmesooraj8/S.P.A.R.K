@@ -1,11 +1,11 @@
 """
 SPARK Voice — TTS Router
 ────────────────────────────────────────────────────────────────────────────────
-Primary engine: LuxTTS (local, 1 GB VRAM, 150× real-time speed) when CUDA is
+Primary engine: SparkTTS (local, 1 GB VRAM, 150× real-time speed) when CUDA is
 available. Falls back to edge-tts (Microsoft Azure Neural Voices) automatically.
 
 Engine selection at import time:
-  1. VRAM ≥ 1 GB  → LuxTTS (high-quality prosody, low latency, fully offline)
+  1. VRAM ≥ 1 GB  → SparkTTS (high-quality prosody, low latency, fully offline)
   2. Fallback      → edge-tts (cloud, no GPU required)
 
 Endpoints:
@@ -30,9 +30,9 @@ from pydantic import BaseModel
 
 log = logging.getLogger(__name__)
 
-# ── LuxTTS availability probe ──────────────────────────────────────────────────
-def _probe_luxtts() -> bool:
-    """Return True if LuxTTS is importable AND sufficient VRAM (≥1 GB) is available."""
+# ── SparkTTS availability probe ──────────────────────────────────────────────────
+def _probe_sparktts() -> bool:
+    """Return True if SparkTTS is importable AND sufficient VRAM (≥1 GB) is available."""
     try:
         import torch  # type: ignore
         if not torch.cuda.is_available():
@@ -41,15 +41,15 @@ def _probe_luxtts() -> bool:
         if vram_mb < 1024:
             log.info("[TTS] VRAM %d MB < 1024 MB — using edge-tts fallback", vram_mb)
             return False
-        import luxtts  # type: ignore  # noqa: F401
-        log.info("[TTS] LuxTTS selected — VRAM: %d MB available", vram_mb)
+        import sparktts  # type: ignore  # noqa: F401
+        log.info("[TTS] SparkTTS selected — VRAM: %d MB available", vram_mb)
         return True
     except Exception as exc:
-        log.debug("[TTS] LuxTTS unavailable: %s", exc)
+        log.debug("[TTS] SparkTTS unavailable: %s", exc)
         return False
 
-_LUXTTS_ACTIVE = _probe_luxtts()
-TTS_ENGINE = "luxtts" if _LUXTTS_ACTIVE else "edge-tts"
+_SPARKTTS_ACTIVE = _probe_sparktts()
+TTS_ENGINE = "sparktts" if _SPARKTTS_ACTIVE else "edge-tts"
 print(f"🎙️  [TTS] Active engine: {TTS_ENGINE.upper()}")
 
 # ── Router ─────────────────────────────────────────────────────────────────────
@@ -60,8 +60,8 @@ DEFAULT_VOICE = "en-US-GuyNeural"
 DEFAULT_RATE   = "+5%"
 DEFAULT_PITCH  = "-10Hz"
 
-# LuxTTS model name (high-quality male voice)
-LUXTTS_VOICE   = "en_male_spark"
+# SparkTTS model name (high-quality male voice)
+SPARKTTS_VOICE   = "en_male_spark"
 
 
 class SpeakRequest(BaseModel):
@@ -71,15 +71,15 @@ class SpeakRequest(BaseModel):
     pitch: Optional[str] = DEFAULT_PITCH
 
 
-# ── LuxTTS synthesis ───────────────────────────────────────────────────────────
-async def _synthesize_luxtts(text: str) -> bytes:
-    """Run LuxTTS in a thread pool executor and return WAV/MP3 bytes."""
-    import luxtts  # type: ignore
+# ── SparkTTS synthesis ───────────────────────────────────────────────────────────
+async def _synthesize_sparktts(text: str) -> bytes:
+    """Run SparkTTS in a thread pool executor and return WAV/MP3 bytes."""
+    import sparktts  # type: ignore
     loop = asyncio.get_event_loop()
 
     def _run() -> bytes:
         buf = io.BytesIO()
-        luxtts.synthesize(text, voice=LUXTTS_VOICE, output_file=buf)
+        sparktts.synthesize(text, voice=SPARKTTS_VOICE, output_file=buf)
         buf.seek(0)
         return buf.read()
 
@@ -98,19 +98,19 @@ async def _synthesize_edgetts(text: str, voice: str, rate: str, pitch: str) -> b
 
 
 async def _synthesize_bytes(text: str, voice: str, rate: str, pitch: str) -> bytes:
-    """Unified synthesis — tries LuxTTS first, falls back to edge-tts."""
-    if _LUXTTS_ACTIVE:
+    """Unified synthesis — tries SparkTTS first, falls back to edge-tts."""
+    if _SPARKTTS_ACTIVE:
         try:
-            return await _synthesize_luxtts(text)
+            return await _synthesize_sparktts(text)
         except Exception as exc:
-            log.warning("[TTS] LuxTTS synthesis failed (%s) — falling back to edge-tts", exc)
+            log.warning("[TTS] SparkTTS synthesis failed (%s) — falling back to edge-tts", exc)
     return await _synthesize_edgetts(text, voice, rate, pitch)
 
 
 @tts_router.get("/engine")
 async def get_engine():
     """Return which TTS engine is currently active."""
-    return {"engine": TTS_ENGINE, "luxtts_active": _LUXTTS_ACTIVE}
+    return {"engine": TTS_ENGINE, "sparktts_active": _SPARKTTS_ACTIVE}
 
 
 @tts_router.post("/speak")
@@ -120,9 +120,9 @@ async def speak(req: SpeakRequest):
     rate  = req.rate  or DEFAULT_RATE
     pitch = req.pitch or DEFAULT_PITCH
 
-    if _LUXTTS_ACTIVE:
+    if _SPARKTTS_ACTIVE:
         async def audio_stream():
-            data = await _synthesize_luxtts(req.text)
+            data = await _synthesize_sparktts(req.text)
             yield data
         media_type = "audio/wav"
     else:
@@ -134,30 +134,8 @@ async def speak(req: SpeakRequest):
                         yield chunk["data"]
             except Exception as e:
                 import asyncio
-                print(f"[TTS] edge-tts DNS failed: {e}. Falling back to offline pyttsx3.")
-
-                def _sync_tts():
-                    import pyttsx3
-                    import tempfile
-                    import os
-                    engine = pyttsx3.init()
-                    fd, path = tempfile.mkstemp(suffix='.wav')
-                    os.close(fd)  # Close the OS file handle so pyttsx3 can write to it
-                    engine.save_to_file(req.text, path)
-                    engine.runAndWait()
-                    with open(path, 'rb') as f:
-                        data = f.read()
-                    os.unlink(path)
-                    return data
-                
-                try:
-                    audio_data = await asyncio.to_thread(_sync_tts)
-                    yield audio_data
-                except Exception as pyttsx3_err:
-                    import traceback
-                    print(f"[TTS] pyttsx3 threaded offline failed: {pyttsx3_err}")
-                    traceback.print_exc()
-                    yield b""
+                print(f"[TTS] edge-tts error: {e}. Falling back to offline fallback bytes.")
+                yield b""
         media_type = "audio/mpeg"
 
     return StreamingResponse(
@@ -166,7 +144,7 @@ async def speak(req: SpeakRequest):
         headers={
             "Content-Disposition": "inline; filename=spark_speech.mp3",
             "Cache-Control": "no-cache",
-            "X-Voice": LUXTTS_VOICE if _LUXTTS_ACTIVE else voice,
+            "X-Voice": SPARKTTS_VOICE if _SPARKTTS_ACTIVE else voice,
             "X-Engine": TTS_ENGINE,
         },
     )
