@@ -132,6 +132,13 @@ async def lifespan(app: FastAPI):
     start_wakeword_listener()
     print("🎤 [SPARK] Wake word listener started in background thread.")
 
+    # ── Start Skill Engine Watchdog ─────────────────────────────────────────────
+    from spark_core.skills.watchdog import SkillWatchdog
+    skills_dir = os.path.join(workspace_root, "spark_core", "skills")
+    watchdog = SkillWatchdog(skills_dir)
+    watchdog.start()
+    print("🧩 [SPARK] Skill Engine watchdog online.")
+
     # ── Auto-index knowledge base into ChromaDB ─────────────────────────────
     try:
         from neural_search.search import get_collection
