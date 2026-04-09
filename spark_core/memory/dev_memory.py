@@ -12,7 +12,7 @@ class DevMemory:
         self.persist_dir = persist_dir
         self.client = chromadb.PersistentClient(path=self.persist_dir)
         self.collection = self.client.get_or_create_collection(name="mutation_history")
-        print(f"🧠 [DEV MEMORY] Connected to persistent vector store at {self.persist_dir}")
+        print("[DEV MEMORY] Connected to persistent vector store at " + str(self.persist_dir))
 
     def embed_mutation(self, target_node: str, patch_hash: str, success: bool, test_impact: Dict[str, Any], duration_ms: int, error_trace: Optional[str] = None):
         """
@@ -43,7 +43,7 @@ class DevMemory:
             metadatas=[metadata],
             ids=[patch_hash] # Patch hash is practically unique per mutation iteration
         )
-        print(f"🧠 [DEV MEMORY] Embedded mutation result for {target_node} ({status})")
+        print(f"[DEV MEMORY] Embedded mutation result for {target_node} ({status})")
 
     def recall_mutations_for_node(self, target_node: str, n_results: int = 3) -> List[Dict[str, Any]]:
         """

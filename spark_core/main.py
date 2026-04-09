@@ -46,24 +46,24 @@ from agents.browser_agent import browser_router
 from security.firewall_router import router as security_router  # /api/security/*
 from music.router import router as music_router                  # /api/music/*
 from combat.router import router as combat_router                # /api/combat/* — Sovereign OSINT Platform
-from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
-from personal import personal_api_router, personal_ws_router
-
-# SPARK Personal AI — Core Features
-from spark_core.personal.greeting_router   import router as greeting_router
-from spark_core.personal.quote_router      import router as quote_router
-from spark_core.personal.briefing_router   import router as briefing_router
-from spark_core.personal.task_router       import router as task_router
-from spark_core.personal.app_router        import router as app_router
-from spark_core.personal.mood_router       import router as mood_router
-from spark_core.personal.notes_router      import router as notes_router
-from spark_core.personal.search_router     import router as search_router
-from spark_core.personal.weather_router    import router as weather_router
-from spark_core.personal.focus_router      import router as focus_router
-from spark_core.personal.presence_router   import router as presence_router
-from spark_core.personal.knowledge_router  import router as knowledge_router
-from spark_core.personal.identity_router   import router as identity_router
-from spark_core.personal.voice_clone_router import router as voice_clone_router
+# from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
+# from personal import personal_api_router, personal_ws_router
+# 
+# # SPARK Personal AI — Core Features
+# # from spark_core.personal.greeting_router   import router as greeting_router
+# # from spark_core.personal.quote_router      import router as quote_router
+# # from spark_core.personal.briefing_router   import router as briefing_router
+# # from spark_core.personal.task_router       import router as task_router
+# # from spark_core.personal.app_router        import router as app_router
+# # from spark_core.personal.mood_router       import router as mood_router
+# # from spark_core.personal.notes_router      import router as notes_router
+# # from spark_core.personal.search_router     import router as search_router
+# # from spark_core.personal.weather_router    import router as weather_router
+# # from spark_core.personal.focus_router      import router as focus_router
+# # from spark_core.personal.presence_router   import router as presence_router
+# # from spark_core.personal.knowledge_router  import router as knowledge_router
+# # from spark_core.personal.identity_router   import router as identity_router
+# # from spark_core.personal.voice_clone_router import router as voice_clone_router
 
 if sys.platform == 'win32':
     asyncio.set_event_loop_policy(asyncio.WindowsProactorEventLoopPolicy())
@@ -303,25 +303,25 @@ app.include_router(security_router)  # /api/security/* — firewall + network te
 app.include_router(music_router)     # /api/music/*    — local audio file browser
 app.include_router(combat_router)    # /api/combat/*   — Sovereign Cyber Intelligence Platform
 
-# SPARK Personal AI Backend Foundation
-app.include_router(personal_api_router) # /api/personal/*
-app.include_router(personal_ws_router)  # /ws/personal/*
-
-# Activate 14 Personal AI Features
-app.include_router(greeting_router,    prefix="/api/personal")
-app.include_router(quote_router,       prefix="/api/personal")
-app.include_router(briefing_router,    prefix="/api/personal")
-app.include_router(task_router,        prefix="/api/personal")
-app.include_router(app_router,         prefix="/api/personal")
-app.include_router(mood_router,        prefix="/api/personal")
-app.include_router(notes_router,       prefix="/api/personal")
-app.include_router(search_router,      prefix="/api/personal")
-app.include_router(weather_router,     prefix="/api/personal")
-app.include_router(focus_router,       prefix="/api/personal")
-app.include_router(presence_router,    prefix="/api/personal")
-app.include_router(knowledge_router,   prefix="/api/personal")
-app.include_router(identity_router,    prefix="/api/personal")
-app.include_router(voice_clone_router, prefix="/api/personal")
+# # SPARK Personal AI Backend Foundation
+# # app.include_router(personal_api_router) # /api/personal/*
+# # app.include_router(personal_ws_router)  # /ws/personal/*
+# 
+# # Activate 14 Personal AI Features
+# # app.include_router(greeting_router,    prefix="/api/personal")
+# # app.include_router(quote_router,       prefix="/api/personal")
+# # app.include_router(briefing_router,    prefix="/api/personal")
+# # app.include_router(task_router,        prefix="/api/personal")
+# # app.include_router(app_router,         prefix="/api/personal")
+# # app.include_router(mood_router,        prefix="/api/personal")
+# # app.include_router(notes_router,       prefix="/api/personal")
+# # app.include_router(search_router,      prefix="/api/personal")
+# # app.include_router(weather_router,     prefix="/api/personal")
+# # app.include_router(focus_router,       prefix="/api/personal")
+# # app.include_router(presence_router,    prefix="/api/personal")
+# # app.include_router(knowledge_router,   prefix="/api/personal")
+# # app.include_router(identity_router,    prefix="/api/personal")
+# # app.include_router(voice_clone_router, prefix="/api/personal")
 
 # -----------------
 # API ENDPOINTS
@@ -631,65 +631,65 @@ async def agents_status():
     return commander.get_status()
 
 
-@app.post("/api/command/route")
-@app.post("/api/command/route")
-async def route_command(req: RoutingRequest):
-    """
-    Intent Router endpoint: classify query and return routing decision.
-    
-    Request body:
-      {
-        "query": "play some jazz",
-        "context": {
-          "module": "globe",
-          "item_type": "earthquake",
-          "label": "M6.2 earthquake in Japan",
-          "data": {...}
-        }
-      }
-    
-    Response:
-      {
-        "target_module": "music",
-        "action": "play",
-        "parameters": {"query": "jazz"},
-        "confidence": 0.95,
-        "reasoning": "Pattern match (Layer 1)",
-        "enriched_query": "play some jazz",
-        "requires_llm": false
-      }
-    """
-    from command.intent_router import ContextItem
-    
-    # Build context object if provided
-    context = None
-    if req.context:
-        context = ContextItem(
-            module=req.context.module or '',
-            item_type=req.context.item_type or '',
-            data=req.context.data or {},
-            label=req.context.label or '',
-        )
-    
-    # Route the query
-    decision = await intent_router.route(req.query, context)
-    
-    return {
-        "success": True,
-        "target_module": decision.target_module.value,
-        "action": decision.action,
-        "parameters": decision.parameters,
-        "confidence": decision.confidence,
-        "reasoning": decision.reasoning,
-        "enriched_query": decision.enriched_query,
-        "requires_llm": decision.requires_llm,
-    }
-
-
-@app.get("/api/command/stats")
-async def command_stats():
-    """Router statistics: hit ratios by classification layer."""
-    return intent_router.get_stats()
+# @app.post("/api/command/route")
+# @app.post("/api/command/route")
+# async def route_command(req: RoutingRequest):
+#     """
+#     Intent Router endpoint: classify query and return routing decision.
+#     
+#     Request body:
+#       {
+#         "query": "play some jazz",
+#         "context": {
+#           "module": "globe",
+#           "item_type": "earthquake",
+#           "label": "M6.2 earthquake in Japan",
+#           "data": {...}
+#         }
+#       }
+#     
+#     Response:
+#       {
+#         "target_module": "music",
+#         "action": "play",
+#         "parameters": {"query": "jazz"},
+#         "confidence": 0.95,
+#         "reasoning": "Pattern match (Layer 1)",
+#         "enriched_query": "play some jazz",
+#         "requires_llm": false
+#       }
+#     """
+#     from command.intent_router import ContextItem
+#     
+#     # Build context object if provided
+#     context = None
+#     if req.context:
+#         context = ContextItem(
+#             module=req.context.module or '',
+#             item_type=req.context.item_type or '',
+#             data=req.context.data or {},
+#             label=req.context.label or '',
+#         )
+#     
+#     # Route the query
+#     decision = await intent_router.route(req.query, context)
+#     
+#     return {
+#         "success": True,
+#         "target_module": decision.target_module.value,
+#         "action": decision.action,
+#         "parameters": decision.parameters,
+#         "confidence": decision.confidence,
+#         "reasoning": decision.reasoning,
+#         "enriched_query": decision.enriched_query,
+#         "requires_llm": decision.requires_llm,
+#     }
+# 
+# 
+# @app.get("/api/command/stats")
+# async def command_stats():
+#     """Router statistics: hit ratios by classification layer."""
+#     return intent_router.get_stats()
 
 @app.post("/api/agents/dispatch")
 async def agents_dispatch(req: AgentDispatchRequest):
