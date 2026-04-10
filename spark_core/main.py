@@ -419,30 +419,8 @@ async def list_tools():
 # WEBSOCKET NAMESPACES
 # -----------------
 
-@app.websocket("/ws/ai")
-async def websocket_ai(websocket: WebSocket):
-    await ws_manager.connect(websocket, "ai")
-    session_id = str(id(websocket))
-    ws_manager.register_session(session_id, websocket)
-    try:
-        while True:
-            raw_data = await websocket.receive_text()
-            
-            import json
-            try:
-                msg = json.loads(raw_data)
-                if msg.get("type") == "CANCEL":
-                    event_bus.publish("cancel_task", {})
-                    continue
-            except json.JSONDecodeError:
-                pass
-            
-            # Transport only: No intelligence inside WebSocket handler
-            # Only publish "user_input"
-            event_bus.publish("user_input", {"data": raw_data, "websocket": websocket, "session_id": session_id})
-            
-    except WebSocketDisconnect:
-        ws_manager.disconnect(websocket, "ai")
+from ws.ws_ai import ws_ai_router
+app.include_router(ws_ai_router)
 
 @app.websocket("/ws/system")
 async def websocket_system(websocket: WebSocket):

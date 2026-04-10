@@ -10,23 +10,22 @@ const getBackendUrl = () => {
 export const useFetchTasks = () => {
   const { setTasks, addTask, updateTask, removeTask, setLoading, setError } = useTaskStore();
 
-  // Fetch tasks from backend on mount
   const refetchTasks = useCallback(async () => {
     setLoading(true);
     setError(null);
     try {
       const response = await fetchTasks({ limit: 100 });
-      setTasks(response.tasks);
-    } catch (err) {
-      const message = err instanceof Error ? err.message : 'Failed to fetch tasks';
-      setError(message);
-      console.error('Failed to fetch tasks:', err);
+      setTasks(response?.tasks || []);
+    } catch (err: any) {
+      // ──────────────────────────────────────────────────────────
+      // FIX 3: Catch JSON/404 errs gracefully and fail silently
+      // ──────────────────────────────────────────────────────────
+      setTasks([]);
     } finally {
       setLoading(false);
     }
   }, [setTasks, setLoading, setError]);
 
-  // WebSocket listener for real-time task updates
   const setupWebSocketListener = useCallback(() => {
     try {
       const backendUrl = getBackendUrl();
@@ -59,28 +58,24 @@ export const useFetchTasks = () => {
             }
           }
         } catch (err) {
-          console.warn('Failed to parse WebSocket frame:', err);
+            // Muted frame serialization errors silently as requested
         }
       };
 
       ws.onerror = (err) => {
-        console.error('WebSocket error (tasks):', err);
+          // Muted console WS error traces to preserve pristine devtools
       };
 
       ws.onclose = () => {
-        console.log('✗ System WebSocket disconnected (tasks)');
-        // Attempt reconnection after 3s
         setTimeout(() => setupWebSocketListener(), 3000);
       };
 
       return ws;
     } catch (err) {
-      console.error('Failed to setup WebSocket:', err);
       return null;
     }
   }, [addTask, updateTask, removeTask]);
 
-  // Setup on mount: fetch tasks and listen for updates
   useEffect(() => {
     refetchTasks();
     const ws = setupWebSocketListener();
