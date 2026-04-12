@@ -1,96 +1,202 @@
 /**
  * AICore — Bottom-center intelligence copilot.
  * Features a glowing animated orb that expands to a terminal-style chat.
- * Implements AGENTIC behavior: AI responses parse location keywords
- * and dispatch Zustand flyTo actions to manipulate the map.
+ * Uses /ws/ai streaming so tokens render live as they arrive.
  */
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Bot, Send, X, Sparkles } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
-import { apiFetch } from '@/lib/api';
+
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[AICore WS]', ...a);
+const wsErr = (...a: unknown[]) => VERBOSE_WS && console.error('[AICore WS]', ...a);
+
+const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
+const WS_URL = (() => {
+  try {
+    const base = new URL(API_BASE);
+    const protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
+    return `${protocol}//${base.hostname}${base.port ? `:${base.port}` : ''}/ws/ai`;
+  } catch {
+    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    const port = import.meta.env.VITE_BACKEND_PORT ?? '8000';
+    return `${protocol}://${window.location.hostname}:${port}/ws/ai`;
+  }
+})();
+
+const RECONNECT_BASE_MS = 1200;
+const RECONNECT_MAX_MS = 15000;
+
+type AiFrame = {
+  type?: string;
+  token?: string;
+  content?: string;
+  message?: string;
+};
 
 export const AICore = () => {
   const aiCoreExpanded = useMonitorStore((s) => s.aiCoreExpanded);
   const toggleAICore = useMonitorStore((s) => s.toggleAICore);
   const aiMessages = useMonitorStore((s) => s.aiMessages);
   const addAIMessage = useMonitorStore((s) => s.addAIMessage);
-  const flyTo = useMonitorStore((s) => s.flyTo);
 
   const [input, setInput] = useState('');
   const [isTyping, setIsTyping] = useState(false);
   const [displayedResponse, setDisplayedResponse] = useState('');
+  const [isSocketOnline, setIsSocketOnline] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
-  const intervalRef = useRef<number | null>(null);
 
-  /** Typewriter animation for a completed text string */
-  const typewriterEffect = useCallback((text: string, onDone: () => void) => {
-    let i = 0;
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef = useRef(RECONNECT_BASE_MS);
+  const outboundQueueRef = useRef<string[]>([]);
+  const mountedRef = useRef(true);
+  const awaitingResponseRef = useRef(false);
+  const displayedResponseRef = useRef('');
+
+  useEffect(() => {
+    displayedResponseRef.current = displayedResponse;
+  }, [displayedResponse]);
+
+  const finalizeStream = useCallback((opts?: { errorText?: string }) => {
+    awaitingResponseRef.current = false;
+    setIsTyping(false);
+
+    const final = displayedResponseRef.current.trim();
+    displayedResponseRef.current = '';
     setDisplayedResponse('');
-    intervalRef.current = window.setInterval(() => {
-      if (i < text.length) {
-        setDisplayedResponse(text.slice(0, i + 1));
-        i++;
-      } else {
-        if (intervalRef.current) clearInterval(intervalRef.current);
-        onDone();
-      }
-    }, 18);
+
+    if (final) addAIMessage('ai', final);
+    if (opts?.errorText) addAIMessage('ai', opts.errorText);
+  }, [addAIMessage]);
+
+  const flushQueue = useCallback(() => {
+    const socket = wsRef.current;
+    if (!socket || socket.readyState !== WebSocket.OPEN) return;
+
+    while (outboundQueueRef.current.length > 0) {
+      const payload = outboundQueueRef.current.shift();
+      if (payload) socket.send(payload);
+    }
   }, []);
 
-  /** Submit user query to backend /api/commander/run */
-  const handleSubmit = useCallback(async () => {
-    if (!input.trim() || isTyping) return;
+  const connectWS = useCallback(() => {
+    if (!mountedRef.current) return;
+    if (wsRef.current && (wsRef.current.readyState === WebSocket.CONNECTING || wsRef.current.readyState === WebSocket.OPEN)) {
+      return;
+    }
 
+    const ws = new WebSocket(WS_URL);
+    wsRef.current = ws;
+
+    ws.onopen = () => {
+      if (!mountedRef.current) {
+        ws.close(1000, 'component unmounted');
+        return;
+      }
+      setIsSocketOnline(true);
+      retryDelayRef.current = RECONNECT_BASE_MS;
+      flushQueue();
+    };
+
+    ws.onmessage = (event) => {
+      try {
+        if (typeof event.data !== 'string') return;
+        const frame = JSON.parse(event.data) as AiFrame;
+        const frameType = (frame.type || '').toLowerCase();
+
+        if (frameType === 'response_token' || frameType === 'token') {
+          const token = (frame.token || frame.content || '');
+          if (!token) return;
+          setIsTyping(true);
+          setDisplayedResponse((prev) => {
+            const next = prev + token;
+            displayedResponseRef.current = next;
+            return next;
+          });
+          return;
+        }
+
+        if (frameType === 'response_done' || frameType === 'done') {
+          finalizeStream();
+          return;
+        }
+
+        if (frameType === 'error') {
+          const message = (frame.message || frame.content || '').trim() || 'Unknown backend error';
+          finalizeStream({ errorText: `[ERROR] ${message}` });
+        }
+      } catch (err) {
+        wsErr('Failed to parse AI frame:', err);
+      }
+    };
+
+    ws.onclose = (event) => {
+      setIsSocketOnline(false);
+      wsRef.current = null;
+
+      if (awaitingResponseRef.current) {
+        finalizeStream({ errorText: '[ERROR] Stream interrupted. Reconnecting...' });
+      }
+
+      if (!mountedRef.current) return;
+
+      const baseDelay = Math.min(retryDelayRef.current, RECONNECT_MAX_MS);
+      const jitter = Math.floor(Math.random() * 350);
+      const delay = baseDelay + jitter;
+      retryDelayRef.current = Math.min(Math.round(baseDelay * 1.7), RECONNECT_MAX_MS);
+
+      if (reconnectTimerRef.current) clearTimeout(reconnectTimerRef.current);
+      wsWarn(`AICore socket closed (${event.code}). Reconnecting in ${Math.round(delay / 1000)}s...`);
+      reconnectTimerRef.current = setTimeout(() => {
+        reconnectTimerRef.current = null;
+        connectWS();
+      }, delay);
+    };
+
+    ws.onerror = (err) => {
+      wsErr('AICore socket error:', err);
+      ws.close();
+    };
+  }, [finalizeStream, flushQueue]);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    connectWS();
+
+    return () => {
+      mountedRef.current = false;
+      if (reconnectTimerRef.current) {
+        clearTimeout(reconnectTimerRef.current);
+        reconnectTimerRef.current = null;
+      }
+      wsRef.current?.close(1000, 'component unmount');
+    };
+  }, [connectWS]);
+
+  const handleSubmit = useCallback(() => {
     const query = input.trim();
+    if (!query || isTyping) return;
+
     setInput('');
     addAIMessage('user', query);
     setIsTyping(true);
     setDisplayedResponse('');
+    displayedResponseRef.current = '';
+    awaitingResponseRef.current = true;
 
-    try {
-      const res = await apiFetch('/api/commander/run', {
-        method: 'POST',
-        body: JSON.stringify({ text: query }),
-      });
-
-      if (!res.ok) throw new Error(`${res.status}`);
-
-      const data = await res.json();
-
-      // Extract the reply text — adapt to your backend response shape
-      const reply: string =
-        data.reply ?? data.response ?? data.result ?? data.message ??
-        (typeof data === 'string' ? data : JSON.stringify(data));
-
-      // Extract optional coordinates for flyTo
-      const lat = data.lat ?? data.latitude;
-      const lng = data.lng ?? data.longitude;
-
-      typewriterEffect(reply, () => {
-        addAIMessage('ai', reply);
-        setIsTyping(false);
-        setDisplayedResponse('');
-        if (lat != null && lng != null) {
-          setTimeout(() => flyTo(lng, lat, 5), 500);
-        }
-      });
-    } catch {
-      const fallback = '⚠️ Backend unreachable — check that SPARK core is running on localhost:8000.';
-      typewriterEffect(fallback, () => {
-        addAIMessage('ai', fallback);
-        setIsTyping(false);
-        setDisplayedResponse('');
-      });
+    const payload = JSON.stringify({ message: query });
+    const socket = wsRef.current;
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+      return;
     }
-  }, [input, isTyping, addAIMessage, flyTo, typewriterEffect]);
 
-  // Cleanup interval on unmount
-  useEffect(() => {
-    return () => {
-      if (intervalRef.current) clearInterval(intervalRef.current);
-    };
-  }, []);
+    outboundQueueRef.current.push(payload);
+    addAIMessage('ai', '[SYSTEM] AI core reconnecting. Command queued...');
+    connectWS();
+  }, [addAIMessage, connectWS, input, isTyping]);
 
   // Auto-scroll to bottom
   useEffect(() => {
@@ -98,7 +204,7 @@ export const AICore = () => {
       top: scrollRef.current.scrollHeight,
       behavior: 'smooth',
     });
-  }, [aiMessages, displayedResponse]);
+  }, [aiMessages, displayedResponse, isTyping]);
 
   return (
     <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex flex-col items-center">
@@ -130,7 +236,7 @@ export const AICore = () => {
                   AI CORE
                 </span>
                 <span className="text-[9px] font-mono text-foreground/25 tracking-widest">v2.4.1</span>
-                <span className="w-1 h-1 rounded-full bg-green-400 animate-pulse ml-1" />
+                <span className={`w-1 h-1 rounded-full ml-1 ${isSocketOnline ? 'bg-green-400 animate-pulse' : 'bg-amber-400'}`} />
               </div>
               <button
                 onClick={toggleAICore}
@@ -170,7 +276,7 @@ export const AICore = () => {
                 </div>
               ))}
 
-              {isTyping && displayedResponse && (
+              {isTyping && (
                 <div className="text-[11px] text-foreground/75 leading-relaxed font-mono">
                   <span className="text-foreground/30 mr-1.5">AI:</span>
                   {displayedResponse}

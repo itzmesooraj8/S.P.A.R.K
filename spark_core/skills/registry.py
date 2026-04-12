@@ -2,7 +2,13 @@ import importlib.util
 import os
 import sys
 from typing import Dict, Type
-from .base import Skill
+
+try:
+    from spark_core.skills.base import Skill
+except ImportError:
+    from skills.base import Skill
+
+_SKILL_CORE_FILES = {"__init__.py", "base.py", "registry.py", "watchdog.py"}
 
 class SkillRegistry:
     def __init__(self):
@@ -16,7 +22,12 @@ class SkillRegistry:
     def load_from_file(self, file_path: str):
         if not file_path.endswith(".py"):
             return
-        module_name = os.path.basename(file_path)[:-3]
+
+        base_name = os.path.basename(file_path)
+        if base_name in _SKILL_CORE_FILES:
+            return
+
+        module_name = f"spark_skill_{os.path.basename(file_path)[:-3]}_{abs(hash(file_path))}"
         spec = importlib.util.spec_from_file_location(module_name, file_path)
         if spec and spec.loader:
             module = importlib.util.module_from_spec(spec)

@@ -33,6 +33,7 @@ export default function ControlPanel({ commandHistory, aiResponse, transcript, o
   const [deviceStates, setDeviceStates] = useState(DEVICES.map(d => d.active));
   const logRef = useRef<HTMLDivElement>(null);
   const [taskLog, setTaskLog] = useState(TASK_LOG);
+  const isInputLocked = status === 'thinking' || status === 'responding';
 
   useEffect(() => {
     if (logRef.current) {
@@ -41,6 +42,7 @@ export default function ControlPanel({ commandHistory, aiResponse, transcript, o
   }, [commandHistory]);
 
   const handleSend = () => {
+    if (isInputLocked) return;
     if (!inputText.trim()) return;
     onProcessInput(inputText);
     setInputText('');
@@ -117,11 +119,13 @@ export default function ControlPanel({ commandHistory, aiResponse, transcript, o
           onChange={e => setInputText(e.target.value)}
           onKeyDown={e => e.key === 'Enter' && handleSend()}
           placeholder="ENTER COMMAND..."
+          disabled={isInputLocked}
           className="flex-1 bg-black/40 border border-hud-cyan/25 rounded px-2 py-1.5 font-mono-tech text-[10px] text-hud-cyan placeholder-hud-cyan/30 outline-none focus:border-hud-cyan/60 transition-colors"
           style={{ caretColor: 'hsl(186 100% 50%)' }}
         />
         <button
           onClick={handleSend}
+          disabled={isInputLocked || !inputText.trim()}
           className="hud-btn px-2"
         >
           <Send size={12} />
@@ -135,7 +139,8 @@ export default function ControlPanel({ commandHistory, aiResponse, transcript, o
           {SUGGESTIONS.map(s => (
             <button
               key={s}
-              onClick={() => onProcessInput(s)}
+              onClick={() => !isInputLocked && onProcessInput(s)}
+              disabled={isInputLocked}
               className="font-orbitron text-[8px] px-2 py-0.5 rounded border border-hud-cyan/25 text-hud-cyan/70 hover:border-hud-cyan/60 hover:text-hud-cyan hover:bg-hud-cyan/10 transition-all duration-150"
             >
               {s}

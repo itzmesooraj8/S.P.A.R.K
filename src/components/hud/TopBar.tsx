@@ -8,6 +8,8 @@ import { useVoiceMic } from '@/hooks/useVoiceMic';
 import { useAlertStore } from '@/store/useAlertStore';
 import type { WsStatus } from '@/store/useConnectionStore';
 
+type SystemMode = 'PASSIVE' | 'ACTIVE' | 'COMBAT';
+
 const MONTHS = ['JAN', 'FEB', 'MAR', 'APR', 'MAY', 'JUN', 'JUL', 'AUG', 'SEP', 'OCT', 'NOV', 'DEC'];
 
 function FlipDigits({ value }: { value: string }) {
@@ -36,6 +38,7 @@ export default function TopBar({
   onMicTranscript?: (transcript: string) => void;
 } = {}) {
   const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
+  const systemMode: SystemMode = aiMode;
   const { user, isAuthenticated, logout } = useAuth();
   const coreOnline  = useConnectionStore((s) => s.coreOnline);
   const aiOnline    = useConnectionStore((s) => s.aiOnline);
@@ -140,6 +143,14 @@ export default function TopBar({
       startRecording();
     }
   }, [isRecording, stopRecording, startRecording, onMicTranscript]);
+
+  const handleSystemModeChange = useCallback((mode: SystemMode) => {
+    setAiMode(mode);
+    window.dispatchEvent(new CustomEvent('spark:system-mode-change', {
+      detail: { mode },
+    }));
+  }, [setAiMode]);
+
   const [now, setNow] = useState(new Date());
 
   const [projects, setProjects] = useState<string[]>([]);
@@ -324,8 +335,8 @@ export default function TopBar({
           {(['PASSIVE', 'ACTIVE', 'COMBAT'] as const).map(mode => (
             <button
               key={mode}
-              onClick={() => setAiMode(mode)}
-              className={`font-orbitron text-[9px] px-2 py-0.5 rounded border tracking-wider transition-all duration-200 ${aiMode === mode
+              onClick={() => handleSystemModeChange(mode)}
+              className={`font-orbitron text-[9px] px-2 py-0.5 rounded border tracking-wider transition-all duration-200 ${systemMode === mode
                 ? `${modeColors[mode]} bg-current/10`
                 : 'text-hud-cyan/40 border-hud-cyan/20 hover:border-hud-cyan/50'
                 }`}

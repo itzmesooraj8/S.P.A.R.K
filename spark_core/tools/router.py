@@ -1,6 +1,7 @@
 import json
 import time
 import asyncio
+import re
 from typing import Optional, Dict, Any, AsyncGenerator
 
 from tools.registry import ToolRegistry
@@ -62,12 +63,31 @@ class ToolRouter:
             self.registry.register(tool)
         for tool in desktop_tools:
             self.registry.register(tool)
+
+    def is_tool_call_candidate(self, raw_message: str) -> bool:
+        """Fast heuristic check to decide whether output may be a JSON tool call."""
+        text = (raw_message or "").strip()
+        if not text:
+            return False
+        if text.startswith("{") or text.startswith("```"):
+            return True
+        if '"tool"' in text and "{" in text:
+            return True
+        return False
         
     def detect_tool_call(self, raw_message: str) -> Optional[Dict[str, Any]]:
         """
         Attempts to parse a strict JSON block from the LLM or user requesting a tool.
         Expects format: {"tool": "tool_name", "arguments": { ... }}
         """
+        if not raw_message:
+            return None
+
+        # Handle markdown code fences like ```json {...}```.
+        fenced_match = re.search(r"```(?:json)?\\s*(\{.*?\})\\s*```", raw_message, flags=re.IGNORECASE | re.DOTALL)
+        if fenced_match:
+            raw_message = fenced_match.group(1)
+
         start_idx = raw_message.find("{")
         if start_idx != -1:
             try:
@@ -98,7 +118,10 @@ class ToolRouter:
                 raise RequiresConfirmationError(tool_call, auth_res.reason)
             return f"⚠️ [BLOCKED] Access denied: {auth_res.reason}"
 
-        return await self._safe_execute_tool(tool_def, arguments)
+        res_dict = await self._safe_execute_tool(tool_def, arguments)
+        if res_dict.get("success"):
+            return str(res_dict.get("output", ""))
+        return f"Error: {res_dict.get('error', 'Unknown tool failure')}"
 
     async def _safe_execute_tool(self, tool_def, arguments) -> dict:
         """Phase 4: Tool Isolation and Timeout Wrapper with Retries"""

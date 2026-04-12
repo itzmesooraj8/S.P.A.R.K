@@ -113,6 +113,15 @@ class AIOrchestrator:
             
         return "Executed."
 
+    def _emit_text_chunks(self, text: str, session_id: str = None):
+        """Emit natural language in word-sized chunks to avoid WS queue floods."""
+        if not text:
+            return
+        words = text.split(" ")
+        for i, word in enumerate(words):
+            chunk = word if i == len(words) - 1 else word + " "
+            event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
+
     async def agent_loop(self, message: str, session_id: str = None):
         """Agent loop as a background task. Publishes events."""
         event_bus.publish("brain_decision", {"action": "start_processing", "message": message, "session_id": session_id})
@@ -158,83 +167,92 @@ class AIOrchestrator:
         
         full_response = ""
         buffer_mode = False
-        first_token_seen = False
+        stream_started = False
+        pre_stream_buffer = ""
+        # Hold initial output briefly so JSON tool calls can be detected before anything reaches UI.
+        tool_hold_chars = 220
+        max_tool_probe_chars = 1200
         
         try:
             # 3. Stream & accumulate
             async for token in self.llm.generate(system_prompt, message):
                 full_response += token
-                
-                if not first_token_seen:
-                    if full_response.strip():
-                        first_token_seen = True
-                        if full_response.lstrip().startswith("{"):
+
+                if buffer_mode:
+                    continue
+
+                if not stream_started:
+                    pre_stream_buffer += token
+                    stripped = pre_stream_buffer.lstrip()
+
+                    if self.tool_router.is_tool_call_candidate(stripped):
+                        parsed_tool = self.tool_router.detect_tool_call(stripped)
+                        if parsed_tool:
                             buffer_mode = True
-                            event_bus.publish("brain_decision", {"action": "parse_json_buffer"})
-                        else:
-                            # Flush whatever natural string we accumulated as word-sized chunks
-                            # (char-by-char floods the WS queue when cloud LLMs return a full blob)
-                            event_bus.publish("brain_decision", {"action": "stream_natural_text", "session_id": session_id})
-                            words = full_response.split(" ")
-                            for i, word in enumerate(words):
-                                chunk = word if i == len(words) - 1 else word + " "
-                                event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
-                elif not buffer_mode:
-                    # Normal Stream
-                    event_bus.publish("response_token", {"token": token, "session_id": session_id})
+                            event_bus.publish("brain_decision", {"action": "parse_json_buffer", "session_id": session_id})
+                            continue
+                        if len(pre_stream_buffer) < max_tool_probe_chars:
+                            continue
+
+                    if len(pre_stream_buffer) < tool_hold_chars:
+                        continue
+
+                    stream_started = True
+                    event_bus.publish("brain_decision", {"action": "stream_natural_text", "session_id": session_id})
+                    self._emit_text_chunks(pre_stream_buffer, session_id)
+                    pre_stream_buffer = ""
+                    continue
+
+                # Normal Stream after initial safety hold
+                event_bus.publish("response_token", {"token": token, "session_id": session_id})
                     
             # 4. Stream completed. Evaluate Buffers.
-            if buffer_mode:
-                tool_call = self.tool_router.detect_tool_call(full_response)
+            tool_call = self.tool_router.detect_tool_call(full_response)
+
+            if tool_call:
+                print(f"🔧 [SPARK] Autonomous Tool Call Detected: {tool_call['tool']}")
+                event_bus.publish("brain_decision", {"action": "autonomous_tool_decided", "tool": tool_call["tool"], "session_id": session_id})
+                event_bus.publish("tool_execute", {"tool": tool_call["tool"], "session_id": session_id})
+                # Reflection Layer Execution
+                try:
+                    tool_result = await self.tool_router.execute_raw(tool_call)
+                    event_bus.publish("tool_result", {"tool": tool_call["tool"], "result": tool_result, "session_id": session_id})
+                except RequiresConfirmationError as e:
+                    import uuid
+                    tool_id = str(uuid.uuid4())
+                    self.pending_tool_calls[tool_id] = {**e.tool_call, "_session_id": session_id}
+                    unified_state.update("status", "AWAITING_CONFIRMATION")
+                    print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
+                    event_bus.publish("confirm_tool", {
+                        "id": tool_id,
+                        "tool": tool_call["tool"],
+                        "reason": e.reason
+                    })
+                    return
                 
-                if tool_call:
-                    print(f"🔧 [SPARK] Autonomous Tool Call Detected: {tool_call['tool']}")
-                    event_bus.publish("brain_decision", {"action": "autonomous_tool_decided", "tool": tool_call["tool"], "session_id": session_id})
-                    event_bus.publish("tool_execute", {"tool": tool_call["tool"], "session_id": session_id})
-                    # Reflection Layer Execution
-                    try:
-                        tool_result = await self.tool_router.execute_raw(tool_call)
-                        event_bus.publish("tool_result", {"tool": tool_call["tool"], "result": tool_result, "session_id": session_id})
-                    except RequiresConfirmationError as e:
-                        import uuid
-                        tool_id = str(uuid.uuid4())
-                        self.pending_tool_calls[tool_id] = {**e.tool_call, "_session_id": session_id}
-                        unified_state.update("status", "AWAITING_CONFIRMATION")
-                        print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
-                        event_bus.publish("confirm_tool", {
-                            "id": tool_id,
-                            "tool": tool_call["tool"],
-                            "reason": e.reason
-                        })
-                        return
-                    
-                    reflection_prompt = (
-                        f"System Tool Result ({tool_call['tool']}):\n{tool_result}\n\n"
-                        f"Respond to the user utilizing this precise system data. Do NOT mention the system tool directly, just use the information naturally."
-                    )
-                    
-                    # Reload Prompt WITHOUT tool instructions to prevent infinite JSON recursion
-                    system_prompt_ref = self.personality.get_prompt(memory_context, include_tools=False)
-                    event_bus.publish("brain_decision", {"action": "reflect_on_tool_result", "session_id": session_id})
-                    
-                    reflection_response = ""
-                    async for ref_token in self.llm.generate(system_prompt_ref, reflection_prompt):
-                        reflection_response += ref_token
-                        event_bus.publish("response_token", {"token": ref_token, "session_id": session_id})
-                        
-                    if reflection_response:
-                        self.memory.add_ai_message(reflection_response.strip())
-                else:
-                    # It started with '{' but wasn't a valid tool call JSON. Flush buffer intact.
-                    event_bus.publish("brain_decision", {"action": "invalid_tool_json_fallback", "session_id": session_id})
-                    words = full_response.split(" ")
-                    for i, word in enumerate(words):
-                        chunk = word if i == len(words) - 1 else word + " "
-                        event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
-                    if full_response:
-                        self.memory.add_ai_message(full_response.strip())
+                reflection_prompt = (
+                    f"System Tool Result ({tool_call['tool']}):\n{tool_result}\n\n"
+                    f"Respond to the user utilizing this precise system data. Do NOT mention the system tool directly, just use the information naturally."
+                )
+
+                # Reload Prompt WITHOUT tool instructions to prevent infinite JSON recursion
+                system_prompt_ref = self.personality.get_prompt(memory_context, include_tools=False)
+                event_bus.publish("brain_decision", {"action": "reflect_on_tool_result", "session_id": session_id})
+
+                reflection_response = ""
+                async for ref_token in self.llm.generate(system_prompt_ref, reflection_prompt):
+                    reflection_response += ref_token
+                    event_bus.publish("response_token", {"token": ref_token, "session_id": session_id})
+
+                if reflection_response:
+                    self.memory.add_ai_message(reflection_response.strip())
             else:
                 # Normal finalization
+                if pre_stream_buffer:
+                    event_bus.publish("brain_decision", {"action": "stream_natural_text", "session_id": session_id})
+                    self._emit_text_chunks(pre_stream_buffer, session_id)
+                    pre_stream_buffer = ""
+
                 if full_response:
                      self.memory.add_ai_message(full_response.strip())
                 

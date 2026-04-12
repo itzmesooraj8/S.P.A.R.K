@@ -22,6 +22,7 @@ from intelligence.pattern_memory import pattern_store
 from intelligence.optimizer import optimizer
 from intelligence.trust_layer import trust_store
 from globe_api import router as globe_api_router, globe_broadcaster
+from system.state import unified_state
 
 # ── SPARK OS — New Systems ─────────────────────────────────────────────────────
 from auth.jwt_handler import create_token_pair, refresh_access_token, require_auth, ACCESS_TOKEN_TTL
@@ -133,7 +134,10 @@ async def lifespan(app: FastAPI):
     print("🎤 [SPARK] Wake word listener started in background thread.")
 
     # ── Start Skill Engine Watchdog ─────────────────────────────────────────────
-    from skills.watchdog import SkillWatchdog
+    try:
+        from spark_core.skills.watchdog import SkillWatchdog
+    except ImportError:
+        from skills.watchdog import SkillWatchdog
     skills_dir = os.path.join(os.path.dirname(__file__), "skills")
     skill_watchdog = SkillWatchdog(skills_dir)
     skill_watchdog.start()
@@ -237,29 +241,49 @@ async def _threat_feed_loop():
     """
     await asyncio.sleep(60)  # Wait for globe broadcaster to warm up
     port = os.getenv("SPARK_PORT", "8000")
+    base_url = f"http://127.0.0.1:{port}"
+
+    async def _fetch_and_ingest(client, endpoint: str, payload: dict, key: str, label: str):
+        try:
+            response = await client.post(f"{base_url}{endpoint}", json=payload)
+            if response.status_code != 200:
+                print(f"⚠️  [ThreatFeed] {label} endpoint returned HTTP {response.status_code}")
+                return
+            events = response.json().get(key, [])
+            threat_predictor.ingest(events, label)
+        except __import__("httpx").ReadTimeout:
+            print(f"⚠️  [ThreatFeed] Timeout fetching {label} events — skipping this cycle")
+        except Exception as exc:
+            print(f"⚠️  [ThreatFeed] {label} fetch failed: {type(exc).__name__}: {exc}")
+
     while True:
         try:
-            async with __import__("httpx").AsyncClient(timeout=15.0) as c:
-                # Feed earthquake data
-                eq_r = await c.post(f"http://localhost:{port}/api/seismology/v1/listEarthquakes",
-                                    json={"layers": ["earthquake"]}, timeout=15.0)
-                if eq_r.status_code == 200:
-                    events = eq_r.json().get("events", [])
-                    threat_predictor.ingest(events, "earthquake")
-
-                # Feed conflict data
-                cf_r = await c.post(f"http://localhost:{port}/api/conflict/v1/listConflictEvents",
-                                    json={"layers": ["conflict"]}, timeout=15.0)
-                if cf_r.status_code == 200:
-                    events = cf_r.json().get("events", [])
-                    threat_predictor.ingest(events, "conflict")
-
-                # Feed wildfire data
-                wf_r = await c.post(f"http://localhost:{port}/api/wildfire/v1/listFireDetections",
-                                    json={"layers": ["fires"]}, timeout=15.0)
-                if wf_r.status_code == 200:
-                    events = wf_r.json().get("detections", [])
-                    threat_predictor.ingest(events, "fire")
+            httpx = __import__("httpx")
+            timeout = httpx.Timeout(connect=5.0, read=30.0, write=15.0, pool=10.0)
+            async with httpx.AsyncClient(timeout=timeout) as c:
+                await asyncio.gather(
+                    _fetch_and_ingest(
+                        c,
+                        "/api/seismology/v1/listEarthquakes",
+                        {"layers": ["earthquake"]},
+                        "events",
+                        "earthquake",
+                    ),
+                    _fetch_and_ingest(
+                        c,
+                        "/api/conflict/v1/listConflictEvents",
+                        {"layers": ["conflict"]},
+                        "events",
+                        "conflict",
+                    ),
+                    _fetch_and_ingest(
+                        c,
+                        "/api/wildfire/v1/listFireDetections",
+                        {"layers": ["fires"]},
+                        "detections",
+                        "fire",
+                    ),
+                )
 
             # Inject threat summary into cognitive loop for awareness
             summary = threat_predictor.get_global_threat_summary()
@@ -433,6 +457,18 @@ async def websocket_system(websocket: WebSocket):
                 frame = json.loads(raw)
                 if frame.get("type") == "PING":
                     await websocket.send_text(json.dumps({"v": 1, "type": "PONG", "ts": time.time() * 1000}))
+                elif frame.get("type") == "system_mode_change":
+                    mode = str(frame.get("mode", "PASSIVE")).upper()
+                    if mode in {"PASSIVE", "ACTIVE", "COMBAT"}:
+                        personality_map = {
+                            "PASSIVE": "ARCHITECT",
+                            "ACTIVE": "TACTICAL",
+                            "COMBAT": "OPERATIVE",
+                        }
+                        orchestrator.set_personality(personality_map[mode])
+                        unified_state.update("system_mode", mode)
+                        event_bus.publish("system_mode_change", {"mode": mode, "ts": time.time() * 1000})
+                        await websocket.send_text(json.dumps({"type": "SYSTEM_MODE_ACK", "mode": mode, "ts": time.time() * 1000}))
             except (json.JSONDecodeError, Exception):
                 pass
     except WebSocketDisconnect:

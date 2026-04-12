@@ -3,7 +3,6 @@ import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import ParticleBackground from './ParticleBackground';
 import TopBar from './TopBar';
-import BottomDock from './BottomDock';
 import CoreModule from './CoreModule';
 import SystemPanel from './SystemPanel';
 import ControlPanel from './ControlPanel';
@@ -180,19 +179,6 @@ export default function HudLayout() {
     return () => window.removeEventListener('module-activate', handler);
   }, [navigate]);
 
-  const openModule = (m: string) => {
-    if (m === 'globe') {
-      navigate('/globe-monitor');
-      return;
-    }
-    if (m === 'os') {
-      navigate('/cognitive');
-      return;
-    }
-    setActiveModule(m as ModuleKey);
-    setIsMaximized(false);
-  };
-
   const closeModule = () => {
     setActiveModule(null);
     setIsMaximized(false);   // always reset when closing
@@ -339,11 +325,6 @@ export default function HudLayout() {
             status={voice.status}
           />
         </div>
-      </div>
-
-      {/* Bottom dock */}
-      <div className="z-20 shrink-0">
-        <BottomDock onOpenModule={openModule} activeModule={activeModule} uptime={metrics.uptime} processes={metrics.processes} ping={metrics.ping} />
       </div>
 
       {/* AI personality panel */}

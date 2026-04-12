@@ -23,6 +23,7 @@ const WS_URL = (() => {
 const RECONNECT_BASE_MS  = 2_000;
 const RECONNECT_MAX_MS   = 30_000;
 const PING_INTERVAL_MS   = 20_000;
+type SystemMode = 'PASSIVE' | 'ACTIVE' | 'COMBAT';
 
 export interface MetricPoint { value: number; time: number; }
 
@@ -48,6 +49,8 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
   const retryDelay = useRef(RECONNECT_BASE_MS);
   const pingTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
   const mountedRef = useRef(true);
+  const lastNetSampleRef = useRef<{ bytes: number; ts: number } | null>(null);
+  const pendingModeRef = useRef<SystemMode | null>(null);
 
   const [isOnline, setIsOnline] = useState(false);
   const retryNonce = useConnectionStore((s) => s.retryNonce);
@@ -71,6 +74,21 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
     if (pingTimer.current) { clearInterval(pingTimer.current); pingTimer.current = null; }
   }, []);
 
+  const sendModeFrame = useCallback((mode: SystemMode) => {
+    const payload = JSON.stringify({ type: 'system_mode_change', mode });
+    const socket = ws.current;
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+      pendingModeRef.current = null;
+      wsLog('mode sent:', mode);
+      return;
+    }
+
+    pendingModeRef.current = mode;
+    wsWarn('mode queued until /ws/system reconnect:', mode);
+  }, []);
+
   const connect = useCallback(() => {
     if (!mountedRef.current) return;
     if (ws.current && ws.current.readyState <= WebSocket.OPEN) return;
@@ -84,6 +102,10 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
       useConnectionStore.getState().setCoreStatus('connected');
       retryDelay.current = RECONNECT_BASE_MS;
       wsLog('connected');
+
+      if (pendingModeRef.current) {
+        sendModeFrame(pendingModeRef.current);
+      }
 
       // Keep-alive heartbeat
       stopPing();
@@ -160,10 +182,23 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
           const ram     = (p.memory_percent ?? (p as Record<string, unknown>).ram ?? 0) as number;
           const gpu     = p.gpu_stats?.load ?? ((p as Record<string, unknown>).gpu as number ?? 0);
           const netObj  = p.net_io;
-          const network = netObj
-            ? (netObj.bytes_recv + netObj.bytes_sent) / 1024
-            : ((p as Record<string, unknown>).network as number ?? 0);
           const now = Date.now();
+
+          let network = 0;
+          if (netObj) {
+            const totalBytes = Number(netObj.bytes_recv ?? 0) + Number(netObj.bytes_sent ?? 0);
+            const prevSample = lastNetSampleRef.current;
+
+            if (prevSample && now > prevSample.ts) {
+              const deltaBytes = Math.max(0, totalBytes - prevSample.bytes);
+              const deltaSeconds = (now - prevSample.ts) / 1000;
+              network = deltaSeconds > 0 ? (deltaBytes / (1024 * 1024)) / deltaSeconds : 0;
+            }
+
+            lastNetSampleRef.current = { bytes: totalBytes, ts: now };
+          } else {
+            network = Number((p as Record<string, unknown>).network ?? 0);
+          }
 
           setMetrics(prev => ({
             ...prev,
@@ -202,7 +237,7 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
       wsErr('socket error');
       socket.close();
     };
-  }, [stopPing]);  // stable — no state deps
+  }, [sendModeFrame, stopPing]);  // stable — no state deps
 
   useEffect(() => {
     mountedRef.current = true;
@@ -219,6 +254,21 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
     if (retryNonce === 0) return;  // skip initial mount
     ws.current?.close(1000, 'manual retry');
   }, [retryNonce]);
+
+  // TopBar emits this event; keep transport in one place using existing /ws/system socket.
+  useEffect(() => {
+    const onModeChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: SystemMode }>;
+      const mode = customEvent.detail?.mode;
+      if (!mode) return;
+      sendModeFrame(mode);
+    };
+
+    window.addEventListener('spark:system-mode-change', onModeChange as EventListener);
+    return () => {
+      window.removeEventListener('spark:system-mode-change', onModeChange as EventListener);
+    };
+  }, [sendModeFrame]);
 
   return { ...metrics, isOnline };
 }

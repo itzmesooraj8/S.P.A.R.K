@@ -86,6 +86,14 @@ class DockerEnvironment(ExecutionEnvironment):
         )
 
     async def setup(self) -> bool:
+        # Fast daemon sanity check (prevents repeated noisy pipe errors when Docker Desktop is down)
+        daemon = await self._run_subprocess("docker", "info", timeout_override=8)
+        if not daemon.success:
+            print("⚠️ [DOCKER] Docker daemon unavailable. Start Docker Desktop to enable sandbox execution.")
+            self.is_running = False
+            self._sync()
+            return False
+
         # Check if running, if yes, we can just use it
         res = await self._run_subprocess("docker", "ps", "-q", "-f", f"name={self.container_name}")
         if res.stdout.strip():

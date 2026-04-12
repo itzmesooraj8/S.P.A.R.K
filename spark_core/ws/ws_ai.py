@@ -1,62 +1,77 @@
 import json
-import httpx
+import uuid
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+
+from system.event_bus import event_bus
+from ws.manager import ws_manager
 
 ws_ai_router = APIRouter()
 
+
+def _parse_frame(raw_data: str):
+    """
+    Accepts both legacy raw-text frames and JSON envelopes.
+    Returns (kind, payload) where kind is one of: USER_INPUT, CANCEL, IGNORE.
+    """
+    text = (raw_data or "").strip()
+    if not text:
+        return "IGNORE", {}
+
+    try:
+        frame = json.loads(text)
+    except json.JSONDecodeError:
+        return "USER_INPUT", {"content": text}
+
+    if isinstance(frame, str):
+        frame_text = frame.strip()
+        return ("USER_INPUT", {"content": frame_text}) if frame_text else ("IGNORE", {})
+
+    if not isinstance(frame, dict):
+        return "IGNORE", {}
+
+    frame_type = str(frame.get("type", "")).upper()
+    if frame_type == "CANCEL":
+        return "CANCEL", {}
+
+    if frame_type == "USER_INPUT":
+        content = str(frame.get("content", "")).strip()
+        return ("USER_INPUT", {"content": content}) if content else ("IGNORE", {})
+
+    content = str(frame.get("message") or frame.get("content") or "").strip()
+    if content:
+        return "USER_INPUT", {"content": content}
+
+    return "IGNORE", {}
+
 @ws_ai_router.websocket("/ws/ai")
 async def ai_websocket_handler(websocket: WebSocket):
-    await websocket.accept()
-    
+    await ws_manager.connect(websocket, "ai")
+    session_id = str(uuid.uuid4())
+    ws_manager.register_session(session_id, websocket)
+
+    await websocket.send_json({
+        "type": "status",
+        "status": "connected",
+        "session_id": session_id,
+    })
+
     try:
         while True:
             raw_data = await websocket.receive_text()
-            try:
-                msg = json.loads(raw_data)
-                user_text = msg.get("message", "")
-                
-                if not user_text:
-                    continue
+            kind, payload = _parse_frame(raw_data)
 
-                payload = {
-                    "model": "gemma3:4b",
-                    "messages": [{"role": "user", "content": user_text}],
-                    "stream": True
-                }
+            if kind == "CANCEL":
+                event_bus.publish("cancel_task", {"session_id": session_id})
+                continue
 
-                try:
-                    async with httpx.AsyncClient(timeout=120.0) as client:
-                        async with client.stream("POST", "http://127.0.0.1:11434/api/chat", json=payload) as response:
-                            if response.status_code == 200:
-                                async for line in response.aiter_lines():
-                                    if line:
-                                        try:
-                                            chunk = json.loads(line)
-                                            token = chunk.get("message", {}).get("content", "")
-                                            if token:
-                                                # Feed frontend direct token string
-                                                await websocket.send_json({
-                                                    "type": "response_token",
-                                                    "token": token
-                                                })
-                                        except json.JSONDecodeError:
-                                            pass
-                            else:
-                                await websocket.send_json({
-                                    "type": "response_token", 
-                                    "token": "[SPARK: Ollama error — is it running?]"
-                                })
-                except Exception:
-                    await websocket.send_json({
-                        "type": "response_token", 
-                        "token": "[SPARK: Ollama error — is it running?]"
-                    })
-                
-                # Command sequence end, unlock input bar
-                await websocket.send_json({"type": "response_done"})
+            if kind == "USER_INPUT":
+                event_bus.publish("user_input", {
+                    "data": payload["content"],
+                    "session_id": session_id,
+                })
 
-            except json.JSONDecodeError:
-                pass
-                
     except WebSocketDisconnect:
-        pass
+        ws_manager.disconnect(websocket, "ai")
+    except Exception:
+        ws_manager.disconnect(websocket, "ai")

@@ -1,6 +1,6 @@
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useDevState } from '@/hooks/useDevState';
-import { Cpu, MemoryStick, Zap, Wifi, Battery, Thermometer, Shield, Lock, AlertTriangle, Terminal } from 'lucide-react';
+import { Cpu, MemoryStick, Zap, Wifi, Battery, Thermometer, Shield, Lock, AlertTriangle } from 'lucide-react';
 import { AreaChart, Area, ResponsiveContainer } from 'recharts';
 import { useState } from 'react';
 
@@ -42,19 +42,33 @@ interface MetricRowProps {
   label: string;
   value: number;
   unit?: string;
+  displayValue?: string;
   color: string;
   history: { value: number; time: number }[];
   warning?: boolean;
+  maxValue?: number;
 }
 
-function MetricRow({ icon, label, value, unit = '%', color, history, warning }: MetricRowProps) {
+function MetricRow({
+  icon,
+  label,
+  value,
+  unit = '%',
+  displayValue,
+  color,
+  history,
+  warning,
+  maxValue = 100,
+}: MetricRowProps) {
+  const widthPct = Math.max(0, Math.min((value / maxValue) * 100, 100));
+
   return (
     <div className={`p-2 rounded border transition-all duration-300 ${warning ? 'border-hud-amber/50 bg-hud-amber/5' : 'border-hud-cyan/15 bg-hud-cyan/3'}`}>
       <div className="flex items-center gap-2 mb-1.5">
         <div style={{ color }}>{icon}</div>
         <span className="font-orbitron text-[9px] tracking-wider text-hud-cyan/70 flex-1">{label}</span>
         <span className="font-orbitron text-[10px] font-bold" style={{ color }}>
-          {Math.round(value)}{unit}
+          {displayValue ?? `${Math.round(value)}${unit}`}
         </span>
         {warning && <AlertTriangle size={9} className="text-hud-amber" />}
       </div>
@@ -62,7 +76,7 @@ function MetricRow({ icon, label, value, unit = '%', color, history, warning }: 
         <div className="flex-1 h-1 rounded-full bg-hud-cyan/10 overflow-hidden">
           <div
             className="h-full rounded-full transition-all duration-500"
-            style={{ width: `${value}%`, background: color, boxShadow: `0 0 4px ${color}` }}
+            style={{ width: `${widthPct}%`, background: color, boxShadow: `0 0 4px ${color}` }}
           />
         </div>
         <div className="w-16 h-6">
@@ -89,7 +103,7 @@ interface Props {
 }
 
 export default function SystemPanel({ metrics }: Props) {
-  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, sandbox: true, cross_intelligence: false, optimization: false });
+  const [expandedSections, setExpandedSections] = useState({ resources: true, security: true, environment: true, cross_intelligence: false, optimization: false });
   const toggleSection = (k: keyof typeof expandedSections) =>
     setExpandedSections(p => ({ ...p, [k]: !p[k] }));
 
@@ -110,7 +124,7 @@ export default function SystemPanel({ metrics }: Props) {
     }
   };
 
-  const { sandbox_state, project_focus } = useDevState();
+  const { project_focus } = useDevState();
 
   const [optimizationPlan, setOptimizationPlan] = useState<any>(null);
   const [analyzingOpt, setAnalyzingOpt] = useState(false);
@@ -186,8 +200,16 @@ export default function SystemPanel({ metrics }: Props) {
               color="#0066ff" history={metrics.ramHistory} warning={metrics.ram > 80} />
             <MetricRow icon={<Zap size={11} />} label="GPU" value={metrics.gpu}
               color="#8b00ff" history={metrics.gpuHistory} warning={metrics.gpu > 90} />
-            <MetricRow icon={<Wifi size={11} />} label="NETWORK" value={metrics.network}
-              color="#00ff88" history={metrics.networkHistory} />
+            <MetricRow
+              icon={<Wifi size={11} />}
+              label="NETWORK"
+              value={metrics.network}
+              displayValue={`${metrics.network.toFixed(1)} MB/s`}
+              unit=""
+              color="#00ff88"
+              history={metrics.networkHistory}
+              maxValue={25}
+            />
           </div>
         )}
       </div>
@@ -312,41 +334,6 @@ export default function SystemPanel({ metrics }: Props) {
                 </div>
               </div>
             </div>
-          </div>
-        )}
-      </div>
-
-      {/* Sandbox Telemetry */}
-      <div>
-        <button
-          onClick={() => toggleSection('sandbox')}
-          className="w-full flex items-center justify-between mb-1.5"
-        >
-          <span className="font-orbitron text-[8px] tracking-widest text-hud-cyan/60">◈ EXECUTION SANDBOX</span>
-          <span className="font-mono-tech text-[8px] text-hud-cyan/40">{expandedSections.sandbox ? '▼' : '▶'}</span>
-        </button>
-        {expandedSections.sandbox && (
-          <div className="flex flex-col gap-1.5 p-2 rounded border border-hud-cyan/15 bg-hud-cyan/5">
-            <div className="flex items-center justify-between">
-              <span className="flex items-center gap-1.5 font-orbitron text-[9px] text-hud-cyan/70">
-                <Terminal size={11} className={sandbox_state.is_running ? "text-hud-green" : "text-hud-red"} />
-                CONTAINER
-              </span>
-              <span className={`font-mono-tech text-[9px] ${sandbox_state.is_running ? "text-hud-green neon-text-green" : "text-hud-red"}`}>
-                {sandbox_state.is_running ? 'ONLINE' : 'OFFLINE'}
-              </span>
-            </div>
-            {sandbox_state.is_running && (
-              <div className="mt-1">
-                <div className="font-orbitron text-[8px] text-hud-cyan/50 mb-0.5 flex justify-between">
-                  <span>LAST COMMAND</span>
-                  {sandbox_state.cmd_active && <span className="text-hud-amber animate-pulse">EXECUTING...</span>}
-                </div>
-                <div className={`p-1.5 bg-black/50 border rounded font-mono-tech text-[8px] truncate ${sandbox_state.cmd_active ? 'border-hud-amber/30 text-hud-amber' : 'border-hud-cyan/20 text-hud-cyan/70'}`}>
-                  $ {sandbox_state.last_cmd}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </div>
