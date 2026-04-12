@@ -6,6 +6,7 @@ import { useState, useEffect, useRef, useMemo } from 'react';
 import { Radio, Wifi, WifiOff, BarChart2 } from 'lucide-react';
 import { AreaChart, Area, BarChart, Bar, RadarChart, Radar, PolarGrid, PolarAngleAxis, ResponsiveContainer, XAxis, YAxis, Tooltip } from 'recharts';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
+import { buildAuthedWsUrl } from '@/lib/wsAuth';
 
 /* ── DataStream constants ────────────────────────────────────────────────── */
 const FEED_SOURCES = ['SYS', 'NET', 'SEC', 'API', 'HW', 'AI'];
@@ -16,12 +17,6 @@ const COLORS: Record<string, string> = {
 interface StreamLine {
   id: string; color: string; text: string; ts: string; src: string; realtime?: boolean;
 }
-
-const WS_URL = (() => {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const port  = import.meta.env.VITE_BACKEND_PORT ?? '8000';
-  return `${proto}://${window.location.hostname}:${port}/ws/system`;
-})();
 
 const FEED_MSGS: Record<string, string[]> = {
   SYS: ['Kernel heartbeat OK', 'Memory sweep clean', 'CPU governor: balanced'],
@@ -47,7 +42,7 @@ function LiveTab() {
   useEffect(() => {
     let reconnectTimer: ReturnType<typeof setTimeout>;
     const connect = () => {
-      const ws = new WebSocket(WS_URL);
+      const ws = new WebSocket(buildAuthedWsUrl('/ws/system'));
       wsRef.current = ws;
       ws.onopen = () => setConnected(true);
       ws.onmessage = (evt) => {

@@ -5,6 +5,7 @@ import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
 import { useActionFeedStore } from '@/store/useActionFeedStore';
 import { useConnectionStore } from '@/store/useConnectionStore';
 import { useFxStore } from '@/store/useFxStore';
+import { buildAuthedWsUrl } from '@/lib/wsAuth';
 
 // Only log WS noise when explicitly opted-in (prevents console spam when backend is offline)
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
@@ -13,12 +14,6 @@ const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[System WS]', ..
 const wsErr  = (...a: unknown[]) => VERBOSE_WS && console.error('[System WS]', ...a);
 
 const MAX_HISTORY = 30;
-
-const WS_URL = (() => {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const port  = import.meta.env.VITE_BACKEND_PORT ?? '8000';
-  return `${proto}://${window.location.hostname}:${port}/ws/system`;
-})();
 
 const RECONNECT_BASE_MS  = 2_000;
 const RECONNECT_MAX_MS   = 30_000;
@@ -93,7 +88,7 @@ export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } 
     if (!mountedRef.current) return;
     if (ws.current && ws.current.readyState <= WebSocket.OPEN) return;
 
-    const socket = new WebSocket(WS_URL);
+    const socket = new WebSocket(buildAuthedWsUrl('/ws/system'));
     ws.current = socket;
 
     socket.onopen = () => {

@@ -1,5 +1,6 @@
 import { useState, useCallback, useRef, useEffect } from 'react';
 import { AiWsMessage } from '../types/contracts';
+import { buildAuthedWsUrl } from '../lib/wsAuth';
 
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
 const wsLog  = (...a: unknown[]) => VERBOSE_WS && console.log('[VoiceEngine WS]',  ...a);
@@ -7,18 +8,6 @@ const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[VoiceEngine WS]
 const wsErr  = (...a: unknown[]) => VERBOSE_WS && console.error('[VoiceEngine WS]', ...a);
 
 const API_BASE = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
-
-const WS_URL = (() => {
-  try {
-    const base = new URL(API_BASE);
-    const protocol = base.protocol === 'https:' ? 'wss:' : 'ws:';
-    return `${protocol}//${base.hostname}${base.port ? `:${base.port}` : ''}/ws/ai`;
-  } catch {
-    const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
-    const port = import.meta.env.VITE_BACKEND_PORT ?? '8000';
-    return `${protocol}://${window.location.hostname}:${port}/ws/ai`;
-  }
-})();
 
 const RECONNECT_BASE_MS = 1200;
 const RECONNECT_MAX_MS = 15000;
@@ -208,7 +197,7 @@ export function useVoiceEngine() {
       return;
     }
 
-    const ws = new WebSocket(WS_URL);
+    const ws = new WebSocket(buildAuthedWsUrl('/ws/ai'));
     wsRef.current = ws;
 
     ws.onopen = () => {

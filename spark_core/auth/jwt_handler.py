@@ -142,10 +142,48 @@ def verify_operator(payload: dict) -> bool:
 
 # ── FastAPI dependency ────────────────────────────────────────────────────────
 
-from fastapi import HTTPException, Security
+from fastapi import HTTPException, Security, WebSocket, status
 from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 
 _bearer_scheme = HTTPBearer(auto_error=False)
+
+
+def _extract_websocket_token(websocket: WebSocket) -> Optional[str]:
+    """Extract bearer token from WebSocket query params or auth header."""
+    token = websocket.query_params.get("token") or websocket.query_params.get("access_token")
+    if token:
+        return token
+
+    auth_header = websocket.headers.get("authorization")
+    if not auth_header:
+        return None
+
+    parts = auth_header.split(" ", 1)
+    if len(parts) == 2 and parts[0].lower() == "bearer":
+        return parts[1].strip()
+    return auth_header.strip() or None
+
+
+async def require_ws_auth(websocket: WebSocket, min_role: str = "OPERATOR") -> Optional[Dict[str, Any]]:
+    """Validate JWT during WebSocket handshake; reject unauthenticated clients immediately."""
+    token = _extract_websocket_token(websocket)
+    if not token:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason="Missing token")
+        return None
+
+    payload = decode_token(token)
+    if "error" in payload:
+        await websocket.close(code=status.WS_1008_POLICY_VIOLATION, reason=payload["error"])
+        return None
+
+    if not verify_role(payload, min_role):
+        await websocket.close(
+            code=status.WS_1008_POLICY_VIOLATION,
+            reason=f"Requires {min_role} role or higher",
+        )
+        return None
+
+    return payload
 
 def require_auth(min_role: str = "OPERATOR"):
     """Returns a FastAPI dependency that validates the bearer token."""

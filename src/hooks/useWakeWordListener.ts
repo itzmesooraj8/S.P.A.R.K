@@ -9,12 +9,7 @@ import { useEffect, useRef, useCallback } from 'react';
 import { useConnectionStore } from '@/store/useConnectionStore';
 import { useCommandBarStore } from '@/store/commandBarStore';
 import { useVoiceMic } from './useVoiceMic';
-
-const WS_URL = (() => {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const port  = import.meta.env.VITE_BACKEND_PORT ?? '8000';
-  return `${proto}://${window.location.hostname}:${port}/ws/system`;
-})();
+import { buildAuthedWsUrl } from '@/lib/wsAuth';
 
 const RECONNECT_BASE_MS = 3_000;
 const RECONNECT_MAX_MS  = 30_000;
@@ -32,7 +27,7 @@ export function useWakeWordListener() {
     if (!mountedRef.current) return;
     if (ws.current && ws.current.readyState <= WebSocket.OPEN) return;
 
-    const socket = new WebSocket(WS_URL);
+    const socket = new WebSocket(buildAuthedWsUrl('/ws/system'));
     ws.current = socket;
 
     socket.onmessage = (event: MessageEvent) => {

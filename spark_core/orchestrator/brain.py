@@ -1,8 +1,9 @@
 import asyncio
 import json
+import os
 from llm.hybrid_engine import HybridLLM
 from llm.personality import PersonalityEngine
-from memory.session_memory import SessionMemory
+from memory.conversation_memory import ConversationMemory
 from tools.router import ToolRouter
 
 from system.state import unified_state
@@ -14,7 +15,11 @@ class AIOrchestrator:
         print("🧠 [SPARK] Initializing Brain...")
         self.personality = PersonalityEngine(mode="ARCHITECT")
         self.llm = HybridLLM() # model resolved from OLLAMA_MODEL env var (default: llama3:8b)
-        self.memory = SessionMemory(max_turns=5)
+        self.memory_turns = max(1, int(os.getenv("SPARK_MEMORY_TURNS", "5")))
+        self.memory = ConversationMemory(
+            default_turns=self.memory_turns,
+            max_context_messages=self.memory_turns * 2,
+        )
         self.tool_router = ToolRouter()
         
         self.current_task = None
@@ -29,6 +34,11 @@ class AIOrchestrator:
         
         event_bus.subscribe("user_input")(self.handle_input)
         event_bus.subscribe("cancel_task")(self.handle_cancel)
+
+    @staticmethod
+    def _resolve_memory_session_id(memory_session_id: str = None, transport_session_id: str = None) -> str:
+        sid = (memory_session_id or transport_session_id or "default").strip()
+        return sid[:128] if sid else "default"
 
     def get_state(self):
         return unified_state.get_state()
@@ -49,9 +59,12 @@ class AIOrchestrator:
     async def handle_input(self, payload):
         data = payload.get("data")
         session_id = payload.get("session_id")
+        memory_session_id = payload.get("memory_session_id")
         if self.current_task and not self.current_task.done():
             self.cancel_current_task()
-        self.current_task = asyncio.create_task(self.agent_loop(data, session_id))
+        self.current_task = asyncio.create_task(
+            self.agent_loop(data, session_id, memory_session_id)
+        )
 
     async def resolve_tool_confirmation(self, tool_id: str, approved: bool):
         if tool_id not in self.pending_tool_calls:
@@ -62,10 +75,14 @@ class AIOrchestrator:
         # Support both old (plain call dict) and new (dict with session_id) formats
         if isinstance(entry, dict) and "_session_id" in entry:
             session_id = entry.pop("_session_id")
+            memory_session_id = entry.pop("_memory_session_id", None)
             tool_call = entry
         else:
             session_id = None
+            memory_session_id = None
             tool_call = entry
+
+        memory_sid = self._resolve_memory_session_id(memory_session_id, session_id)
         
         if not approved:
             print(f"🛑 [SPARK] User cancelled tool execution for {tool_call['tool']}.")
@@ -93,7 +110,7 @@ class AIOrchestrator:
                 f"Acknowledge this briefly to the user."
             )
             
-            memory_context = self.memory.get_context()
+            memory_context = await self.memory.get_recent_context(memory_sid, turns=self.memory_turns)
             sys_prompt = self.personality.get_prompt(memory_context, include_tools=False)
             
             full_resp = ""
@@ -103,7 +120,7 @@ class AIOrchestrator:
                 event_bus.publish("response_token", {"token": tk, "session_id": session_id})
             
             if full_resp:
-                self.memory.add_ai_message(full_resp.strip())
+                await self.memory.save_message(memory_sid, "assistant", full_resp.strip())
                 
         except Exception as e:
             print(f"⚠️ [SPARK] Exec error: {e}")
@@ -122,11 +139,13 @@ class AIOrchestrator:
             chunk = word if i == len(words) - 1 else word + " "
             event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
 
-    async def agent_loop(self, message: str, session_id: str = None):
+    async def agent_loop(self, message: str, session_id: str = None, memory_session_id: str = None):
         """Agent loop as a background task. Publishes events."""
         event_bus.publish("brain_decision", {"action": "start_processing", "message": message, "session_id": session_id})
         unified_state.update("status", "THINKING")
         print(f"🧠 [SPARK] Stream Processing: {message}")
+
+        memory_sid = self._resolve_memory_session_id(memory_session_id, session_id)
         
         # 0. Check for explicit manual tool execution command (Backdoor)
         tool_call = self.tool_router.detect_tool_call(message)
@@ -140,7 +159,11 @@ class AIOrchestrator:
             except RequiresConfirmationError as e:
                 import uuid
                 tool_id = str(uuid.uuid4())
-                self.pending_tool_calls[tool_id] = {**e.tool_call, "_session_id": session_id}
+                self.pending_tool_calls[tool_id] = {
+                    **e.tool_call,
+                    "_session_id": session_id,
+                    "_memory_session_id": memory_sid,
+                }
                 unified_state.update("status", "AWAITING_CONFIRMATION")
                 print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
                 event_bus.publish("confirm_tool", {
@@ -158,11 +181,13 @@ class AIOrchestrator:
                 event_bus.publish("response_done", {"session_id": session_id})
             return
             
-        # 1. Add arriving prompt to memory
-        self.memory.add_user_message(message)
-        
-        # 2. Inject previous AI context seamlessly AND load Auto Tool Instructions
-        memory_context = self.memory.get_context()
+        # 1. Inject previous context first (avoid duplicating the current user turn)
+        memory_context = await self.memory.get_recent_context(memory_sid, turns=self.memory_turns)
+
+        # 2. Persist the incoming user turn
+        await self.memory.save_message(memory_sid, "user", message)
+
+        # 3. Build system prompt with bounded context and tool instructions
         system_prompt = self.personality.get_prompt(memory_context, include_tools=True)
         
         full_response = ""
@@ -174,7 +199,7 @@ class AIOrchestrator:
         max_tool_probe_chars = 1200
         
         try:
-            # 3. Stream & accumulate
+            # 4. Stream & accumulate
             async for token in self.llm.generate(system_prompt, message):
                 full_response += token
 
@@ -220,7 +245,11 @@ class AIOrchestrator:
                 except RequiresConfirmationError as e:
                     import uuid
                     tool_id = str(uuid.uuid4())
-                    self.pending_tool_calls[tool_id] = {**e.tool_call, "_session_id": session_id}
+                    self.pending_tool_calls[tool_id] = {
+                        **e.tool_call,
+                        "_session_id": session_id,
+                        "_memory_session_id": memory_sid,
+                    }
                     unified_state.update("status", "AWAITING_CONFIRMATION")
                     print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
                     event_bus.publish("confirm_tool", {
@@ -245,7 +274,7 @@ class AIOrchestrator:
                     event_bus.publish("response_token", {"token": ref_token, "session_id": session_id})
 
                 if reflection_response:
-                    self.memory.add_ai_message(reflection_response.strip())
+                    await self.memory.save_message(memory_sid, "assistant", reflection_response.strip())
             else:
                 # Normal finalization
                 if pre_stream_buffer:
@@ -254,7 +283,7 @@ class AIOrchestrator:
                     pre_stream_buffer = ""
 
                 if full_response:
-                     self.memory.add_ai_message(full_response.strip())
+                    await self.memory.save_message(memory_sid, "assistant", full_response.strip())
                 
         except asyncio.CancelledError:
             print(f"⚠️ [SPARK] Stream Cancelled mid-generation. Discarding partial memory.")
@@ -264,14 +293,14 @@ class AIOrchestrator:
             if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
                 unified_state.update("status", "IDLE")
 
-    async def process_message(self, message: str) -> str:
+    async def process_message(self, message: str, memory_session_id: str = None) -> str:
         """Fallback: Core AI Loop for returning a single full blocking response."""
         unified_state.update("status", "THINKING")
         print(f"🧠 [SPARK] Blocking Processing: {message}")
-        
-        self.memory.add_user_message(message)
-        
-        memory_context = self.memory.get_context()
+
+        memory_sid = self._resolve_memory_session_id(memory_session_id)
+        memory_context = await self.memory.get_recent_context(memory_sid, turns=self.memory_turns)
+        await self.memory.save_message(memory_sid, "user", message)
         system_prompt = self.personality.get_prompt(memory_context)
 
         full_response = ""
@@ -279,7 +308,7 @@ class AIOrchestrator:
             full_response += token
 
         if full_response:
-            self.memory.add_ai_message(full_response.strip())
+            await self.memory.save_message(memory_sid, "assistant", full_response.strip())
 
         if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
             unified_state.update("status", "IDLE")

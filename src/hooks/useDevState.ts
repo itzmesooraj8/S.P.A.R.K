@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
+import { buildAuthedWsUrl } from '../lib/wsAuth';
 
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
 const wsErr = (...a: unknown[]) => VERBOSE_WS && console.error('[DevState WS]', ...a);
@@ -81,7 +82,7 @@ export function useDevState(): DevState {
         // Guard: never open a second socket while one is connecting or open
         if (wsRef.current && wsRef.current.readyState <= WebSocket.OPEN) return;
 
-        const socket = new WebSocket("ws://localhost:8000/ws/system");
+        const socket = new WebSocket(buildAuthedWsUrl('/ws/system'));
         wsRef.current = socket;
 
         socket.onopen = () => {

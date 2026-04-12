@@ -1,10 +1,38 @@
 import { useEffect, useCallback } from 'react';
 import { useTaskStore } from '../store/useTaskStore';
 import { fetchTasks, Task } from '../lib/tasks';
+import { buildAuthedWsUrl } from '../lib/wsAuth';
 
-const getBackendUrl = () => {
-  const port = import.meta.env.VITE_BACKEND_PORT || '8000';
-  return `ws://127.0.0.1:${port}`;
+type TaskUpdateOperation = 'created' | 'updated' | 'deleted' | 'completed';
+
+interface TaskUpdateFrame {
+  type?: string;
+  operation?: string;
+  task_id?: string;
+  task?: Task;
+  payload?: {
+    operation?: string;
+    task_id?: string;
+    task?: Task;
+  };
+}
+
+const normalizeTaskUpdate = (frame: TaskUpdateFrame): {
+  operation: TaskUpdateOperation;
+  taskId?: string;
+  task?: Task;
+} | null => {
+  const source = frame.payload ?? frame;
+  const operation = (source.operation || '').toLowerCase();
+  if (!['created', 'updated', 'deleted', 'completed'].includes(operation)) {
+    return null;
+  }
+
+  return {
+    operation: operation as TaskUpdateOperation,
+    taskId: source.task_id,
+    task: source.task,
+  };
 };
 
 export const useFetchTasks = () => {
@@ -28,8 +56,7 @@ export const useFetchTasks = () => {
 
   const setupWebSocketListener = useCallback(() => {
     try {
-      const backendUrl = getBackendUrl();
-      const ws = new WebSocket(`${backendUrl}/ws/system`);
+      const ws = new WebSocket(buildAuthedWsUrl('/ws/system'));
 
       ws.onopen = () => {
         console.log('✓ System WebSocket connected (tasks)');
@@ -37,33 +64,38 @@ export const useFetchTasks = () => {
 
       ws.onmessage = (event) => {
         try {
-          const frame = JSON.parse(event.data);
+          const frame: TaskUpdateFrame = JSON.parse(event.data);
 
-          if (frame.type === 'TASK_UPDATE') {
-            const { operation, task_id, task } = frame;
+          if ((frame.type || '').toUpperCase() === 'TASK_UPDATE') {
+            const normalized = normalizeTaskUpdate(frame);
+            if (!normalized) {
+              return;
+            }
+
+            const { operation, taskId, task } = normalized;
 
             switch (operation) {
               case 'created':
                 if (task) addTask(task as Task);
                 break;
               case 'updated':
-                if (task && task_id) updateTask(task_id, task);
+                if (task && taskId) updateTask(taskId, task);
                 break;
               case 'deleted':
-                if (task_id) removeTask(task_id);
+                if (taskId) removeTask(taskId);
                 break;
               case 'completed':
-                if (task && task_id) updateTask(task_id, { ...task, status: 'COMPLETED' });
+                if (task && taskId) updateTask(taskId, { ...task, status: 'COMPLETED' });
                 break;
             }
           }
         } catch (err) {
-            // Muted frame serialization errors silently as requested
+          // Ignore malformed frames to keep HUD loop resilient.
         }
       };
 
       ws.onerror = (err) => {
-          // Muted console WS error traces to preserve pristine devtools
+        // Keep silent to avoid devtools noise during backend restarts.
       };
 
       ws.onclose = () => {

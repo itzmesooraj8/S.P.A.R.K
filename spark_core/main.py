@@ -25,7 +25,13 @@ from globe_api import router as globe_api_router, globe_broadcaster
 from system.state import unified_state
 
 # ── SPARK OS — New Systems ─────────────────────────────────────────────────────
-from auth.jwt_handler import create_token_pair, refresh_access_token, require_auth, ACCESS_TOKEN_TTL
+from auth.jwt_handler import (
+    create_token_pair,
+    refresh_access_token,
+    require_auth,
+    require_ws_auth,
+    ACCESS_TOKEN_TTL,
+)
 from auth.user_store import authenticate, list_users, create_user
 from llm.model_router import model_router
 from agents.commander import commander
@@ -104,6 +110,10 @@ async def lifespan(app: FastAPI):
     # Knowledge Graph Memory
     await knowledge_graph.init()
     print("🧠 [SPARK] Knowledge graph memory online.")
+
+    # Persistent Conversation Memory
+    await orchestrator.memory.init()
+    print("💾 [SPARK] Conversation memory online.")
 
     # Start background intelligence loop
     asyncio.create_task(sys_monitor.start_monitoring(ws_manager))
@@ -448,6 +458,11 @@ app.include_router(ws_ai_router)
 
 @app.websocket("/ws/system")
 async def websocket_system(websocket: WebSocket):
+    auth_payload = await require_ws_auth(websocket, min_role="OPERATOR")
+    if auth_payload is None:
+        return
+    websocket.state.auth = auth_payload
+
     await ws_manager.connect(websocket, "system")
     try:
         while True:

@@ -11,15 +11,10 @@
 import { useEffect, useRef, useCallback } from 'react';
 import { useToolActivityStore } from '@/store/useToolActivityStore';
 import { useConnectionStore } from '@/store/useConnectionStore';
+import { buildAuthedWsUrl } from '@/lib/wsAuth';
 
 const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
 const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[AIEvents WS]', ...a);
-
-const WS_URL = (() => {
-  const proto = window.location.protocol === 'https:' ? 'wss' : 'ws';
-  const port  = import.meta.env.VITE_BACKEND_PORT ?? '8000';
-  return `${proto}://${window.location.hostname}:${port}/ws/ai`;
-})();
 
 const RECONNECT_BASE_MS = 3_000;
 const RECONNECT_MAX_MS  = 30_000;
@@ -35,7 +30,7 @@ export function useAIEvents() {
     if (!mountedRef.current) return;
     if (ws.current && ws.current.readyState <= WebSocket.OPEN) return;
 
-    const socket = new WebSocket(WS_URL);
+    const socket = new WebSocket(buildAuthedWsUrl('/ws/ai'));
     ws.current = socket;
 
     socket.onmessage = (event: MessageEvent) => {
