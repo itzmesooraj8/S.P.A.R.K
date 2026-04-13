@@ -9,6 +9,8 @@ from typing import Callable, Dict, Any, List, Optional
 # ---------------------------------------------------------------------------
 _SCHEMA: Dict[str, List[str]] = {
     "user_input":      ["data", "session_id"],
+    "ingress_event":   ["content", "memory_session_id"],
+    "assistant_reply": ["text", "memory_session_id"],
     "response_token":  ["token"],
     "response_done":   [],
     "tool_execute":    ["tool"],

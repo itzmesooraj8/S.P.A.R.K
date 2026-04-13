@@ -15,6 +15,8 @@ from tools.memory import memory_tools
 from tools.heuristics import heuristic_tools
 from tools.context import context_tools
 from tools.desktop import desktop_tools
+from tools.web_search import web_search_tools
+from tools.rag import rag_tools
 
 # --- Default Native Tools ---
 
@@ -62,6 +64,10 @@ class ToolRouter:
         for tool in context_tools:
             self.registry.register(tool)
         for tool in desktop_tools:
+            self.registry.register(tool)
+        for tool in web_search_tools:
+            self.registry.register(tool)
+        for tool in rag_tools:
             self.registry.register(tool)
 
     def is_tool_call_candidate(self, raw_message: str) -> bool:

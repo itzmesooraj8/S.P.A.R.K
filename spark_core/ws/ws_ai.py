@@ -4,6 +4,8 @@ import uuid
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
 from auth.jwt_handler import require_ws_auth
+from messaging.events import IngressSource
+from messaging.ingress import IngressValidationError, ingress_service
 from system.event_bus import event_bus
 from ws.manager import ws_manager
 
@@ -86,11 +88,21 @@ async def ai_websocket_handler(websocket: WebSocket):
                 continue
 
             if kind == "USER_INPUT":
-                event_bus.publish("user_input", {
-                    "data": payload["content"],
-                    "session_id": session_id,
-                    "memory_session_id": memory_session_id,
-                })
+                try:
+                    await ingress_service.ingest_text(
+                        content=payload["content"],
+                        source=IngressSource.HUD_WS,
+                        user_id=str((auth_payload or {}).get("sub") or "anonymous"),
+                        conversation_id=memory_session_id,
+                        transport_session_id=session_id,
+                        channel="hud",
+                        metadata={"transport": "ws", "namespace": "ai"},
+                    )
+                except IngressValidationError as exc:
+                    await websocket.send_json({
+                        "type": "ERROR",
+                        "message": str(exc),
+                    })
 
     except WebSocketDisconnect:
         ws_manager.disconnect(websocket, "ai")

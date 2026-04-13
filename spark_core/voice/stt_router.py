@@ -8,38 +8,35 @@ Endpoints exposed (registered in main.py):
   WebSocket /api/voice/transcribe/ws — stream audio chunks → stream back transcribed text
 """
 
-import asyncio
+import base64
 import io
 import json
+from pathlib import Path
 from typing import Optional
+
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, UploadFile, File
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
 
-# Import the working Whisper model from audio module
-import sys
-import os
-sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.dirname(__file__))))
-from audio.stt import SpeechToText
+from voice.stt import whisper_stt
 
 # ── Router ─────────────────────────────────────────────────────────────────────
 stt_router = APIRouter(prefix="/api/voice", tags=["voice"])
 
-# Initialize Whisper model once on startup
-_stt_model = None
+def _audio_suffix(file: Optional[UploadFile]) -> str:
+    if file and file.filename:
+        ext = Path(file.filename).suffix.lower().strip()
+        if ext:
+            return ext
 
-def get_stt_model():
-    """Lazy-load STT model on first use to avoid startup slowdown."""
-    global _stt_model
-    if _stt_model is None:
-        print("[STT] Loading Whisper model on first request...")
-        _stt_model = SpeechToText()
-    return _stt_model
+    if file and file.content_type:
+        if "mpeg" in file.content_type or "mp3" in file.content_type:
+            return ".mp3"
+        if "ogg" in file.content_type:
+            return ".ogg"
+        if "wav" in file.content_type:
+            return ".wav"
 
-
-class TranscribeRequest(BaseModel):
-    """For batch transcription via REST."""
-    language: Optional[str] = "en"
+    return ".wav"
 
 
 @stt_router.post("/transcribe")
@@ -58,41 +55,33 @@ async def transcribe_audio(
     Response:
         {
             "text": "the transcribed text goes here",
-            "confidence": 0.95,
             "language": "en"
         }
     """
     try:
-        # Read the audio file into memory
         contents = await file.read()
-        
-        # Save to temporary file (Whisper works best with files)
-        import tempfile
-        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-            tmp.write(contents)
-            tmp_path = tmp.name
-        
-        try:
-            # Get or load the STT model in a thread to avoid blocking
-            stt = get_stt_model()
-            
-            # Run transcription in thread pool (CPU-bound)
-            loop = asyncio.get_event_loop()
-            transcript = await loop.run_in_executor(
-                None,
-                stt.transcribe,
-                tmp_path
+        if not contents:
+            return JSONResponse(
+                {
+                    "text": "",
+                    "success": False,
+                    "error": "No audio data received",
+                },
+                status_code=400,
             )
-            
-            return JSONResponse({
-                "text": transcript,
-                "success": True,
-                "language": language,
-                "source": f"faster-whisper-local"
-            })
-        finally:
-            # Clean up temp file
-            os.unlink(tmp_path)
+
+        transcript = await whisper_stt.transcribe_bytes(
+            contents,
+            suffix=_audio_suffix(file),
+            language=language,
+        )
+
+        return JSONResponse({
+            "text": transcript,
+            "success": True,
+            "language": language,
+            "source": "faster-whisper-local",
+        })
     
     except Exception as e:
         print(f"[STT] Transcription error: {e}")
@@ -119,20 +108,19 @@ async def stt_websocket(websocket: WebSocket):
         - JSON: {"audio_b64": "...", "language": "en"}
     
     Server responds with:
-        {"type": "transcribing", "partial": "..."}  (live partial)
+        {"type": "buffering", "bytes_received": 12345}
         {"type": "final", "text": "...", "done": true}
     """
     await websocket.accept()
-    
+
     try:
-        stt = get_stt_model()
         audio_buffer = io.BytesIO()
-        
+
         while True:
             try:
                 # Receive either binary or text message
                 data = await websocket.receive()
-                
+
                 if "bytes" in data:
                     # Binary audio chunk
                     audio_buffer.write(data["bytes"])
@@ -140,47 +128,60 @@ async def stt_websocket(websocket: WebSocket):
                         "type": "buffering",
                         "bytes_received": audio_buffer.tell()
                     })
-                
+
                 elif "text" in data:
                     msg = json.loads(data["text"])
-                    
-                    if msg.get("action") == "transcribe":
-                        # Client signals end of audio, transcribe the buffer
-                        audio_buffer.seek(0)
-                        audio_data = audio_buffer.getvalue()
-                        
-                        if not audio_data:
+
+                    if msg.get("action") == "reset":
+                        audio_buffer = io.BytesIO()
+                        await websocket.send_json({"type": "reset", "done": True})
+                        continue
+
+                    if msg.get("action") == "ping":
+                        await websocket.send_json({"type": "pong"})
+                        continue
+
+                    if msg.get("audio_b64"):
+                        try:
+                            raw = base64.b64decode(msg.get("audio_b64") or "", validate=True)
+                        except Exception:
                             await websocket.send_json({
                                 "type": "error",
-                                "message": "No audio data received"
+                                "message": "Invalid base64 payload",
                             })
                             continue
-                        
-                        # Save buffer to temp file and transcribe
-                        import tempfile
-                        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tmp:
-                            tmp.write(audio_data)
-                            tmp_path = tmp.name
-                        
-                        try:
-                            loop = asyncio.get_event_loop()
-                            transcript = await loop.run_in_executor(
-                                None,
-                                stt.transcribe,
-                                tmp_path
-                            )
-                            
-                            await websocket.send_json({
-                                "type": "final",
-                                "text": transcript,
-                                "done": True
-                            })
-                        finally:
-                            os.unlink(tmp_path)
-                        
-                        # Reset buffer for next recording
+
+                        transcript = await whisper_stt.transcribe_bytes(
+                            raw,
+                            suffix=msg.get("suffix", ".wav"),
+                            language=msg.get("language"),
+                        )
+                        await websocket.send_json({"type": "final", "text": transcript, "done": True})
+                        continue
+
+                    if msg.get("action") == "transcribe":
+                        audio_buffer.seek(0)
+                        audio_data = audio_buffer.getvalue()
+                        if not audio_data:
+                            await websocket.send_json({"type": "error", "message": "No audio data received"})
+                            continue
+
+                        suffix = msg.get("suffix") or ".wav"
+                        transcript = await whisper_stt.transcribe_bytes(
+                            audio_data,
+                            suffix=suffix,
+                            language=msg.get("language"),
+                        )
+
+                        await websocket.send_json({
+                            "type": "final",
+                            "text": transcript,
+                            "done": True,
+                        })
+
+                        # Reset buffer for next recording cycle
                         audio_buffer = io.BytesIO()
-            
+
             except json.JSONDecodeError:
                 await websocket.send_json({
                     "type": "error",
@@ -196,5 +197,5 @@ async def stt_websocket(websocket: WebSocket):
                 "type": "error",
                 "message": str(e)
             })
-        except:
+        except Exception:
             pass

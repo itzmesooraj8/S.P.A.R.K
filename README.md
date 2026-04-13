@@ -24,6 +24,22 @@ Ensure you have Python 3.11 installed (as required by the OpenWakeWord TFLite ru
    ```
    *This starts the unified FastAPI entrypoint over Uvicorn on port 8000.*
 
+## Secure Webhooks and Tunnel
+
+S.P.A.R.K. now supports transport-agnostic message ingress for HUD WebSocket and external webhooks.
+
+- Webhook endpoints:
+   - `/webhooks/telegram`
+   - `/webhooks/whatsapp`
+   - `/webhooks/social/generic`
+- Incoming webhook payloads are validated via HMAC signatures (`SPARK_WEBHOOK_SECRET`).
+- Messages are persisted to SQLite conversation memory before entering the orchestrator queue.
+- Assistant replies are dispatched asynchronously to Telegram and WhatsApp when outbound API tokens are configured.
+
+For Cloudflare Tunnel setup and production-safe webhook hardening, see:
+
+- `docs/CLOUDFLARE_TUNNEL_WEBHOOK_SETUP.md`
+
 ## ⚙️ Development & Configuration
 - **Entry Points**: The consolidated entrypoint is `spark_core/main.py` (executed via `run_server.py` at the root).
 - **Environment**: Set up a `.env` based on `.env.example`.

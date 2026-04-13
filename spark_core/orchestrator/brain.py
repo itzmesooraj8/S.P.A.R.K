@@ -4,6 +4,7 @@ import os
 from llm.hybrid_engine import HybridLLM
 from llm.personality import PersonalityEngine
 from memory.conversation_memory import ConversationMemory
+from memory.chroma_store import chroma_store
 from tools.router import ToolRouter
 
 from system.state import unified_state
@@ -16,6 +17,7 @@ class AIOrchestrator:
         self.personality = PersonalityEngine(mode="ARCHITECT")
         self.llm = HybridLLM() # model resolved from OLLAMA_MODEL env var (default: llama3:8b)
         self.memory_turns = max(1, int(os.getenv("SPARK_MEMORY_TURNS", "5")))
+        self.max_input_chars = max(128, int(os.getenv("SPARK_MAX_INPUT_CHARS", "8000")))
         self.memory = ConversationMemory(
             default_turns=self.memory_turns,
             max_context_messages=self.memory_turns * 2,
@@ -33,6 +35,7 @@ class AIOrchestrator:
         })
         
         event_bus.subscribe("user_input")(self.handle_input)
+        event_bus.subscribe("ingress_event")(self.handle_input)
         event_bus.subscribe("cancel_task")(self.handle_cancel)
 
     @staticmethod
@@ -57,13 +60,38 @@ class AIOrchestrator:
         self.cancel_current_task()
 
     async def handle_input(self, payload):
-        data = payload.get("data")
+        if not isinstance(payload, dict):
+            return
+
+        data = payload.get("data") or payload.get("content")
+        if not data:
+            return
+
         session_id = payload.get("session_id")
         memory_session_id = payload.get("memory_session_id")
+        user_id = payload.get("user_id")
+        source = payload.get("source")
+        channel = payload.get("channel", "chat")
+        platform_message_id = payload.get("platform_message_id")
+        ingress_event_id = payload.get("ingress_event_id")
+        request_metadata = payload.get("metadata") if isinstance(payload.get("metadata"), dict) else {}
+        pre_saved_user = bool(payload.get("pre_saved_user"))
+
         if self.current_task and not self.current_task.done():
             self.cancel_current_task()
         self.current_task = asyncio.create_task(
-            self.agent_loop(data, session_id, memory_session_id)
+            self.agent_loop(
+                data,
+                session_id,
+                memory_session_id,
+                pre_saved_user=pre_saved_user,
+                user_id=user_id,
+                source=source,
+                channel=channel,
+                platform_message_id=platform_message_id,
+                request_metadata=request_metadata,
+                ingress_event_id=ingress_event_id,
+            )
         )
 
     async def resolve_tool_confirmation(self, tool_id: str, approved: bool):
@@ -76,10 +104,22 @@ class AIOrchestrator:
         if isinstance(entry, dict) and "_session_id" in entry:
             session_id = entry.pop("_session_id")
             memory_session_id = entry.pop("_memory_session_id", None)
+            user_id = entry.pop("_user_id", None)
+            source = entry.pop("_source", None)
+            channel = entry.pop("_channel", "chat")
+            platform_message_id = entry.pop("_platform_message_id", None)
+            request_metadata = entry.pop("_request_metadata", None)
+            ingress_event_id = entry.pop("_ingress_event_id", None)
             tool_call = entry
         else:
             session_id = None
             memory_session_id = None
+            user_id = None
+            source = None
+            channel = "chat"
+            platform_message_id = None
+            request_metadata = {}
+            ingress_event_id = None
             tool_call = entry
 
         memory_sid = self._resolve_memory_session_id(memory_session_id, session_id)
@@ -120,7 +160,39 @@ class AIOrchestrator:
                 event_bus.publish("response_token", {"token": tk, "session_id": session_id})
             
             if full_resp:
-                await self.memory.save_message(memory_sid, "assistant", full_resp.strip())
+                await self.memory.save_message(
+                    memory_sid,
+                    "assistant",
+                    full_resp.strip(),
+                    user_id=user_id,
+                    source=source,
+                    channel=channel,
+                    transport_session_id=session_id,
+                    metadata={"kind": "tool_reflection", "tool": tool_call.get("tool")},
+                )
+                self._record_semantic_turn(
+                    session_id=memory_sid,
+                    role="assistant",
+                    text=full_resp,
+                    source=source,
+                    user_id=user_id,
+                    metadata={"kind": "tool_reflection", "tool": tool_call.get("tool")},
+                )
+                self._publish_assistant_reply(
+                    full_resp,
+                    session_id=session_id,
+                    memory_session_id=memory_sid,
+                    user_id=user_id,
+                    source=source,
+                    channel=channel,
+                    platform_message_id=platform_message_id,
+                    metadata={
+                        "kind": "tool_reflection",
+                        "tool": tool_call.get("tool"),
+                        "ingress_event_id": ingress_event_id,
+                        **(request_metadata or {}),
+                    },
+                )
                 
         except Exception as e:
             print(f"⚠️ [SPARK] Exec error: {e}")
@@ -139,13 +211,116 @@ class AIOrchestrator:
             chunk = word if i == len(words) - 1 else word + " "
             event_bus.publish("response_token", {"token": chunk, "session_id": session_id})
 
-    async def agent_loop(self, message: str, session_id: str = None, memory_session_id: str = None):
+    def _publish_assistant_reply(
+        self,
+        text: str,
+        *,
+        session_id: str = None,
+        memory_session_id: str = None,
+        user_id: str = None,
+        source: str = None,
+        channel: str = "chat",
+        platform_message_id: str = None,
+        metadata: dict = None,
+    ):
+        final_text = (text or "").strip()
+        if not final_text:
+            return
+
+        event_bus.publish("assistant_reply", {
+            "text": final_text,
+            "session_id": session_id,
+            "memory_session_id": memory_session_id,
+            "user_id": user_id,
+            "source": source,
+            "channel": channel,
+            "platform_message_id": platform_message_id,
+            "metadata": metadata or {},
+        })
+
+    def _record_semantic_turn(
+        self,
+        *,
+        session_id: str,
+        role: str,
+        text: str,
+        source: str = None,
+        user_id: str = None,
+        metadata: dict = None,
+    ):
+        content = (text or "").strip()
+        if not content:
+            return
+
+        payload = dict(metadata or {})
+        if user_id:
+            payload["user_id"] = user_id
+
+        async def _store():
+            try:
+                await chroma_store.add_chat_turn(
+                    session_id=session_id,
+                    role=role,
+                    text=content,
+                    source=source,
+                    metadata=payload,
+                )
+            except Exception as exc:
+                print(f"[SemanticMemory] Failed to store turn: {exc}")
+
+        asyncio.create_task(_store())
+
+    async def agent_loop(
+        self,
+        message: str,
+        session_id: str = None,
+        memory_session_id: str = None,
+        pre_saved_user: bool = False,
+        user_id: str = None,
+        source: str = None,
+        channel: str = "chat",
+        platform_message_id: str = None,
+        request_metadata: dict = None,
+        ingress_event_id: str = None,
+    ):
         """Agent loop as a background task. Publishes events."""
+        memory_sid = self._resolve_memory_session_id(memory_session_id, session_id)
+
+        message = (message or "").strip()
+        if not message:
+            event_bus.publish("response_done", {"session_id": session_id})
+            unified_state.update("status", "IDLE")
+            return
+
+        if len(message) > self.max_input_chars:
+            rejection_text = f"[SPARK] Message exceeds {self.max_input_chars} characters."
+            if session_id:
+                event_bus.publish("response_token", {
+                    "token": rejection_text,
+                    "session_id": session_id,
+                })
+                event_bus.publish("response_done", {"session_id": session_id})
+
+            self._publish_assistant_reply(
+                rejection_text,
+                session_id=session_id,
+                memory_session_id=memory_sid,
+                user_id=user_id,
+                source=source,
+                channel=channel,
+                platform_message_id=platform_message_id,
+                metadata={
+                    "kind": "validation_error",
+                    "ingress_event_id": ingress_event_id,
+                    **(request_metadata or {}),
+                },
+            )
+            unified_state.update("status", "IDLE")
+            return
+
         event_bus.publish("brain_decision", {"action": "start_processing", "message": message, "session_id": session_id})
         unified_state.update("status", "THINKING")
         print(f"🧠 [SPARK] Stream Processing: {message}")
-
-        memory_sid = self._resolve_memory_session_id(memory_session_id, session_id)
         
         # 0. Check for explicit manual tool execution command (Backdoor)
         tool_call = self.tool_router.detect_tool_call(message)
@@ -163,6 +338,12 @@ class AIOrchestrator:
                     **e.tool_call,
                     "_session_id": session_id,
                     "_memory_session_id": memory_sid,
+                    "_user_id": user_id,
+                    "_source": source,
+                    "_channel": channel,
+                    "_platform_message_id": platform_message_id,
+                    "_request_metadata": request_metadata or {},
+                    "_ingress_event_id": ingress_event_id,
                 }
                 unified_state.update("status", "AWAITING_CONFIRMATION")
                 print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
@@ -185,7 +366,26 @@ class AIOrchestrator:
         memory_context = await self.memory.get_recent_context(memory_sid, turns=self.memory_turns)
 
         # 2. Persist the incoming user turn
-        await self.memory.save_message(memory_sid, "user", message)
+        if not pre_saved_user:
+            await self.memory.save_message(
+                memory_sid,
+                "user",
+                message,
+                user_id=user_id,
+                source=source,
+                channel=channel,
+                transport_session_id=session_id,
+                platform_message_id=platform_message_id,
+                metadata=request_metadata,
+            )
+            self._record_semantic_turn(
+                session_id=memory_sid,
+                role="user",
+                text=message,
+                source=source,
+                user_id=user_id,
+                metadata=request_metadata,
+            )
 
         # 3. Build system prompt with bounded context and tool instructions
         system_prompt = self.personality.get_prompt(memory_context, include_tools=True)
@@ -249,6 +449,12 @@ class AIOrchestrator:
                         **e.tool_call,
                         "_session_id": session_id,
                         "_memory_session_id": memory_sid,
+                        "_user_id": user_id,
+                        "_source": source,
+                        "_channel": channel,
+                        "_platform_message_id": platform_message_id,
+                        "_request_metadata": request_metadata or {},
+                        "_ingress_event_id": ingress_event_id,
                     }
                     unified_state.update("status", "AWAITING_CONFIRMATION")
                     print(f"⚠️ [SPARK] Tool Execution Paused for Confirmation: {e.reason}")
@@ -274,7 +480,39 @@ class AIOrchestrator:
                     event_bus.publish("response_token", {"token": ref_token, "session_id": session_id})
 
                 if reflection_response:
-                    await self.memory.save_message(memory_sid, "assistant", reflection_response.strip())
+                    await self.memory.save_message(
+                        memory_sid,
+                        "assistant",
+                        reflection_response.strip(),
+                        user_id=user_id,
+                        source=source,
+                        channel=channel,
+                        transport_session_id=session_id,
+                        metadata={"kind": "tool_reflection", "tool": tool_call.get("tool")},
+                    )
+                    self._record_semantic_turn(
+                        session_id=memory_sid,
+                        role="assistant",
+                        text=reflection_response,
+                        source=source,
+                        user_id=user_id,
+                        metadata={"kind": "tool_reflection", "tool": tool_call.get("tool")},
+                    )
+                    self._publish_assistant_reply(
+                        reflection_response,
+                        session_id=session_id,
+                        memory_session_id=memory_sid,
+                        user_id=user_id,
+                        source=source,
+                        channel=channel,
+                        platform_message_id=platform_message_id,
+                        metadata={
+                            "kind": "tool_reflection",
+                            "tool": tool_call.get("tool"),
+                            "ingress_event_id": ingress_event_id,
+                            **(request_metadata or {}),
+                        },
+                    )
             else:
                 # Normal finalization
                 if pre_stream_buffer:
@@ -283,7 +521,36 @@ class AIOrchestrator:
                     pre_stream_buffer = ""
 
                 if full_response:
-                    await self.memory.save_message(memory_sid, "assistant", full_response.strip())
+                    await self.memory.save_message(
+                        memory_sid,
+                        "assistant",
+                        full_response.strip(),
+                        user_id=user_id,
+                        source=source,
+                        channel=channel,
+                        transport_session_id=session_id,
+                    )
+                    self._record_semantic_turn(
+                        session_id=memory_sid,
+                        role="assistant",
+                        text=full_response,
+                        source=source,
+                        user_id=user_id,
+                    )
+                    self._publish_assistant_reply(
+                        full_response,
+                        session_id=session_id,
+                        memory_session_id=memory_sid,
+                        user_id=user_id,
+                        source=source,
+                        channel=channel,
+                        platform_message_id=platform_message_id,
+                        metadata={
+                            "kind": "assistant_response",
+                            "ingress_event_id": ingress_event_id,
+                            **(request_metadata or {}),
+                        },
+                    )
                 
         except asyncio.CancelledError:
             print(f"⚠️ [SPARK] Stream Cancelled mid-generation. Discarding partial memory.")
@@ -301,6 +568,11 @@ class AIOrchestrator:
         memory_sid = self._resolve_memory_session_id(memory_session_id)
         memory_context = await self.memory.get_recent_context(memory_sid, turns=self.memory_turns)
         await self.memory.save_message(memory_sid, "user", message)
+        self._record_semantic_turn(
+            session_id=memory_sid,
+            role="user",
+            text=message,
+        )
         system_prompt = self.personality.get_prompt(memory_context)
 
         full_response = ""
@@ -309,6 +581,11 @@ class AIOrchestrator:
 
         if full_response:
             await self.memory.save_message(memory_sid, "assistant", full_response.strip())
+            self._record_semantic_turn(
+                session_id=memory_sid,
+                role="assistant",
+                text=full_response,
+            )
 
         if unified_state.get_state().get("status") != "AWAITING_CONFIRMATION":
             unified_state.update("status", "IDLE")

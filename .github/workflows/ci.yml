@@ -43,5 +43,13 @@ jobs:
         
     - name: Verify Core Compilation
       run: |
-        python -m py_compile spark_core/personal_ai_router.py
+        python -m py_compile spark_core/main.py
+        python -m py_compile spark_core/orchestrator/brain.py
+        python -m py_compile spark_core/tools/router.py
+        python -m py_compile spark_core/tools/sandbox.py
+        python -m py_compile spark_core/tools/web_search.py
+        python -m py_compile spark_core/tools/rag.py
+        python -m py_compile spark_core/memory/chroma_store.py
+        python -m py_compile spark_core/voice/stt.py
+        python -m py_compile spark_core/voice/tts.py
         python -m py_compile run_server.py

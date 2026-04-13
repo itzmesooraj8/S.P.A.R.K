@@ -53,6 +53,8 @@ from agents.browser_agent import browser_router
 from security.firewall_router import router as security_router  # /api/security/*
 from music.router import router as music_router                  # /api/music/*
 from combat.router import router as combat_router                # /api/combat/* — Sovereign OSINT Platform
+from social.outbound import social_dispatcher
+from webhooks.router import webhook_router
 # from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
 # from personal import personal_api_router, personal_ws_router
 # 
@@ -336,6 +338,7 @@ app.include_router(browser_router)   # /api/browser/*  — Playwright web agent
 app.include_router(security_router)  # /api/security/* — firewall + network telemetry
 app.include_router(music_router)     # /api/music/*    — local audio file browser
 app.include_router(combat_router)    # /api/combat/*   — Sovereign Cyber Intelligence Platform
+app.include_router(webhook_router)   # /webhooks/*     — external webhook ingress
 
 # # SPARK Personal AI Backend Foundation
 # # app.include_router(personal_api_router) # /api/personal/*
@@ -538,14 +541,14 @@ async def websocket_globe(websocket: WebSocket):
 async def handle_response_token(payload):
     token = payload.get("token")
     session_id = payload.get("session_id")
-    if token is not None:
-        data = {"type": "TOKEN", "content": token}
-        if session_id:
-            # Route to the specific client that owns this session
-            await ws_manager.send_to_session(session_id, data)
-        else:
-            # Fallback: broadcast to all AI subscribers (e.g. tool reflection path)
-            await ws_manager.broadcast_json(data, "ai")
+    if token is None:
+        return
+
+    data = {"type": "TOKEN", "content": token}
+    if session_id:
+        await ws_manager.send_to_session(session_id, data)
+    elif payload.get("broadcast", False):
+        await ws_manager.broadcast_json(data, "ai")
 
 @event_bus.subscribe("response_done")
 async def handle_response_done(payload):
@@ -553,8 +556,15 @@ async def handle_response_done(payload):
     data = {"type": "DONE"}
     if session_id:
         await ws_manager.send_to_session(session_id, data)
-    else:
+    elif payload.get("broadcast", False):
         await ws_manager.broadcast_json(data, "ai")
+
+
+@event_bus.subscribe("assistant_reply")
+async def handle_assistant_reply(payload):
+    result = await social_dispatcher.dispatch(payload)
+    if result.get("status") == "failed":
+        print(f"⚠️ [SocialOutbound] Delivery failed: {result}")
 
 @event_bus.subscribe("confirm_tool")
 async def handle_confirm_tool(payload):

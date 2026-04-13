@@ -104,8 +104,9 @@ class PersonalityEngine:
         if include_tools:
             tool_rules = (
                 "Tool execution rules:\n"
-                "  Available tools: get_time, ping, list_capabilities\n"
-                "  If the task requires system state, time, capabilities, or a local ping,\n"
+                "  Available tools: get_time, ping, list_capabilities, web_search, web_fetch_url, "
+                "rag_query, rag_ingest_text, rag_ingest_file, rag_stats\n"
+                "  If the task requires system state, time, capabilities, web lookup, or memory retrieval,\n"
                 "  respond ONLY with valid JSON in this exact format:\n"
                 '  {"tool": "get_time", "arguments": {}}\n'
                 "  No other text when calling a tool.\n"

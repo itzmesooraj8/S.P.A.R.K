@@ -6,9 +6,28 @@ from typing import Optional
 
 import httpx
 
+
+def _int_env(name: str, default: int) -> int:
+    try:
+        return int(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
+
+def _float_env(name: str, default: float) -> float:
+    try:
+        return float(os.getenv(name, str(default)))
+    except (TypeError, ValueError):
+        return default
+
 _DEFAULT_MODEL = os.getenv("OLLAMA_MODEL", "gemma3:4b")
 _DEFAULT_OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://127.0.0.1:11434")
-_OLLAMA_POLL_SECONDS = int(os.getenv("OLLAMA_HEALTH_POLL_SECONDS", "10"))
+_OLLAMA_POLL_SECONDS = _int_env("OLLAMA_HEALTH_POLL_SECONDS", 10)
+_MAX_INPUT_CHARS = _int_env("SPARK_MAX_INPUT_CHARS", 8000)
+_MAX_SYSTEM_PROMPT_CHARS = _int_env("SPARK_MAX_SYSTEM_PROMPT_CHARS", 12000)
+_MAX_TOTAL_PROMPT_CHARS = _int_env("SPARK_MAX_TOTAL_PROMPT_CHARS", 18000)
+_MAX_PREDICT_TOKENS = _int_env("SPARK_OLLAMA_MAX_TOKENS", 1024)
+_MEMORY_PRESSURE_THRESHOLD = _float_env("SPARK_MEMORY_PRESSURE_PCT", 92.0)
 
 class HybridLLM:
     """
@@ -22,12 +41,53 @@ class HybridLLM:
         self._last_health_check = 0.0
         self._poll_task: Optional[asyncio.Task] = None
         self._poll_interval_s = max(3, _OLLAMA_POLL_SECONDS)
+        self._max_input_chars = max(128, _MAX_INPUT_CHARS)
+        self._max_system_prompt_chars = max(512, _MAX_SYSTEM_PROMPT_CHARS)
+        self._max_total_prompt_chars = max(
+            self._max_input_chars,
+            _MAX_TOTAL_PROMPT_CHARS,
+        )
+        self._max_predict_tokens = max(64, _MAX_PREDICT_TOKENS)
+        self._memory_pressure_threshold = max(75.0, _MEMORY_PRESSURE_THRESHOLD)
 
         self._ollama_online = self._check_ollama_health_sync()
         if self._ollama_online:
             print(f"[LLM] Ollama ONLINE - {self.model} ready")
         else:
             print("[LLM] WARNING: Ollama offline at startup; background poller enabled")
+
+    def _within_prompt_budget(self, system_prompt: str, user_text: str) -> tuple[str, str]:
+        system_text = (system_prompt or "").strip()
+        user_message = (user_text or "").strip()
+
+        if len(user_message) > self._max_input_chars:
+            user_message = user_message[: self._max_input_chars]
+
+        if len(system_text) > self._max_system_prompt_chars:
+            # Keep the latest context segment when trimming long system prompts.
+            system_text = system_text[-self._max_system_prompt_chars :]
+
+        total_chars = len(system_text) + len(user_message)
+        if total_chars > self._max_total_prompt_chars:
+            overflow = total_chars - self._max_total_prompt_chars
+
+            if overflow > 0 and len(system_text) > 512:
+                trim_system = min(overflow, len(system_text) - 512)
+                system_text = system_text[trim_system:]
+                overflow -= trim_system
+
+            if overflow > 0 and user_message:
+                user_message = user_message[: max(1, len(user_message) - overflow)]
+
+        return system_text, user_message
+
+    def _memory_pressure_block(self) -> bool:
+        try:
+            import psutil
+
+            return psutil.virtual_memory().percent >= self._memory_pressure_threshold
+        except Exception:
+            return False
 
     def _check_ollama_health_sync(self) -> bool:
         try:
@@ -77,13 +137,15 @@ class HybridLLM:
         return await self._update_ollama_status(force=True)
 
     async def _stream_local(self, system_prompt: str, user_text: str):
+        bounded_system_prompt, bounded_user_text = self._within_prompt_budget(system_prompt, user_text)
         payload = {
             "model": self.model,
             "messages": [
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": user_text},
+                {"role": "system", "content": bounded_system_prompt},
+                {"role": "user", "content": bounded_user_text},
             ],
             "stream": True,
+            "options": {"num_predict": self._max_predict_tokens},
         }
 
         timeout = httpx.Timeout(connect=3.0, read=120.0, write=15.0, pool=5.0)
@@ -110,6 +172,13 @@ class HybridLLM:
 
         retries = int(os.getenv("SPARK_LOCAL_RETRIES", "3"))
         last_error = None
+
+        if self._memory_pressure_block():
+            yield (
+                "[SPARK] Memory pressure is high. Generation paused to avoid OOM. "
+                "Please retry after active tasks settle."
+            )
+            return
 
         online = await self._update_ollama_status(force=not self._ollama_online)
         if not online:
