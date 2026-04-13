@@ -1,4 +1,6 @@
 .env
+.env.*
+!.env.example
 __pycache__/
 *.pyc
 master.key
@@ -41,3 +43,7 @@ spark_core/spark_dev_memory/
 *.log
 
 chroma_db/
+
+# Runtime/debug artifacts (never commit)
+spark_core/out.txt
+spark_verification_results.json
