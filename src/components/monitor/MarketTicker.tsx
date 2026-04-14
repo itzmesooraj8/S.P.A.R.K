@@ -7,7 +7,7 @@
 import { useMemo } from 'react';
 import { TrendingUp, TrendingDown } from 'lucide-react';
 import { useMonitorStore } from '@/store/useMonitorStore';
-import { getTickerForMode } from '@/data/mockData';
+import { getTickerForMode } from '@/data/monitorSeed';
 
 interface MarketTickerProps {
   accentColor?: string;

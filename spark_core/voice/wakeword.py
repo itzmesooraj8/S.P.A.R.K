@@ -5,6 +5,8 @@ Runs openwakeword on a continuous microphone stream in a background thread.
 Detects "Hey SPARK" (using 'hey spark' as placeholder) and publishes events.
 """
 
+import asyncio
+import os
 import threading
 import time
 import numpy as np
@@ -45,14 +47,33 @@ class WakeWordListener:
         self.thread: Optional[threading.Thread] = None
         self.model: Optional[object] = None  # openwakeword.model.Model when loaded
         self.stream = None
+        self.loop: Optional[asyncio.AbstractEventLoop] = None
         
         # Model key must match the .onnx filename stem (e.g. hey_spark_v0.1.onnx → "hey_spark_v0.1")
         # Swap for a custom "hey_spark" model once trained.
         self.wake_word_name = "alexa"
         # Human-readable name shown in logs and broadcast to the frontend
         self.display_name = "Alexa"
+        self.detection_threshold = self._coerce_threshold(
+            os.getenv("SPARK_WAKE_SENSITIVITY", str(self.DETECTION_THRESHOLD))
+        )
+
+    @staticmethod
+    def _coerce_threshold(value: float | str) -> float:
+        try:
+            numeric = float(value)
+        except (TypeError, ValueError):
+            numeric = WakeWordListener.DETECTION_THRESHOLD
+        return max(0.1, min(0.95, numeric))
+
+    def get_sensitivity(self) -> float:
+        return float(self.detection_threshold)
+
+    def set_sensitivity(self, value: float | str) -> float:
+        self.detection_threshold = self._coerce_threshold(value)
+        return self.detection_threshold
     
-    def start(self):
+    def start(self, loop: Optional[asyncio.AbstractEventLoop] = None):
         """Start the wake word listener in a background daemon thread."""
         if not SOUNDDEVICE_OK:
             print("⚠️ [WakeWord] sounddevice not installed — wake word disabled")
@@ -65,6 +86,8 @@ class WakeWordListener:
         if self.running:
             print("⚠️ [WakeWord] Already running")
             return
+
+        self.loop = loop
         
         self.running = True
         self.thread = threading.Thread(target=self._run_detection_loop, daemon=True)
@@ -158,7 +181,7 @@ class WakeWordListener:
                     confidence = prediction.get(self.wake_word_name, 0.0)
 
                     # Check for wake word detection
-                    if confidence > self.DETECTION_THRESHOLD:
+                    if confidence > self.detection_threshold:
                         print(f"🎤 [WakeWord] DETECTED '{self.display_name}' (confidence: {confidence:.2f})")
                         self._publish_wake_word_event(confidence)
 
@@ -183,21 +206,33 @@ class WakeWordListener:
         """
         try:
             from ws.manager import ws_manager
+            from system.event_bus import event_bus
         except ImportError:
             print("⚠️ [WakeWord] WebSocket manager not available")
             return
-        
-        import asyncio
+
         import time as time_module
         
+        payload = {
+            "type": "WAKE_WORD_DETECTED",
+            "wake_word": self.display_name,
+            "confidence": round(confidence, 3),
+            "threshold": round(self.detection_threshold, 3),
+            "timestamp": time_module.time() * 1000,
+        }
+
+        if not self.loop or not self.loop.is_running():
+            print("⚠️ [WakeWord] Event loop unavailable; wake event dropped")
+            return
+
         try:
-            # Broadcast to all connected sessions
-            asyncio.create_task(ws_manager.broadcast_json({
-                "type": "WAKE_WORD_DETECTED",
-                "wake_word": self.display_name,
-                "confidence": round(confidence, 3),
-                "timestamp": time_module.time() * 1000,
-            }, "system"))
+            asyncio.run_coroutine_threadsafe(
+                ws_manager.broadcast_json(payload, "system"),
+                self.loop,
+            )
+
+            # Publish on event bus from the main asyncio thread.
+            self.loop.call_soon_threadsafe(event_bus.publish, "wake_word_detected", payload)
         except Exception as broadcast_err:
             print(f"⚠️ [WakeWord] Failed to broadcast event: {broadcast_err}")
 
@@ -212,8 +247,13 @@ def start_wakeword_listener():
     
     if _wakeword_listener is None:
         _wakeword_listener = WakeWordListener()
-    
-    _wakeword_listener.start()
+
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:
+        loop = None
+
+    _wakeword_listener.start(loop=loop)
 
 
 def stop_wakeword_listener():
@@ -221,3 +261,17 @@ def stop_wakeword_listener():
     global _wakeword_listener
     if _wakeword_listener:
         _wakeword_listener.stop()
+
+
+def get_wakeword_sensitivity() -> float:
+    global _wakeword_listener
+    if _wakeword_listener is None:
+        _wakeword_listener = WakeWordListener()
+    return _wakeword_listener.get_sensitivity()
+
+
+def set_wakeword_sensitivity(value: float | str) -> float:
+    global _wakeword_listener
+    if _wakeword_listener is None:
+        _wakeword_listener = WakeWordListener()
+    return _wakeword_listener.set_sensitivity(value)

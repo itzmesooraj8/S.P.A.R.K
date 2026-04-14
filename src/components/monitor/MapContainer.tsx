@@ -12,7 +12,7 @@ import { ScatterplotLayer, ArcLayer } from '@deck.gl/layers';
 import { FlyToInterpolator, _GlobeView as GlobeView, MapView } from '@deck.gl/core';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import { useMonitorStore, TIME_WINDOW_MS } from '@/store/useMonitorStore';
-import { getEventsForMode, getArcsForMode } from '@/data/mockData';
+import { getEventsForMode, getArcsForMode } from '@/data/monitorSeed';
 
 // ── Map style URLs ────────────────────────────────────────────────────────────
 const STYLES = {

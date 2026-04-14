@@ -20,10 +20,11 @@ Endpoints exposed (registered in main.py):
 import os
 import time
 import uuid
+import io
 from typing import Optional, List, Dict, Any
 
 import chromadb
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form
 from pydantic import BaseModel
 
 # ── ChromaDB setup ─────────────────────────────────────────────────────────────
@@ -57,6 +58,7 @@ VALID_COLLECTIONS = {"spark_knowledge", "spark_conversations", "spark_code", "sp
 class IndexRequest(BaseModel):
     text: str
     collection: str = "spark_knowledge"
+    collection_name: Optional[str] = None
     doc_id: Optional[str] = None
     metadata: Dict[str, Any] = {}
     tags: List[str] = []
@@ -69,6 +71,7 @@ class BulkIndexRequest(BaseModel):
 class QueryRequest(BaseModel):
     query: str
     collection: str = "spark_knowledge"
+    collection_name: Optional[str] = None
     n_results: int = 5
     where: Optional[Dict[str, Any]] = None
     include_distances: bool = True
@@ -82,13 +85,35 @@ class SearchResult(BaseModel):
     collection: str
 
 
+def _resolve_collection_name(collection: str, collection_name: Optional[str]) -> str:
+    resolved = (collection_name or collection or "spark_knowledge").strip()
+    return resolved if resolved in VALID_COLLECTIONS else "spark_knowledge"
+
+
+def _extract_upload_text(upload: UploadFile, payload: bytes) -> str:
+    filename = (upload.filename or "").lower()
+    content_type = (upload.content_type or "").lower()
+
+    if filename.endswith(".pdf") or "pdf" in content_type:
+        from pypdf import PdfReader
+
+        reader = PdfReader(io.BytesIO(payload))
+        pages = []
+        for page in reader.pages:
+            pages.append(page.extract_text() or "")
+        return "\n".join(pages).strip()
+
+    return payload.decode("utf-8", errors="ignore").strip()
+
+
 @neural_router.post("/index")
 async def index_document(req: IndexRequest):
     """Add a document to the neural vector store."""
-    if req.collection not in VALID_COLLECTIONS:
+    resolved_collection = _resolve_collection_name(req.collection, req.collection_name)
+    if resolved_collection not in VALID_COLLECTIONS:
         raise HTTPException(status_code=400, detail=f"Invalid collection. Choose from: {VALID_COLLECTIONS}")
 
-    collection = get_collection(req.collection)
+    collection = get_collection(resolved_collection)
     doc_id = req.doc_id or str(uuid.uuid4())
 
     metadata = {**req.metadata, "tags": ",".join(req.tags), "indexed_at": time.time()}
@@ -102,7 +127,7 @@ async def index_document(req: IndexRequest):
     return {
         "status": "indexed",
         "doc_id": doc_id,
-        "collection": req.collection,
+        "collection": resolved_collection,
         "text_length": len(req.text),
     }
 
@@ -116,7 +141,7 @@ async def bulk_index(req: BulkIndexRequest):
     # Group by collection for efficiency
     by_collection: Dict[str, List] = {}
     for doc in req.documents:
-        coll = doc.collection if doc.collection in VALID_COLLECTIONS else "spark_knowledge"
+        coll = _resolve_collection_name(doc.collection, doc.collection_name)
         by_collection.setdefault(coll, []).append(doc)
 
     for coll_name, docs in by_collection.items():
@@ -140,10 +165,11 @@ async def bulk_index(req: BulkIndexRequest):
 @neural_router.post("/query")
 async def query_documents(req: QueryRequest):
     """Semantic vector search across a collection."""
-    if req.collection not in VALID_COLLECTIONS:
+    resolved_collection = _resolve_collection_name(req.collection, req.collection_name)
+    if resolved_collection not in VALID_COLLECTIONS:
         raise HTTPException(status_code=400, detail=f"Invalid collection. Choose from: {VALID_COLLECTIONS}")
 
-    collection = get_collection(req.collection)
+    collection = get_collection(resolved_collection)
 
     try:
         count = collection.count()
@@ -185,7 +211,7 @@ async def query_documents(req: QueryRequest):
         return {
             "results": hits,
             "query": req.query,
-            "collection": req.collection,
+            "collection": resolved_collection,
             "total_docs": count,
         }
 
@@ -210,17 +236,59 @@ async def neural_stats():
 
 
 @neural_router.delete("/document/{doc_id}")
-async def delete_document(doc_id: str, collection: str = "spark_knowledge"):
+async def delete_document(doc_id: str, collection: str = "spark_knowledge", collection_name: Optional[str] = None):
     """Remove a document from the vector store."""
-    if collection not in VALID_COLLECTIONS:
+    resolved_collection = _resolve_collection_name(collection, collection_name)
+    if resolved_collection not in VALID_COLLECTIONS:
         raise HTTPException(status_code=400, detail="Invalid collection")
 
-    coll = get_collection(collection)
+    coll = get_collection(resolved_collection)
     try:
         coll.delete(ids=[doc_id])
-        return {"status": "deleted", "doc_id": doc_id, "collection": collection}
+        return {"status": "deleted", "doc_id": doc_id, "collection": resolved_collection}
     except Exception as e:
         raise HTTPException(status_code=404, detail=f"Document not found or delete failed: {e}")
+
+
+@neural_router.post("/upload")
+async def upload_document(
+    file: UploadFile = File(...),
+    collection: str = Form("spark_knowledge"),
+    tags: str = Form(""),
+):
+    """Upload a file (txt/md/pdf) and index extracted text into ChromaDB."""
+    resolved_collection = _resolve_collection_name(collection, None)
+    if resolved_collection not in VALID_COLLECTIONS:
+        raise HTTPException(status_code=400, detail=f"Invalid collection. Choose from: {VALID_COLLECTIONS}")
+
+    raw = await file.read()
+    if not raw:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty")
+
+    text = _extract_upload_text(file, raw)
+    if not text:
+        raise HTTPException(status_code=400, detail="Could not extract text from file")
+
+    tag_list = [t.strip() for t in tags.split(",") if t.strip()]
+    metadata = {
+        "source": "upload",
+        "filename": file.filename or "upload",
+        "content_type": file.content_type or "application/octet-stream",
+        "indexed_at": time.time(),
+        "tags": ",".join(tag_list),
+    }
+
+    collection_ref = get_collection(resolved_collection)
+    doc_id = str(uuid.uuid4())
+    collection_ref.upsert(ids=[doc_id], documents=[text], metadatas=[metadata])
+
+    return {
+        "status": "indexed",
+        "doc_id": doc_id,
+        "collection": resolved_collection,
+        "filename": file.filename,
+        "text_length": len(text),
+    }
 
 
 @neural_router.post("/index-knowledge-base")

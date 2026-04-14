@@ -87,6 +87,17 @@
     --ring: 0 0% 90%;
     --hud-blue: 0 0% 75%;
   }
+
+  /* Warm Active Theme */
+  .theme-amber {
+    --primary: 42 100% 56%;
+    --hud-cyan: 42 100% 56%;
+    --hud-cyan-dim: 42 75% 36%;
+    --hud-cyan-glow: 42 100% 72%;
+    --border: 42 90% 28%;
+    --ring: 42 100% 56%;
+    --hud-blue: 28 100% 58%;
+  }
 }
 
 @layer base {

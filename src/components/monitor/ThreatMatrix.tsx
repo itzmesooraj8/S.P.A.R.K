@@ -11,7 +11,7 @@ import {
 import { useMonitorStore, TIME_WINDOW_MS } from '@/store/useMonitorStore';
 import { useActivityTracker } from '@/hooks/useActivityTracker';
 import type { RealEvent, Severity, TimeWindow } from '@/store/useMonitorStore';
-import { getEventsForMode, type MonitorEvent } from '@/data/mockData';
+import { getEventsForMode, type MonitorEvent } from '@/data/monitorSeed';
 import { BasePanel } from './BasePanel';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import { ProvenanceTooltip } from './ProvenanceTooltip';

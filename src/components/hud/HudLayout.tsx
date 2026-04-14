@@ -22,6 +22,8 @@ import MindModule from './modules/MindModule';
 import SparkAlertToast from './SparkAlertToast';
 import AgentConfirmModal from './AgentConfirmModal';
 import CommandBar from './CommandBar';
+import VoiceStatusPanel from './VoiceStatusPanel';
+import MemoryPanel from './MemoryPanel';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 import { useHudTheme } from '@/contexts/ThemeContext';
@@ -236,8 +238,13 @@ export default function HudLayout() {
       {/* Main content */}
       <div className="flex-1 flex gap-1.5 px-1.5 py-1 min-h-0 z-10 relative">
         {/* LEFT PANEL */}
-        <div className="w-56 shrink-0 hud-panel rounded overflow-hidden">
-          <SystemPanel metrics={metrics} />
+        <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
+          <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
+            <SystemPanel metrics={metrics} />
+          </div>
+          <div className="h-56 hud-panel rounded overflow-hidden">
+            <MemoryPanel />
+          </div>
         </div>
 
         {/* CENTER */}
@@ -316,14 +323,24 @@ export default function HudLayout() {
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="w-56 shrink-0 hud-panel rounded overflow-hidden">
-          <ControlPanel
-            commandHistory={voice.commandHistory}
-            aiResponse={voice.aiResponse}
-            transcript={voice.transcript}
-            onProcessInput={voice.processInput}
-            status={voice.status}
-          />
+        <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
+          <div className="h-72 hud-panel rounded overflow-hidden">
+            <VoiceStatusPanel
+              status={voice.status}
+              isListening={voice.isListening}
+              amplitude={voice.amplitude}
+              ttsPlayback={voice.ttsPlayback}
+            />
+          </div>
+          <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
+            <ControlPanel
+              commandHistory={voice.commandHistory}
+              aiResponse={voice.aiResponse}
+              transcript={voice.transcript}
+              onProcessInput={voice.processInput}
+              status={voice.status}
+            />
+          </div>
         </div>
       </div>
 

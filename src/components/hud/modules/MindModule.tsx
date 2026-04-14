@@ -229,6 +229,8 @@ function SearchTab() {
   const [indexMeta, setIndexMeta] = useState('');
   const [indexed, setIndexed]     = useState(false);
   const [topK, setTopK]           = useState(5);
+  const [uploadFile, setUploadFile] = useState<File | null>(null);
+  const [dragActive, setDragActive] = useState(false);
 
   const doSearch = async () => {
     if (!query.trim()) return;
@@ -291,6 +293,35 @@ function SearchTab() {
     } catch (e: unknown) {
       setError(e instanceof Error ? e.message : 'KB index failed');
     } finally { setLoading(false); }
+  };
+
+  const uploadDocument = async () => {
+    if (!uploadFile) return;
+    setLoading(true);
+    setError(null);
+    setIndexed(false);
+    try {
+      const form = new FormData();
+      form.append('file', uploadFile);
+      form.append('collection', collection);
+
+      const res = await fetch(`${API}/api/neural-search/upload`, {
+        method: 'POST',
+        body: form,
+      });
+      if (!res.ok) {
+        const text = await res.text();
+        throw new Error(text || 'Upload failed');
+      }
+
+      setIndexed(true);
+      setUploadFile(null);
+      loadStats();
+    } catch (e: unknown) {
+      setError(e instanceof Error ? e.message : 'Upload failed');
+    } finally {
+      setLoading(false);
+    }
   };
 
   return (
@@ -396,6 +427,45 @@ function SearchTab() {
 
         {subTab === 'index' && (
           <div className="flex flex-col gap-3">
+            <div
+              className="rounded border border-dashed p-3 text-center transition-all"
+              style={{
+                borderColor: dragActive ? `${ACCENT}90` : `${ACCENT}45`,
+                background: dragActive ? `${ACCENT}12` : 'rgba(0,0,0,0.25)',
+              }}
+              onDragOver={(e) => { e.preventDefault(); setDragActive(true); }}
+              onDragLeave={() => setDragActive(false)}
+              onDrop={(e) => {
+                e.preventDefault();
+                setDragActive(false);
+                const file = e.dataTransfer.files?.[0];
+                if (file) setUploadFile(file);
+              }}
+            >
+              <div className="font-orbitron text-[8px] text-hud-cyan/70">DRAG & DROP PDF/TXT/MD</div>
+              <div className="font-mono-tech text-[8px] text-hud-cyan/40 mt-1">
+                {uploadFile ? `Selected: ${uploadFile.name}` : 'or choose a file manually'}
+              </div>
+              <div className="mt-2 flex items-center justify-center gap-2">
+                <label className="font-orbitron text-[8px] px-2 py-1 rounded border border-hud-cyan/30 text-hud-cyan/70 hover:border-hud-cyan/70 cursor-pointer">
+                  CHOOSE FILE
+                  <input
+                    type="file"
+                    accept=".pdf,.txt,.md,.markdown"
+                    className="hidden"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] ?? null)}
+                  />
+                </label>
+                <button
+                  onClick={uploadDocument}
+                  disabled={loading || !uploadFile}
+                  className="font-orbitron text-[8px] px-2 py-1 rounded border border-hud-green/40 text-hud-green/80 hover:border-hud-green disabled:opacity-40"
+                >
+                  UPLOAD TO RAG
+                </button>
+              </div>
+            </div>
+
             <textarea value={indexText} onChange={e => setIndexText(e.target.value)}
               placeholder="ENTER TEXT TO INDEX INTO VECTOR MEMORY..."
               rows={6}

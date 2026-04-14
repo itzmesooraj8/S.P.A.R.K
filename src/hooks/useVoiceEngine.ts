@@ -21,10 +21,46 @@ export interface CommandEntry {
   timestamp: Date;
 }
 
+export interface TtsPlaybackState {
+  speaking: boolean;
+  progress: number;
+  currentSec: number;
+  durationSec: number;
+  engine: string;
+}
+
 // ── TTS Helper ─────────────────────────────────────────────────────────────────
 let _currentAudio: HTMLAudioElement | null = null;
 let _ttsQueue: string[] = [];
 let _isSpeaking = false;
+
+const _ttsListeners = new Set<(state: TtsPlaybackState) => void>();
+let _ttsState: TtsPlaybackState = {
+  speaking: false,
+  progress: 0,
+  currentSec: 0,
+  durationSec: 0,
+  engine: 'unknown',
+};
+
+function _emitTtsState(next: Partial<TtsPlaybackState>) {
+  _ttsState = { ..._ttsState, ...next };
+  _ttsListeners.forEach((listener) => {
+    try {
+      listener(_ttsState);
+    } catch {
+      // ignore listener failures
+    }
+  });
+}
+
+function _subscribeTtsState(listener: (state: TtsPlaybackState) => void) {
+  _ttsListeners.add(listener);
+  listener(_ttsState);
+  return () => {
+    _ttsListeners.delete(listener);
+  };
+}
 
 async function _playNextInQueue(): Promise<void> {
   if (_isSpeaking || _ttsQueue.length === 0) return;
@@ -50,20 +86,43 @@ async function _playNextInQueue(): Promise<void> {
 
     if (!response.ok) {
       _isSpeaking = false;
+      _emitTtsState({ speaking: false, progress: 0, currentSec: 0, durationSec: 0 });
       _playNextInQueue(); // Try next item
       return;
     }
 
+    const engine = response.headers.get('X-Engine') || 'unknown';
     const blob = await response.blob();
     const url = URL.createObjectURL(blob);
     const audio = new Audio(url);
     _currentAudio = audio;
+
+    _emitTtsState({
+      speaking: true,
+      progress: 0,
+      currentSec: 0,
+      durationSec: 0,
+      engine,
+    });
+
+    audio.onloadedmetadata = () => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      _emitTtsState({ durationSec: duration });
+    };
+
+    audio.ontimeupdate = () => {
+      const duration = Number.isFinite(audio.duration) ? audio.duration : 0;
+      const current = Number.isFinite(audio.currentTime) ? audio.currentTime : 0;
+      const progress = duration > 0 ? Math.min(1, current / duration) : 0;
+      _emitTtsState({ currentSec: current, durationSec: duration, progress });
+    };
 
     // When this audio finishes, play the next one
     audio.onended = () => {
       URL.revokeObjectURL(url);
       _currentAudio = null;
       _isSpeaking = false;
+      _emitTtsState({ speaking: false, progress: 1, currentSec: 0, durationSec: 0 });
       _playNextInQueue();
     };
 
@@ -71,17 +130,20 @@ async function _playNextInQueue(): Promise<void> {
       URL.revokeObjectURL(url);
       _currentAudio = null;
       _isSpeaking = false;
+      _emitTtsState({ speaking: false, progress: 0, currentSec: 0, durationSec: 0 });
       _playNextInQueue();
     };
 
     audio.play().catch(() => {
       _isSpeaking = false;
       URL.revokeObjectURL(url);
+      _emitTtsState({ speaking: false, progress: 0, currentSec: 0, durationSec: 0 });
       _playNextInQueue();
     });
   } catch (err) {
     wsWarn('TTS error:', err);
     _isSpeaking = false;
+    _emitTtsState({ speaking: false, progress: 0, currentSec: 0, durationSec: 0 });
     _playNextInQueue();
   }
 }
@@ -110,6 +172,7 @@ export function stopTTS() {
   }
   _ttsQueue = [];
   _isSpeaking = false;
+  _emitTtsState({ speaking: false, progress: 0, currentSec: 0, durationSec: 0 });
 }
 
 export function useVoiceEngine() {
@@ -123,6 +186,7 @@ export function useVoiceEngine() {
     { id: '0', type: 'ai', text: 'SPARK v4.1 Sovereign Core initialized. Awaiting input.', timestamp: new Date() },
   ]);
   const [amplitude, setAmplitude] = useState<number[]>(new Array(32).fill(0));
+  const [ttsPlayback, setTtsPlayback] = useState<TtsPlaybackState>(_ttsState);
 
   const recognitionRef = useRef<any>(null);
   const analyserRef = useRef<AnalyserNode | null>(null);
@@ -160,6 +224,10 @@ export function useVoiceEngine() {
   useEffect(() => {
     isListeningRef.current = isListening;
   }, [isListening]);
+
+  useEffect(() => {
+    return _subscribeTtsState(setTtsPlayback);
+  }, []);
 
   const finishStreamingResponse = useCallback((opts?: { errorMessage?: string; skipTts?: boolean }) => {
     awaitingResponseRef.current = false;
@@ -469,6 +537,7 @@ export function useVoiceEngine() {
   return {
     status, isListening, isOnline, transcript,
     aiResponse, commandHistory, amplitude,
+    ttsPlayback,
     ttsEnabled, setTtsEnabled,
     toggleMic, processInput, cancelGeneration,
     speakText,

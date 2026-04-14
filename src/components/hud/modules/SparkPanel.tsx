@@ -26,6 +26,18 @@ interface CognitiveStatus {
   cycle_interval_s: number; last_cycle: CognitiveCycle | null;
 }
 
+interface OODAStatus {
+  running: boolean;
+  phase: string;
+  cycle_count: number;
+  cycle_interval_s: number;
+  last_cycle: {
+    observed?: { global_risk_score?: number; hotspots?: number };
+    oriented?: { urgency?: string };
+    decision?: { action?: string; confidence?: number };
+  } | null;
+}
+
 /* ── colours ─────────────────────────────────────────────────────────────── */
 const STATE_ICON: Record<AgentState, React.ReactNode> = {
   IDLE:      <Clock size={11} className="text-hud-cyan/60" />,
@@ -183,6 +195,13 @@ function CognitionTab() {
     retry: false,
   });
 
+  const { data: oodaData, refetch: refetchOoda } = useQuery<OODAStatus>({
+    queryKey: ['ooda-status'],
+    queryFn: () => apiGet<OODAStatus>('/api/ooda/status'),
+    refetchInterval: 2000,
+    retry: false,
+  });
+
   const phase       = data?.phase ?? 'IDLE';
   const cycleCount  = data?.cycle_count ?? 0;
   const lastCycle   = data?.last_cycle;
@@ -227,10 +246,37 @@ function CognitionTab() {
       )}
       <div className="flex items-center justify-between shrink-0">
         <span className="font-orbitron text-[9px] text-hud-cyan/60">◈ COGNITIVE LOOP</span>
-        <button onClick={() => refetch()} className="p-1 rounded border border-hud-cyan/25 text-hud-cyan/60 hover:text-hud-cyan">
+        <button onClick={() => { refetch(); refetchOoda(); }} className="p-1 rounded border border-hud-cyan/25 text-hud-cyan/60 hover:text-hud-cyan">
           <RefreshCw size={10} className={isLoading ? 'animate-spin' : ''} />
         </button>
       </div>
+
+      {oodaData && (
+        <div className="hud-panel rounded p-2 shrink-0 border-hud-amber/20">
+          <div className="flex items-center justify-between mb-1">
+            <span className="font-orbitron text-[8px] text-hud-amber tracking-wider">OODA LOOP</span>
+            <span className="font-mono-tech text-[8px] text-hud-amber/80">{oodaData.phase}</span>
+          </div>
+          <div className="grid grid-cols-3 gap-2">
+            <div>
+              <div className="font-mono-tech text-[7px] text-hud-cyan/40">CYCLES</div>
+              <div className="font-orbitron text-[10px] text-hud-cyan">{oodaData.cycle_count}</div>
+            </div>
+            <div>
+              <div className="font-mono-tech text-[7px] text-hud-cyan/40">RISK</div>
+              <div className="font-orbitron text-[10px] text-hud-amber">
+                {Math.round(Number(oodaData.last_cycle?.observed?.global_risk_score ?? 0))}
+              </div>
+            </div>
+            <div>
+              <div className="font-mono-tech text-[7px] text-hud-cyan/40">ACTION</div>
+              <div className="font-orbitron text-[10px] text-hud-green">
+                {String(oodaData.last_cycle?.decision?.action ?? 'monitor').toUpperCase()}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       <div className="flex-1 bg-black/60 rounded border border-hud-cyan/15 p-3 overflow-y-auto scrollbar-hud">
         <div className="font-mono-tech text-[9px] text-hud-green mb-2">
           {isRunning ? 'SPARK COGNITIVE LOOP — ACTIVE' : 'SPARK AI ENGINE — STANDBY'}

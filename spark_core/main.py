@@ -1,5 +1,5 @@
 import asyncio
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Depends, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
@@ -39,12 +39,19 @@ from agents.spark_commander_router import commander_router, classify_intent
 from cognitive.loop import cognitive_loop
 from cognitive.self_optimizer import self_evolution
 from memory.graph_memory import knowledge_graph
+from memory.chroma_store import chroma_store
 from globe.predictor import threat_predictor
 
 # ── NEW SPARK FEATURE MODULES ──────────────────────────────────────────────────
 from voice.tts_router import tts_router
 from voice.stt_router import stt_router
-from voice.wakeword import start_wakeword_listener
+from voice.wakeword import (
+    start_wakeword_listener,
+    stop_wakeword_listener,
+    get_wakeword_sensitivity,
+    set_wakeword_sensitivity,
+)
+from voice.wake_loop import start_wake_loop, stop_wake_loop, wake_loop
 from neural_search.search import neural_router
 from neural_search.file_watcher import kb_watcher
 from plugins.manager import plugins_router
@@ -55,6 +62,7 @@ from music.router import router as music_router                  # /api/music/*
 from combat.router import router as combat_router                # /api/combat/* — Sovereign OSINT Platform
 from social.outbound import social_dispatcher
 from webhooks.router import webhook_router
+from intelligence.ooda_loop import ooda_loop
 # from command import intent_router, execute_routing_decision, RoutingRequest     # /api/command/*
 # from personal import personal_api_router, personal_ws_router
 # 
@@ -145,6 +153,10 @@ async def lifespan(app: FastAPI):
     start_wakeword_listener()
     print("🎤 [SPARK] Wake word listener started in background thread.")
 
+    # ── Start always-on wake loop (wake -> STT -> brain -> TTS) ────────────────
+    start_wake_loop()
+    print("🎙️ [SPARK] Wake loop started.")
+
     # ── Start Skill Engine Watchdog ─────────────────────────────────────────────
     try:
         from spark_core.skills.watchdog import SkillWatchdog
@@ -189,6 +201,10 @@ async def lifespan(app: FastAPI):
     asyncio.create_task(_threat_feed_loop())
     print("⚠️  [SPARK] Threat predictor feed started.")
 
+    # Start autonomous OODA loop
+    ooda_loop.start()
+    print("🧭 [SPARK] OODA loop started.")
+
     # Log active models
     asyncio.create_task(_log_model_status())
 
@@ -197,6 +213,9 @@ async def lifespan(app: FastAPI):
     yield
 
     print("🛸 [SPARK] Core Node Shutting Down...")
+    ooda_loop.stop()
+    stop_wake_loop()
+    stop_wakeword_listener()
     cognitive_loop.stop()
     await teardown_sandbox()
 
@@ -588,6 +607,26 @@ async def handle_spark_alert(payload):
     }, "system")
 
 
+@event_bus.subscribe("voice_status_update")
+async def handle_voice_status(payload):
+    await ws_manager.broadcast_json({
+        "v": 1,
+        "type": "VOICE_STATUS",
+        "ts": time.time() * 1000,
+        **(payload or {}),
+    }, "system")
+
+
+@event_bus.subscribe("ooda_status_update")
+async def handle_ooda_status(payload):
+    await ws_manager.broadcast_json({
+        "v": 1,
+        "type": "OODA_STATUS",
+        "ts": time.time() * 1000,
+        **(payload or {}),
+    }, "system")
+
+
 # -----------------
 # API ENDPOINTS
 # -----------------
@@ -871,6 +910,53 @@ async def models_status():
     return await model_router.get_status()
 
 
+class ActiveModelRequest(BaseModel):
+    model: str
+
+
+@app.get("/api/models/active")
+async def models_active():
+    return {"model": orchestrator.llm.model}
+
+
+@app.post("/api/models/active")
+async def set_active_model(req: ActiveModelRequest):
+    target = (req.model or "").strip()
+    if not target:
+        raise HTTPException(status_code=400, detail="Model is required")
+
+    status = await model_router.get_status()
+    available = {m["name"] for m in status.get("models", []) if m.get("available")}
+    if target not in available:
+        raise HTTPException(status_code=400, detail=f"Model '{target}' is not available")
+
+    orchestrator.llm.model = target
+    os.environ["OLLAMA_MODEL"] = target
+    unified_state.update("active_model", target)
+
+    return {"status": "ok", "model": target}
+
+
+class WakeSensitivityRequest(BaseModel):
+    value: float
+
+
+@app.get("/api/voice/status")
+async def voice_status():
+    return wake_loop.get_status()
+
+
+@app.get("/api/voice/wakeword/sensitivity")
+async def wakeword_sensitivity():
+    return {"value": get_wakeword_sensitivity()}
+
+
+@app.post("/api/voice/wakeword/sensitivity")
+async def wakeword_sensitivity_set(req: WakeSensitivityRequest):
+    updated = set_wakeword_sensitivity(req.value)
+    return {"value": updated}
+
+
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
 # COGNITIVE ENGINE — Autonomous Reasoning Loop
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -885,6 +971,23 @@ async def cognitive_inject(data: dict):
     """Inject an external observation into the cognitive loop."""
     cognitive_loop.inject_observation(data)
     return {"status": "injected"}
+
+
+@app.get("/api/ooda/status")
+async def ooda_status():
+    return ooda_loop.get_status()
+
+
+@app.post("/api/ooda/start")
+async def ooda_start():
+    ooda_loop.start()
+    return {"status": "started"}
+
+
+@app.post("/api/ooda/stop")
+async def ooda_stop():
+    ooda_loop.stop()
+    return {"status": "stopped"}
 
 
 # ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
@@ -950,6 +1053,58 @@ async def memory_recent_observations(
     return {"observations": await knowledge_graph.get_recent_observations(
         session_id=session_id, limit=limit, min_importance=min_importance
     )}
+
+
+@app.get("/api/memory/observations/search")
+async def memory_search_observations(
+    q: str,
+    session_id: Optional[str] = None,
+    limit: int = 50,
+):
+    return {
+        "observations": await knowledge_graph.search_observations(
+            query=q,
+            session_id=session_id,
+            limit=limit,
+        )
+    }
+
+
+@app.delete("/api/memory/observations/{observation_id}")
+async def memory_delete_observation(observation_id: str):
+    deleted = await knowledge_graph.delete_observation(observation_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Observation not found")
+    return {"status": "deleted", "observation_id": observation_id}
+
+
+@app.get("/api/memory/chroma/recent")
+async def memory_chroma_recent(session_id: Optional[str] = None, limit: int = 50):
+    return {
+        "items": await chroma_store.recent(
+            session_id=session_id,
+            limit=limit,
+        )
+    }
+
+
+@app.get("/api/memory/chroma/search")
+async def memory_chroma_search(q: str, session_id: Optional[str] = None, limit: int = 20):
+    return {
+        "items": await chroma_store.semantic_search(
+            q,
+            session_id=session_id,
+            limit=limit,
+        )
+    }
+
+
+@app.delete("/api/memory/chroma/{doc_id}")
+async def memory_chroma_delete(doc_id: str):
+    deleted = await chroma_store.delete(doc_id)
+    if not deleted:
+        raise HTTPException(status_code=404, detail="Document not found")
+    return {"status": "deleted", "doc_id": doc_id}
 
 @app.get("/api/memory/objectives")
 async def memory_objectives(status: str = "active"):

@@ -283,6 +283,60 @@ class KnowledgeGraph:
             for r in rows
         ]
 
+    async def search_observations(
+        self,
+        query: str,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        text_query = (query or "").strip()
+        if not text_query:
+            return []
+
+        where_parts = ["content LIKE ?"]
+        params: list = [f"%{text_query}%"]
+        if session_id:
+            where_parts.append("session_id = ?")
+            params.append(session_id)
+        params.append(max(1, min(int(limit), 200)))
+
+        where_str = " AND ".join(where_parts)
+        async with aiosqlite.connect(str(self._db_path)) as db:
+            async with db.execute(
+                f"""
+                SELECT id, entity_id, session_id, content, importance, tags, created_at
+                FROM observations
+                WHERE {where_str}
+                ORDER BY created_at DESC
+                LIMIT ?
+                """,
+                params,
+            ) as cur:
+                rows = await cur.fetchall()
+
+        return [
+            {
+                "id": r[0],
+                "entity_id": r[1],
+                "session_id": r[2],
+                "content": r[3],
+                "importance": r[4],
+                "tags": json.loads(r[5]),
+                "created_at": r[6],
+            }
+            for r in rows
+        ]
+
+    async def delete_observation(self, observation_id: str) -> bool:
+        target_id = (observation_id or "").strip()
+        if not target_id:
+            return False
+
+        async with aiosqlite.connect(str(self._db_path)) as db:
+            cursor = await db.execute("DELETE FROM observations WHERE id = ?", (target_id,))
+            await db.commit()
+            return (cursor.rowcount or 0) > 0
+
     # ── Strategic Objectives ──────────────────────────────────────────────────
 
     async def upsert_objective(

@@ -129,6 +129,68 @@ class ChromaStore:
         out.sort(key=lambda item: item["distance"])
         return out
 
+    async def recent(
+        self,
+        *,
+        session_id: Optional[str] = None,
+        limit: int = 50,
+    ) -> List[Dict[str, Any]]:
+        if not self.available or not self._collection:
+            return []
+
+        safe_limit = max(1, min(int(limit), 200))
+        where = None
+        if session_id:
+            where = {"session_id": (session_id or "default")[:128]}
+
+        def _get_rows():
+            kwargs: Dict[str, Any] = {
+                "include": ["documents", "metadatas"],
+                "limit": safe_limit,
+            }
+            if where:
+                kwargs["where"] = where
+            return self._collection.get(**kwargs)
+
+        result = await asyncio.to_thread(_get_rows)
+
+        ids = result.get("ids") or []
+        docs = result.get("documents") or []
+        metas = result.get("metadatas") or []
+
+        rows: List[Dict[str, Any]] = []
+        for idx, doc_id in enumerate(ids):
+            metadata = metas[idx] if idx < len(metas) and isinstance(metas[idx], dict) else {}
+            saved_at = float(metadata.get("saved_at", metadata.get("indexed_at", 0.0)) or 0.0)
+            rows.append(
+                {
+                    "id": doc_id,
+                    "text": docs[idx] if idx < len(docs) else "",
+                    "metadata": metadata,
+                    "saved_at": saved_at,
+                }
+            )
+
+        rows.sort(key=lambda item: item.get("saved_at", 0.0), reverse=True)
+        return rows[:safe_limit]
+
+    async def delete(self, doc_id: str) -> bool:
+        if not self.available or not self._collection:
+            return False
+
+        target_id = (doc_id or "").strip()
+        if not target_id:
+            return False
+
+        existing = await asyncio.to_thread(
+            lambda: self._collection.get(ids=[target_id], include=[])
+        )
+        if not (existing.get("ids") or []):
+            return False
+
+        await asyncio.to_thread(self._collection.delete, ids=[target_id])
+        return True
+
     async def stats(self) -> Dict[str, Any]:
         if not self.available or not self._collection:
             return {"available": False, "collection": self.collection_name}

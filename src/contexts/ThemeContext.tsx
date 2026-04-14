@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 
-export type HudTheme = 'blue' | 'red' | 'white';
+export type HudTheme = 'blue' | 'red' | 'white' | 'amber';
 export type AiMode = 'PASSIVE' | 'ACTIVE' | 'COMBAT';
 
 interface ThemeContextType {
@@ -27,14 +27,18 @@ export const ThemeProvider: React.FC<{ children: React.ReactNode }> = ({ childre
 
   const setTheme = useCallback((t: HudTheme) => {
     setThemeState(t);
-    document.documentElement.classList.remove('theme-red', 'theme-white');
+    document.documentElement.classList.remove('theme-red', 'theme-white', 'theme-amber');
     if (t === 'red') document.documentElement.classList.add('theme-red');
     if (t === 'white') document.documentElement.classList.add('theme-white');
+    if (t === 'amber') document.documentElement.classList.add('theme-amber');
   }, []);
 
   const setAiMode = useCallback((m: AiMode) => {
     setAiModeState(m);
-  }, []);
+    if (m === 'PASSIVE') setTheme('blue');
+    if (m === 'ACTIVE') setTheme('amber');
+    if (m === 'COMBAT') setTheme('red');
+  }, [setTheme]);
 
   const triggerShutdown = useCallback(() => {
     setIsShuttingDown(true);
