@@ -1,0 +1,3 @@
+# Backend-local install entrypoint.
+# Running `pip install -r spark_core/requirements.txt` will install the root project dependencies.
+-r ../requirements.txt
