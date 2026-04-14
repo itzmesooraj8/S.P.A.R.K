@@ -7,6 +7,9 @@ export default defineConfig(({ mode }) => ({
   server: {
     host: "::",
     port: 8080,
+    watch: {
+      ignored: ["**/.venv/**", "**/venv/**", "**/node_modules/**"],
+    },
     hmr: {
       overlay: false,
     },
