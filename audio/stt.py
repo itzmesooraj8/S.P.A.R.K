@@ -13,17 +13,16 @@ class SparkEars:
         self.model = whisper.load_model("base.en")
         self.recognizer = sr.Recognizer()
         
-        # Turn off dynamic threshold so it doesn't adapt to your laptop fans and go deaf
-        self.recognizer.dynamic_energy_threshold = False
+        # Set a fixed safe floor and let it auto-adjust
+        self.recognizer.energy_threshold = 80 
+        self.recognizer.dynamic_energy_threshold = True
         self.recognizer.pause_threshold = 1.0 # 1 second of silence marks the end of a sentence
         
         # [THE ENTERPRISE FIX: STARTUP CALIBRATION]
         with sr.Microphone(sample_rate=16000) as source:
-            logger.info("🎤 CALIBRATING MICROPHONE... Please remain silent for 2 seconds...")
-            self.recognizer.adjust_for_ambient_noise(source, duration=2)
-            # Add a slight buffer (150) above room noise so it only triggers on your voice
-            self.recognizer.energy_threshold += 150 
-            logger.info(f"✅ Calibration complete. Audio threshold locked at: {self.recognizer.energy_threshold}")
+            logger.info("🎤 CALIBRATING MICROPHONE... Please remain silent for 1 second...")
+            self.recognizer.adjust_for_ambient_noise(source, duration=1)
+            logger.info(f"✅ Calibration complete. Base threshold: {self.recognizer.energy_threshold}")
 
     def listen(self):
         with sr.Microphone(sample_rate=16000) as source:
