@@ -117,7 +117,7 @@ If no tool is needed, respond conversationally and concisely as J.A.R.V.I.S woul
                 messages.append({"role": "user", "content": user_input})
 
                 try:
-                    # Switch to Llama-3.3-70b-Versatile for high-performance reasoning
+                    # Updated to a highly reliable, fast, and capable model on Groq
                     completion = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
                         messages=messages,
