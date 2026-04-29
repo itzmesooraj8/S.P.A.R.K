@@ -9,26 +9,31 @@ logger = logging.getLogger("SPARK_STT")
 
 class SparkEars:
     def __init__(self):
-        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Mark 4)...")
+        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Mark 4.1)...")
         self.model = whisper.load_model("base.en")
         self.recognizer = sr.Recognizer()
         
-        # Set a fixed safe floor and let it auto-adjust
-        self.recognizer.energy_threshold = 80 
-        self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.pause_threshold = 1.0 # 1 second of silence marks the end of a sentence
+        # Turn off dynamic threshold to prevent it from adapting to background noise and going deaf
+        self.recognizer.dynamic_energy_threshold = False
         
-        # [THE ENTERPRISE FIX: STARTUP CALIBRATION]
+        # [THE FIX] Increase pause threshold to 2.0 seconds. 
+        # This gives you a full 2 seconds to pause between words before it thinks you are done.
+        self.recognizer.pause_threshold = 2.0 
+        
+        # Auto-Calibration
         with sr.Microphone(sample_rate=16000) as source:
             logger.info("🎤 CALIBRATING MICROPHONE... Please remain silent for 1 second...")
             self.recognizer.adjust_for_ambient_noise(source, duration=1)
+            # Add a slight buffer above room noise
+            self.recognizer.energy_threshold += 150 
             logger.info(f"✅ Calibration complete. Base threshold: {self.recognizer.energy_threshold}")
 
     def listen(self):
         with sr.Microphone(sample_rate=16000) as source:
             try:
-                # Wait up to 5 seconds for you to start speaking
-                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=20)
+                # [THE FIX] Increase timeout to 15 seconds. 
+                # This gives you 15 seconds to START speaking before it goes to sleep.
+                audio = self.recognizer.listen(source, timeout=15, phrase_time_limit=30)
                 
                 # Pure RAM translation. No disk writing. No temp files.
                 audio_data = np.frombuffer(audio.get_raw_data(), np.int16).flatten().astype(np.float32) / 32768.0
@@ -51,7 +56,7 @@ class SparkEars:
                 return text
                 
             except sr.WaitTimeoutError:
-                # If you don't speak for 5 seconds, return "TIMEOUT" so the brain knows to go to sleep
+                # It will only return TIMEOUT if you sit in silence for 15 full seconds
                 return "TIMEOUT"
             except Exception as e:
                 logger.error(f"STT Error: {e}")
