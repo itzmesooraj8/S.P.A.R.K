@@ -3,7 +3,7 @@ import logging
 import os
 import sys
 import warnings
-from pathlib import Path
+import requests
 from typing import Any, Dict
 
 warnings.filterwarnings("ignore")
@@ -12,7 +12,6 @@ from dotenv import load_dotenv
 load_dotenv()
 
 import keyboard
-from llama_cpp import Llama
 
 from audio.stt import SparkEars
 from audio.tts import SparkVoice
@@ -29,22 +28,35 @@ logging.basicConfig(
 )
 logger = logging.getLogger("SPARK_CORE")
 
-MODEL_NAME = os.getenv("SPARK_MODEL_NAME", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
-MODEL_PATH = Path(os.getenv("SPARK_MODEL_PATH", Path(__file__).resolve().parents[1] / MODEL_NAME))
+XAI_API_KEY = os.getenv("XAI_API_KEY")
 
+def llm_generate(prompt: str) -> str:
+    """Generates a response using the Grok API (xAI)."""
+    if not XAI_API_KEY:
+        raise ValueError("XAI_API_KEY not found in environment variables.")
 
-def load_model() -> Llama:
-    """Load and initialize the local Llama model."""
-    if not MODEL_PATH.exists():
-        raise FileNotFoundError(f"Model file not found: {MODEL_PATH}")
-    return Llama(
-        model_path=str(MODEL_PATH),
-        n_ctx=int(os.getenv("SPARK_CTX", "2048")),
-        n_threads=max(1, os.cpu_count() or 1),
-        n_gpu_layers=0,
-        verbose=False,
-    )
+    url = "https://api.x.ai/v1/chat/completions"
+    headers = {
+        "Content-Type": "application/json",
+        "Authorization": f"Bearer {XAI_API_KEY}"
+    }
+    data = {
+        "model": "grok-2-1212", # Using a high-performance Grok model
+        "messages": [
+            {"role": "system", "content": "You are S.P.A.R.K., a highly intelligent AI assistant created by Sooraj. Be concise and professional. You control the computer. Tools available: open_website(site_name), get_time(), open_application(app_name). If the user asks you to use a tool, output ONLY JSON. Example: {\"tool\": \"open_website\", \"arg\": \"google\"}"},
+            {"role": "user", "content": prompt}
+        ],
+        "temperature": 0.3
+    }
 
+    try:
+        response = requests.post(url, headers=headers, json=data, timeout=10)
+        response.raise_for_status()
+        result = response.json()
+        return result['choices'][0]['message']['content'].strip()
+    except Exception as e:
+        logger.error(f"Grok API Error: {e}")
+        raise
 
 def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVoice) -> str:
     """Parse the LLM's JSON and trigger the physical system tool."""
@@ -67,13 +79,11 @@ def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVo
         logger.error(f"Tool Error: {e}")
         return "System error during tool execution."
 
-
 def main():
-    """Main event loop for S.P.A.R.K. Mark 4."""
-    logger.info("Initializing S.P.A.R.K. Mark 4 Subsystems...")
+    """Main event loop for S.P.A.R.K. Mark 4 (Grok Powered)."""
+    logger.info("Initializing S.P.A.R.K. Grok-Powered Subsystems...")
 
     try:
-        llm = load_model()
         ears = SparkEars()
         voice = SparkVoice()
         tools = SparkTools()
@@ -102,9 +112,8 @@ def main():
                 if user_input == "TIMEOUT":
                     logger.info("No speech detected. Auto-sleeping.")
                     voice.speak("Standing by.")
-                    break  # Breaks the inner loop, goes back to F9 wait
+                    break
 
-                # If it's a hallucination (None), silently listen again
                 if not user_input:
                     continue
 
@@ -114,22 +123,15 @@ def main():
                     voice.speak("Powering down. Goodbye.")
                     sys.exit(0)
 
-                # --- 3. GEMMA-3 INTENT PROCESSING ---
-                logger.info("Gemma-3 is analyzing...")
+                # --- 3. GROK INTENT PROCESSING ---
+                logger.info("Grok is analyzing...")
                 recent_history = memory.get_context_string(limit=2)
-
-                # Clean, direct prompt for Gemma-3
-                prompt = f"""System: You are S.P.A.R.K., a highly intelligent AI assistant created by Sooraj. Be concise and professional.
-You control the computer. Tools available: open_website(site_name), get_time(), open_application(app_name).
-If the user asks you to use a tool, output ONLY JSON. Example: {{"tool": "open_website", "arg": "google"}}
-
-{recent_history}
-User: {user_input}
-S.P.A.R.K.:"""
+                
+                # We pass the history and current input to the generation function
+                full_prompt = f"Context history:\n{recent_history}\nUser: {user_input}"
 
                 try:
-                    response = llm(prompt, max_tokens=100, stop=["User:"])
-                    answer = response['choices'][0]['text'].strip()
+                    answer = llm_generate(full_prompt)
 
                     if "{" in answer and "}" in answer:
                         try:
@@ -153,7 +155,6 @@ S.P.A.R.K.:"""
 
     except KeyboardInterrupt:
         sys.exit(0)
-
 
 if __name__ == "__main__":
     main()
