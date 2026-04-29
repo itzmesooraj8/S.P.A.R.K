@@ -10,9 +10,14 @@ warnings.filterwarnings("ignore", category=UserWarning)
 
 class SparkEars:
     def __init__(self):
-        print("Initializing S.P.A.R.K. Ears (Whisper Tiny)...")
-        self.model = whisper.load_model("tiny.en")
+        print("Initializing S.P.A.R.K. Ears (Whisper Base)...")
+        # CHANGED: 'tiny.en' to 'base.en' for much better accent recognition
+        self.model = whisper.load_model("base.en")
         self.recognizer = sr.Recognizer()
+
+        # ADDED: Calibrate energy threshold dynamically for better silence detection
+        self.recognizer.energy_threshold = 300
+        self.recognizer.dynamic_energy_threshold = True
 
     def listen(self):
         with sr.Microphone() as source:
