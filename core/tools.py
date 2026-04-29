@@ -1,62 +1,52 @@
-import datetime
-import os
-import subprocess
 import webbrowser
+import os
+import datetime
+import logging
 
-import psutil
-
+logger = logging.getLogger("SPARK_TOOLS")
 
 class SparkTools:
     def __init__(self):
-        print("Initializing S.P.A.R.K. Tools...")
-
-    def open_browser(self, target):
-        print(f"[ACTION] Opening {target}")
-        webbrowser.open(target)
-        return f"Opening {target}."
+        logger.info("Initializing S.P.A.R.K. Tools...")
 
     def open_website(self, site_name):
+        # Clean up the name (e.g., "youtube" instead of "YouTube ")
+        site_name = site_name.lower().replace(" ", "")
         sites = {
             "youtube": "https://youtube.com",
             "google": "https://google.com",
             "github": "https://github.com",
-            "chatgpt": "https://chatgpt.com",
+            "chatgpt": "https://chatgpt.com"
         }
-        url = sites.get(site_name.lower())
-        if url:
-            return self.open_browser(url)
-        return f"I do not have a registered URL for {site_name}."
+        # Smart Fallback: If it's not in the dictionary, guess the .com address
+        url = sites.get(site_name, f"https://{site_name}.com")
+        
+        logger.info(f"[ACTION] Opening URL: {url}")
+        webbrowser.open(url)
+        return f"I have opened {site_name} for you, sir."
 
     def get_time(self):
         current_time = datetime.datetime.now().strftime("%I:%M %p")
-        print(f"[ACTION] Checking time: {current_time}")
         return f"The current time is {current_time}."
 
-    def check_battery(self):
-        battery = psutil.sensors_battery()
-        if battery is None:
-            return "I could not detect a battery on this system."
-        plugged = "plugged in" if battery.power_plugged else "running on battery"
-        return f"Battery is at {battery.percent:.0f} percent and is currently {plugged}."
-
     def open_application(self, app_name):
+        app_name_lower = app_name.lower().strip()
+        
+        # SMART FALLBACK: If it tries to open a website as an app, redirect it to the browser
+        if app_name_lower in ["youtube", "google", "github", "facebook"]:
+            return self.open_website(app_name_lower)
+            
         apps = {
-            "notepad": ["notepad.exe"],
-            "calculator": ["calc.exe"],
-            "chrome": ["C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe"],
-            "code": ["code"],
+            "notepad": "notepad.exe",
+            "calculator": "calc.exe",
+            "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
         }
-        command = apps.get(app_name.lower())
-        if command:
+        app_path = apps.get(app_name_lower)
+        if app_path:
             try:
-                print(f"[ACTION] Launching {app_name}")
-                subprocess.Popen(command)
+                # Windows-specific execution
+                os.startfile(app_path) if "://" not in app_path and not app_path.endswith(".exe") else os.system(f'start "" "{app_path}"')
                 return f"Launching {app_name} now."
-            except Exception as exc:
-                return f"I encountered an error opening {app_name}: {exc}"
-        return f"I do not know the path for {app_name}."
-
-    def shutdown_pc(self):
-        print("[ACTION] Shutting down the PC")
-        os.system("shutdown /s /t 0")
-        return "Shutting down now."
+            except Exception as e:
+                 return f"I encountered an error opening {app_name}."
+        return f"I do not know the path for the application {app_name}."
