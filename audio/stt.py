@@ -4,56 +4,56 @@ import warnings
 import logging
 import numpy as np
 
-warnings.filterwarnings("ignore", category=UserWarning)
-warnings.filterwarnings("ignore", category=FutureWarning)
-
+warnings.filterwarnings("ignore")
 logger = logging.getLogger("SPARK_STT")
 
 class SparkEars:
     def __init__(self):
-        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Hardcoded Guardrails)...")
+        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Mark 4)...")
         self.model = whisper.load_model("base.en")
         self.recognizer = sr.Recognizer()
         
-        # Lowered threshold so it hears you clearly, increased pause so you can breathe
-        self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.energy_threshold = 250 
-        self.recognizer.pause_threshold = 1.2 
+        # Turn off dynamic threshold so it doesn't adapt to your laptop fans and go deaf
+        self.recognizer.dynamic_energy_threshold = False
+        self.recognizer.pause_threshold = 1.0 # 1 second of silence marks the end of a sentence
         
+        # [THE ENTERPRISE FIX: STARTUP CALIBRATION]
+        with sr.Microphone(sample_rate=16000) as source:
+            logger.info("🎤 CALIBRATING MICROPHONE... Please remain silent for 2 seconds...")
+            self.recognizer.adjust_for_ambient_noise(source, duration=2)
+            # Add a slight buffer (150) above room noise so it only triggers on your voice
+            self.recognizer.energy_threshold += 150 
+            logger.info(f"✅ Calibration complete. Audio threshold locked at: {self.recognizer.energy_threshold}")
+
     def listen(self):
         with sr.Microphone(sample_rate=16000) as source:
-            self.recognizer.adjust_for_ambient_noise(source, duration=0.5)
             try:
-                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=15)
+                # Wait up to 5 seconds for you to start speaking
+                audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=20)
+                
+                # Pure RAM translation. No disk writing. No temp files.
                 audio_data = np.frombuffer(audio.get_raw_data(), np.int16).flatten().astype(np.float32) / 32768.0
                 
-                primer = "Hello S.P.A.R.K. Open YouTube. What is the time? Open calendar. My name is Sooraj. I am speaking English with an Indian accent."
-                
-                result = self.model.transcribe(
-                    audio_data, 
-                    fp16=False,
-                    initial_prompt=primer
-                )
-                
+                # Force English to stop hallucinated language switching
+                result = self.model.transcribe(audio_data, fp16=False, language="en")
                 text = result["text"].strip()
                 text_lower = text.lower()
                 
-                # --------------------------------------------------------
-                # [THE FIX] THE PYTHON-LEVEL GIBBERISH GUARD
-                # We kill bad data here so the LLM never sees it.
-                # --------------------------------------------------------
+                # The Iron-Clad Blacklist
                 hallucinations = [
                     "thank you.", "though", "you", "thanks.", "bye.", "okay.", 
-                    "second bill.", "viscous", "minuteines", "i'm mat", "i don't know."
+                    "second bill.", "viscous", "minuteines", "i'm mat", "i don't know.",
+                    "thanks for watching!", "thanks for watching.", "subscribe."
                 ]
                 
                 if not text or len(text) <= 2 or text_lower in hallucinations:
-                    return None # Silently ignore
+                    return None
                     
                 return text
                 
             except sr.WaitTimeoutError:
-                return None
+                # If you don't speak for 5 seconds, return "TIMEOUT" so the brain knows to go to sleep
+                return "TIMEOUT"
             except Exception as e:
-                logger.error(f"Memory STT Error: {e}")
+                logger.error(f"STT Error: {e}")
                 return None

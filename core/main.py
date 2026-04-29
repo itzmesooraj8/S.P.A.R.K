@@ -6,6 +6,8 @@ import warnings
 from pathlib import Path
 from typing import Any, Dict
 
+warnings.filterwarnings("ignore")
+
 import keyboard
 from llama_cpp import Llama
 
@@ -13,8 +15,6 @@ from audio.stt import SparkEars
 from audio.tts import SparkVoice
 from core.memory import SparkMemory
 from core.tools import SparkTools
-
-warnings.filterwarnings("ignore")
 
 # ---------------------------------------------------------------------------
 # ENTERPRISE LOGGING CONFIGURATION
@@ -44,21 +44,10 @@ def load_model() -> Llama:
 
 
 def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVoice) -> str:
-    """
-    Parse the LLM's JSON and trigger the physical system tool.
-
-    Args:
-        command_json: Parsed JSON command from the LLM.
-        tools: SparkTools instance for command execution.
-        voice: SparkVoice instance for audio feedback.
-
-    Returns:
-        Response string from the executed tool.
-    """
+    """Parse the LLM's JSON and trigger the physical system tool."""
     tool_name = command_json.get("tool")
     arg = command_json.get("arg", "")
-
-    logger.info(f"Executing Tool: {tool_name} with args: '{arg}'")
+    logger.info(f"Executing Tool: {tool_name} | Args: {arg}")
 
     try:
         if tool_name == "open_website":
@@ -68,21 +57,17 @@ def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVo
         elif tool_name == "open_application":
             response = tools.open_application(arg)
         else:
-            response = "I recognized a command, but the tool is not configured."
-            logger.warning(f"Unrecognized tool requested: {tool_name}")
-
+            response = "Tool not configured."
         voice.speak(response)
         return response
-    except Exception as exc:
-        logger.error(f"Tool execution failed: {exc}", exc_info=True)
-        error_msg = "I encountered a system error while executing the tool."
-        voice.speak(error_msg)
-        return error_msg
+    except Exception as e:
+        logger.error(f"Tool Error: {e}")
+        return "System error during tool execution."
 
 
-def main() -> None:
-    """Main event loop for S.P.A.R.K. Core."""
-    logger.info("Initializing S.P.A.R.K. Subsystems...")
+def main():
+    """Main event loop for S.P.A.R.K. Mark 4."""
+    logger.info("Initializing S.P.A.R.K. Mark 4 Subsystems...")
 
     try:
         llm = load_model()
@@ -90,93 +75,80 @@ def main() -> None:
         voice = SparkVoice()
         tools = SparkTools()
         memory = SparkMemory()
-    except Exception as exc:
-        logger.critical(f"FATAL: Subsystem initialization failed. {exc}")
+    except Exception as e:
+        logger.critical(f"FATAL: {e}")
         sys.exit(1)
 
-    voice.speak("S.P.A.R.K. initialized. Press F9 to wake me.")
-
-    is_awake = False  # NEW: Tracks if we are in conversation mode
+    voice.speak("S.P.A.R.K. systems online. Press F9 to initiate.")
 
     try:
         while True:
-            if not is_awake:
-                # 1. ZERO-CPU IDLE STATE
-                logger.info("System idling. Awaiting F9 hotkey trigger.")
-                keyboard.wait("f9")
-                is_awake = True
+            # --- 1. THE IDLE STATE ---
+            logger.info("System idling. 0% CPU. Awaiting F9 hotkey.")
+            keyboard.wait('f9')
 
-                # Flush the memory from the last session so it starts fresh
-                memory.cursor.execute('DELETE FROM conversation')
-                memory.conn.commit()
+            memory.cursor.execute('DELETE FROM conversation')
+            memory.conn.commit()
+            voice.speak("Yes, Sooraj?")
 
-                voice.speak("Yes, sir? I am listening.")
+            # --- 2. THE CONVERSATION LOOP ---
+            while True:
+                user_input = ears.listen()
 
-            # The Ears will now listen silently in RAM. No print spam.
-            user_input = ears.listen()
+                # If the ears return TIMEOUT, you stopped talking. Go back to sleep.
+                if user_input == "TIMEOUT":
+                    logger.info("No speech detected. Auto-sleeping.")
+                    voice.speak("Standing by.")
+                    break  # Breaks the inner loop, goes back to F9 wait
 
-            if not user_input:
-                continue  # Loop back instantly without logging
+                # If it's a hallucination (None), silently listen again
+                if not user_input:
+                    continue
 
-            logger.info(f"User Input: {user_input}")
+                logger.info(f"User: {user_input}")
 
-            if "go to sleep" in user_input.lower() or "standby" in user_input.lower():
-                voice.speak("Entering standby mode.")
-                is_awake = False  # Put system back to sleep
-                continue
+                if "shutdown" in user_input.lower() or "power down" in user_input.lower():
+                    voice.speak("Powering down. Goodbye.")
+                    sys.exit(0)
 
-            if "shutdown" in user_input.lower() or "power down" in user_input.lower():
-                voice.speak("Powering down systems. Goodbye.")
-                break
+                # --- 3. GEMMA-3 INTENT PROCESSING ---
+                logger.info("Gemma-3 is analyzing...")
+                recent_history = memory.get_context_string(limit=2)
 
-            # 3. SMART JSON THINKING
-            logger.info("Analyzing intent via LLM...")
-            recent_history = memory.get_context_string(limit=2)
-
-            # [THE FIX] Clean, minimal prompt for Gemma-3 4B
-            prompt = f"""System: You are S.P.A.R.K., a highly intelligent AI assistant created by Sooraj. Be concise, polite, and helpful.
-
-You have access to the following tools:
-- open_website (args: site_name)
-- get_time (args: none)
-- open_application (args: app_name)
-
-If the user explicitly asks you to open a website, check the time, or launch an app, you MUST output ONLY valid JSON like this: {{"tool": "open_website", "arg": "youtube"}}
-Otherwise, just respond normally to the user's text.
+                # Clean, direct prompt for Gemma-3
+                prompt = f"""System: You are S.P.A.R.K., a highly intelligent AI assistant created by Sooraj. Be concise and professional.
+You control the computer. Tools available: open_website(site_name), get_time(), open_application(app_name).
+If the user asks you to use a tool, output ONLY JSON. Example: {{"tool": "open_website", "arg": "google"}}
 
 {recent_history}
 User: {user_input}
 S.P.A.R.K.:"""
 
-            try:
-                response = llm(prompt, max_tokens=100, stop=["User:"])
-                answer = response["choices"][0]["text"].strip()
+                try:
+                    response = llm(prompt, max_tokens=100, stop=["User:"])
+                    answer = response['choices'][0]['text'].strip()
 
-                # 4. JSON INTERCEPTOR
-                if "{" in answer and "}" in answer:
-                    try:
-                        start = answer.find("{")
-                        end = answer.rfind("}") + 1
-                        command_json = json.loads(answer[start:end])
-                        tool_result = execute_tool(command_json, tools, voice)
-                        memory.remember("User", user_input)
-                        memory.remember("S.P.A.R.K.", f"[Action Executed] {tool_result}")
-                        continue
-                    except json.JSONDecodeError:
-                        pass
+                    if "{" in answer and "}" in answer:
+                        try:
+                            start = answer.find("{")
+                            end = answer.rfind("}") + 1
+                            command_json = json.loads(answer[start:end])
+                            tool_result = execute_tool(command_json, tools, voice)
+                            memory.remember("User", user_input)
+                            memory.remember("S.P.A.R.K.", f"[Action] {tool_result}")
+                            continue
+                        except json.JSONDecodeError:
+                            pass
 
-                # 5. NORMAL CONVERSATION
-                memory.remember("User", user_input)
-                memory.remember("S.P.A.R.K.", answer)
-                voice.speak(answer)  # S.P.A.R.K speaks, then immediately listens again.
+                    memory.remember("User", user_input)
+                    memory.remember("S.P.A.R.K.", answer)
+                    voice.speak(answer)
 
-            except Exception as exc:
-                logger.error(f"LLM processing error: {exc}")
-                voice.speak("I encountered an error.")
+                except Exception as e:
+                    logger.error(f"LLM Error: {e}")
+                    voice.speak("I encountered a cognitive error.")
 
     except KeyboardInterrupt:
-        pass
-    finally:
         sys.exit(0)
 
 
