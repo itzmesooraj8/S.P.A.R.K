@@ -5,6 +5,7 @@ openai-whisper>=20231117
 pyttsx3>=2.90
 psutil>=5.9.0
 python-dotenv>=1.0.1
+keyboard>=0.13.5
 # ─────────────────────────────────────────────
 #  SPARK AI OS — Core Requirements
 #  Production-pinned. Update via: pip freeze > requirements.txt
