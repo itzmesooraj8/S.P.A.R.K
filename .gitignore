@@ -1,0 +1,6 @@
+.env
+.venv/
+__pycache__/
+*.pyc
+temp_audio.wav
+Llama-3.2-3B-Instruct-Q4_K_M.gguf

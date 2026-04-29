@@ -1,0 +1,104 @@
+llama-cpp-python>=0.3.0
+SpeechRecognition>=3.10.0
+pyaudio>=0.2.13
+openai-whisper>=20231117
+pyttsx3>=2.90
+psutil>=5.9.0
+python-dotenv>=1.0.1
+# ─────────────────────────────────────────────
+#  SPARK AI OS — Core Requirements
+#  Production-pinned. Update via: pip freeze > requirements.txt
+# ─────────────────────────────────────────────
+
+# ── Web framework ──────────────────────────────
+fastapi==0.115.0
+uvicorn[standard]==0.34.0
+pydantic==2.11.3
+pydantic-settings==2.9.1
+websockets==15.0.1
+python-multipart==0.0.20
+
+# ── HTTP client ────────────────────────────────
+httpx==0.28.1
+aiohttp==3.11.16
+aiofiles==25.1.0
+
+# ── Auth / Security ────────────────────────────
+PyJWT==2.10.1
+python-jose[cryptography]==3.5.0
+bcrypt==4.3.0
+cryptography==46.0.3
+passlib[bcrypt]==1.7.4
+
+# ── Config / Env ───────────────────────────────
+python-dotenv==1.1.0
+pyyaml==6.0.2
+
+# ── LLM / AI ───────────────────────────────────
+ollama==0.4.7
+openai==1.82.0
+anthropic==0.52.0
+google-genai>=0.4.0
+pyaudio>=0.2.14
+tiktoken==0.9.0
+
+# ── Vector / Memory ────────────────────────────
+chromadb==0.5.0
+aiosqlite==0.20.0
+sentence-transformers==3.4.1
+
+# ── Globe / Intelligence data ──────────────────
+beautifulsoup4==4.13.4
+duckduckgo-search==8.1.1
+lxml==5.4.0
+
+# ── Structured data / Analysis ────────────────
+numpy==2.2.6
+pandas==2.2.3
+scipy==1.15.3
+scikit-learn==1.7.0
+pypdf==5.1.0
+
+# ── Scheduling ─────────────────────────────────
+APScheduler==3.11.0
+SQLAlchemy==2.0.35
+
+# ── File watching / System monitoring ──────────
+watchdog>=5.0.0
+psutil==7.0.0
+
+# ── Speech & Voice ──────────────────────────────
+faster-whisper==1.1.1
+edge-tts==7.0.2
+SpeechRecognition==3.14.3
+openwakeword==0.6.0
+sounddevice==0.4.6
+
+# ── Dev / Tooling ──────────────────────────────
+pytest==8.3.5
+pytest-asyncio==0.26.0
+ruff==0.11.10
+
+# ── Browser Agent ──────────────────────────────
+playwright>=1.40.0
+
+# ── Combat Mode — Professional Security Stack ──
+pyshark>=0.6                  # Wireshark/tshark live capture wrapper
+python-owasp-zap-v2.4>=0.0.21 # OWASP ZAP web scanner
+pymisp>=2.4.195               # MISP threat intelligence platform
+
+# ── Combat Mode — Password Audit ───────────────
+# hashcat  ← install system-wide from https://hashcat.net
+# cupp     ← pip install cupp  OR  git clone https://github.com/Mebus/cupp
+
+# ── Combat Mode — WiFi Audit ───────────────────
+# aircrack-ng suite  ← install via OS package manager (aircrack-ng, airodump-ng)
+# bettercap          ← https://www.bettercap.org/
+
+# ── Combat Mode — Physical Sensor ──────────────
+# websockets already listed above (v15.x)
+# wifi-densepose  ← git clone https://github.com/ruvnet/wifi-densepose
+
+# ── Combat Mode — SPARK Voice Upgrade ─────────
+# luxtts  ← pip install luxtts  (requires CUDA GPU with ≥1 GB VRAM)
+# torch   ← pip install torch   (for LuxTTS CUDA probe)
