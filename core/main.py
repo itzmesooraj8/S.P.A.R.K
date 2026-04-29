@@ -8,6 +8,9 @@ from typing import Any, Dict
 
 warnings.filterwarnings("ignore")
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import keyboard
 from llama_cpp import Llama
 
