@@ -8,6 +8,7 @@ from llama_cpp import Llama
 
 from audio.stt import SparkEars
 from audio.tts import SparkVoice
+from core.memory import SparkMemory
 from core.tools import SparkTools
 
 MODEL_NAME = os.getenv("SPARK_MODEL_NAME", "Llama-3.2-3B-Instruct-Q4_K_M.gguf")
@@ -33,6 +34,17 @@ def generate_reply(model: Llama, user_input: str) -> str:
     ]
     response = model.create_chat_completion(messages=messages, max_tokens=120, temperature=0.2)
     return response["choices"][0]["message"]["content"].strip()
+
+
+def generate_reply_with_context(model: Llama, user_input: str, recent_history: str) -> str:
+    prompt = (
+        "System: You are S.P.A.R.K., a helpful AI assistant. Be concise and conversational.\n"
+        f"{recent_history}"
+        f"User: {user_input}\n"
+        "S.P.A.R.K.:"
+    )
+    response = model(prompt, max_tokens=100, stop=["User:"])
+    return response["choices"][0]["text"].strip()
 
 
 def handle_tool_commands(tools: SparkTools, user_input: str) -> str | None:
@@ -66,13 +78,14 @@ def main() -> None:
     print("Loading local model. This is CPU-only by design.")
     tools = SparkTools()
     model = load_model()
+    memory = SparkMemory()
     input_mode = os.getenv("SPARK_INPUT_MODE", "text").lower()
     ears = SparkEars() if input_mode == "voice" else None
     voice = SparkVoice() if input_mode == "voice" else None
 
     print("S.P.A.R.K. V1 Online. Type a prompt, or enter 'exit' to quit.")
     if voice:
-        voice.speak("S.P.A.R.K. version 1 is online. All local systems operational.")
+        voice.speak("S.P.A.R.K. systems online. Memory core engaged.")
 
     while True:
         if ears:
@@ -90,6 +103,8 @@ def main() -> None:
 
         tool_response = handle_tool_commands(tools, user_input)
         if tool_response is not None:
+            memory.remember("User", user_input)
+            memory.remember("S.P.A.R.K.", tool_response)
             print(f"SPARK> {tool_response}")
             if voice:
                 voice.speak(tool_response)
@@ -97,7 +112,10 @@ def main() -> None:
 
         print("S.P.A.R.K. is thinking...")
         try:
-            answer = generate_reply(model, user_input)
+            recent_history = memory.get_context_string(limit=4)
+            answer = generate_reply_with_context(model, user_input, recent_history)
+            memory.remember("User", user_input)
+            memory.remember("S.P.A.R.K.", answer)
             print(f"SPARK> {answer}")
             if voice:
                 voice.speak(answer)
