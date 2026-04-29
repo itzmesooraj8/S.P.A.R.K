@@ -118,9 +118,9 @@ Otherwise, just respond normally."""
                 messages.append({"role": "user", "content": user_input})
 
                 try:
-                    # Using Llama 3 8B - Ultra fast and free
+                    # Updated to Groq's active Llama 3.1 8B model
                     completion = groq_client.chat.completions.create(
-                        model="llama3-8b-8192",
+                        model="llama-3.1-8b-instant",
                         messages=messages,
                         temperature=0.7,
                         max_tokens=150,
