@@ -105,14 +105,18 @@ def main() -> None:
                 logger.info("System idling. Awaiting F9 hotkey trigger.")
                 keyboard.wait("f9")
                 is_awake = True
+
+                # Flush the memory from the last session so it starts fresh
+                memory.cursor.execute('DELETE FROM conversation')
+                memory.conn.commit()
+
                 voice.speak("Yes, sir? I am listening.")
 
-            # 2. CONTINUOUS LISTENING LOOP
+            # The Ears will now listen silently in RAM. No print spam.
             user_input = ears.listen()
 
             if not user_input:
-                logger.debug("No voice detected.")
-                continue  # Loop back to listening without requiring F9
+                continue  # Loop back instantly without logging
 
             logger.info(f"User Input: {user_input}")
 
