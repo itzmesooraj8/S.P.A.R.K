@@ -94,28 +94,35 @@ def main() -> None:
         logger.critical(f"FATAL: Subsystem initialization failed. {exc}")
         sys.exit(1)
 
-    voice.speak("S.P.A.R.K. background mode activated. Press F9 to wake me.")
-    logger.info("System idling. Awaiting F9 hotkey trigger.")
+    voice.speak("S.P.A.R.K. initialized. Press F9 to wake me.")
+
+    is_awake = False  # NEW: Tracks if we are in conversation mode
 
     try:
         while True:
-            # 1. ZERO-CPU IDLE STATE
-            keyboard.wait("f9")
-            logger.info("Wake word triggered (F9). Transitioning to Active State.")
+            if not is_awake:
+                # 1. ZERO-CPU IDLE STATE
+                logger.info("System idling. Awaiting F9 hotkey trigger.")
+                keyboard.wait("f9")
+                is_awake = True
+                voice.speak("Yes, sir? I am listening.")
 
-            voice.speak("Yes, sir?")
-
-            # 2. LISTEN
+            # 2. CONTINUOUS LISTENING LOOP
             user_input = ears.listen()
+
             if not user_input:
-                logger.debug("No voice input detected. Returning to idle.")
-                continue
+                logger.debug("No voice detected.")
+                continue  # Loop back to listening without requiring F9
 
             logger.info(f"User Input: {user_input}")
 
+            if "go to sleep" in user_input.lower() or "standby" in user_input.lower():
+                voice.speak("Entering standby mode.")
+                is_awake = False  # Put system back to sleep
+                continue
+
             if "shutdown" in user_input.lower() or "power down" in user_input.lower():
                 voice.speak("Powering down systems. Goodbye.")
-                logger.info("Shutdown command received. Terminating process.")
                 break
 
             # 3. SMART JSON THINKING
@@ -145,30 +152,25 @@ S.P.A.R.K.:"""
                         start = answer.find("{")
                         end = answer.rfind("}") + 1
                         command_json = json.loads(answer[start:end])
-
                         tool_result = execute_tool(command_json, tools, voice)
-
                         memory.remember("User", user_input)
                         memory.remember("S.P.A.R.K.", f"[Action Executed] {tool_result}")
                         continue
-
                     except json.JSONDecodeError:
-                        logger.warning("LLM attempted to trigger a tool, but JSON was malformed.")
+                        pass
 
                 # 5. NORMAL CONVERSATION
-                logger.info("Executing standard conversational reply.")
                 memory.remember("User", user_input)
                 memory.remember("S.P.A.R.K.", answer)
-                voice.speak(answer)
+                voice.speak(answer)  # S.P.A.R.K speaks, then immediately listens again.
 
             except Exception as exc:
                 logger.error(f"LLM processing error: {exc}")
-                voice.speak("I encountered an error processing that request.")
+                voice.speak("I encountered an error.")
 
     except KeyboardInterrupt:
-        logger.info("Manual interrupt detected (Ctrl+C). Initiating graceful shutdown.")
+        pass
     finally:
-        logger.info("S.P.A.R.K. Core offline.")
         sys.exit(0)
 
 
