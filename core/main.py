@@ -129,20 +129,20 @@ def main() -> None:
                 voice.speak("Powering down systems. Goodbye.")
                 break
 
-            # 3. SMART JSON THINKING & GIBBERISH GUARD
+            # 3. SMART JSON THINKING
             logger.info("Analyzing intent via LLM...")
             recent_history = memory.get_context_string(limit=2)
 
-            # [THE FIX] The Gibberish Guard
-            prompt = f"""System: You are S.P.A.R.K., a highly intelligent AI assistant. 
-CRITICAL RULE: The speech-to-text microphone sometimes makes errors. If the User text looks like random gibberish, a partial word, or makes absolutely zero sense (e.g., "viscous", "Second bill", "I'M MAT", "minuteines"), DO NOT attempt to answer it or trigger a tool. Simply reply: "I didn't quite catch that, sir."
+            # [THE FIX] Clean, minimal prompt for Gemma-3 4B
+            prompt = f"""System: You are S.P.A.R.K., a highly intelligent AI assistant created by Sooraj. Be concise, polite, and helpful.
 
 You have access to the following tools:
 - open_website (args: site_name)
 - get_time (args: none)
 - open_application (args: app_name)
 
-If a tool is clearly requested, output ONLY valid JSON: {{"tool": "open_website", "arg": "youtube"}}
+If the user explicitly asks you to open a website, check the time, or launch an app, you MUST output ONLY valid JSON like this: {{"tool": "open_website", "arg": "youtube"}}
+Otherwise, just respond normally to the user's text.
 
 {recent_history}
 User: {user_input}

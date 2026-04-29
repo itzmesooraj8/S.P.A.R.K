@@ -11,15 +11,14 @@ logger = logging.getLogger("SPARK_STT")
 
 class SparkEars:
     def __init__(self):
-        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Context Calibrated)...")
-        # Base model is still required; tiny is too weak for regional accents
+        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Hardcoded Guardrails)...")
         self.model = whisper.load_model("base.en")
         self.recognizer = sr.Recognizer()
         
-        # [THE FIX] Re-enable dynamic thresholding so it adapts to YOUR specific laptop mic
+        # Lowered threshold so it hears you clearly, increased pause so you can breathe
         self.recognizer.dynamic_energy_threshold = True
-        self.recognizer.energy_threshold = 300 
-        self.recognizer.pause_threshold = 1.0 # Give you 1 full second to pause between words
+        self.recognizer.energy_threshold = 250 
+        self.recognizer.pause_threshold = 1.2 
         
     def listen(self):
         with sr.Microphone(sample_rate=16000) as source:
@@ -28,11 +27,6 @@ class SparkEars:
                 audio = self.recognizer.listen(source, timeout=5, phrase_time_limit=15)
                 audio_data = np.frombuffer(audio.get_raw_data(), np.int16).flatten().astype(np.float32) / 32768.0
                 
-                # --------------------------------------------------------
-                # [THE FIX] THE CONTEXT HACK
-                # By passing this prompt, we force Whisper to expect these types of words
-                # and adapt its latent space to Indian English phrasing.
-                # --------------------------------------------------------
                 primer = "Hello S.P.A.R.K. Open YouTube. What is the time? Open calendar. My name is Sooraj. I am speaking English with an Indian accent."
                 
                 result = self.model.transcribe(
@@ -42,10 +36,19 @@ class SparkEars:
                 )
                 
                 text = result["text"].strip()
+                text_lower = text.lower()
                 
-                # Hard filter for absolute silence hallucinations
-                if not text or len(text) < 2 or text.lower() in ["thank you.", "though", "you", "thanks.", "bye.", "okay."]:
-                    return None
+                # --------------------------------------------------------
+                # [THE FIX] THE PYTHON-LEVEL GIBBERISH GUARD
+                # We kill bad data here so the LLM never sees it.
+                # --------------------------------------------------------
+                hallucinations = [
+                    "thank you.", "though", "you", "thanks.", "bye.", "okay.", 
+                    "second bill.", "viscous", "minuteines", "i'm mat", "i don't know."
+                ]
+                
+                if not text or len(text) <= 2 or text_lower in hallucinations:
+                    return None # Silently ignore
                     
                 return text
                 
