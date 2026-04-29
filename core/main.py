@@ -117,25 +117,15 @@ If no tool is needed, respond conversationally and concisely as J.A.R.V.I.S woul
                 messages.append({"role": "user", "content": user_input})
 
                 try:
-                    # Switch to DeepSeek R1 Distill Llama 70B for high-order reasoning
+                    # Switch to Llama-3.3-70b-Versatile for high-performance reasoning
                     completion = groq_client.chat.completions.create(
-                        model="deepseek-r1-distill-llama-70b",
+                        model="llama-3.3-70b-versatile",
                         messages=messages,
                         temperature=0.6,
                         max_tokens=1024,
                     )
                     
-                    raw_response = completion.choices[0].message.content.strip()
-                    
-                    # --- DEEP THINK PARSER ---
-                    # Extract the thinking process to show in the terminal
-                    think_match = re.search(r'<think>(.*?)</think>', raw_response, re.DOTALL)
-                    if think_match:
-                        thought_process = think_match.group(1).strip()
-                        print(f"\n[🧠 S.P.A.R.K. IS THINKING...]\n{thought_process}\n")
-                        
-                    # Remove the <think> tags so the voice doesn't read them out loud
-                    answer = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
+                    answer = completion.choices[0].message.content.strip()
                     
                     # --- TOOL EXECUTION ---
                     if "{" in answer and "}" in answer:
