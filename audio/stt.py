@@ -9,44 +9,56 @@ logger = logging.getLogger("SPARK_STT")
 
 class SparkEars:
     def __init__(self):
-        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Auto-Fallback)...")
+        logger.info("Initializing S.P.A.R.K. Ears (Whisper Base - Confidence Gated)...")
         self.model = whisper.load_model("base.en")
         self.recognizer = sr.Recognizer()
         
         self.recognizer.dynamic_energy_threshold = False
-        self.recognizer.pause_threshold = 2.0 
+        self.recognizer.pause_threshold = 1.5 
         
-        # Try to calibrate using the default microphone
+        self.base_threshold = 400 
+        
         try:
             with sr.Microphone(sample_rate=16000) as source:
-                logger.info("🎤 CALIBRATING DEFAULT MICROPHONE... Please remain silent for 2 seconds...")
+                logger.info("🎤 CALIBRATING MICROPHONE...")
                 self.recognizer.adjust_for_ambient_noise(source, duration=2)
-                self.recognizer.energy_threshold += 150 
-                logger.info(f"✅ Calibration complete. Base threshold: {self.recognizer.energy_threshold}")
+                self.recognizer.energy_threshold = max(self.base_threshold, self.recognizer.energy_threshold + 150)
+                logger.info(f"✅ Calibration complete. Threshold: {self.recognizer.energy_threshold}")
         except Exception as e:
-            logger.error(f"Failed to calibrate default microphone. Error: {e}")
-            logger.info("Will attempt raw capture during listen phase.")
+            logger.error(f"Calibration failed: {e}")
 
     def _process_audio(self, audio):
-        """Helper function to process the audio and handle hallucinations."""
+        """Processes audio with confidence gating to prevent hallucinations."""
         audio_data = np.frombuffer(audio.get_raw_data(), np.int16).flatten().astype(np.float32) / 32768.0
         
-        # Strong primer
         primer = "Command S.P.A.R.K. to open YouTube, check the time, or execute an application."
         
+        # We use a lower level call or inspect result to get confidence
         result = self.model.transcribe(
             audio_data, 
             fp16=False, 
             language="en",
             initial_prompt=primer,
             condition_on_previous_text=False,
-            no_speech_threshold=0.6 
+            # We want more metadata for confidence gating
+            verbose=None
         )
         
         text = result["text"].strip()
         text_lower = text.lower()
         
-        # Word count filter
+        # --- CONFIDENCE GATING ---
+        # Whisper segments contain no_speech_prob
+        segments = result.get("segments", [])
+        if segments:
+            # Check for silent/noisy audio
+            avg_no_speech_prob = sum(s.get("no_speech_prob", 0) for s in segments) / len(segments)
+            # If no_speech_prob is high, it's likely background noise or a hallucination
+            if avg_no_speech_prob > 0.5:
+                logger.warning(f"Low confidence (no_speech_prob: {avg_no_speech_prob:.2f}). Dropping transcription: '{text}'")
+                return "LOW_CONFIDENCE"
+        
+        # Word count filter (Mark 4.4 logic)
         if not text or len(text.split()) < 2:
             if text_lower not in ["shutdown", "standby"]:
                 return None
@@ -65,20 +77,16 @@ class SparkEars:
         return text
 
     def listen(self):
-        """Attempts to listen using the default microphone."""
         try:
-            # We explicitly do NOT pass a device_index here. We let Windows choose the default.
             with sr.Microphone(sample_rate=16000) as source:
                 try:
-                    # Extended timeout to 15 seconds, phrase limit to 30
                     audio = self.recognizer.listen(source, timeout=15, phrase_time_limit=30)
                     return self._process_audio(audio)
-                    
                 except sr.WaitTimeoutError:
                     return "TIMEOUT"
                 except Exception as e:
-                    logger.error(f"STT Error during listening: {e}")
+                    logger.error(f"STT Error: {e}")
                     return None
         except Exception as e:
-            logger.error(f"Failed to access default microphone. Error: {e}")
+            logger.error(f"Mic Error: {e}")
             return None

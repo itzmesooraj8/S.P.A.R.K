@@ -23,7 +23,7 @@ from core.tools import SparkTools
 from core.memory import SparkMemory
 
 # ---------------------------------------------------------------------------
-# S.P.A.R.K. CORE ARCHITECTURE (OODA Loop Optimization)
+# S.P.A.R.K. CORE ARCHITECTURE (Mark II Readiness)
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO, 
@@ -33,7 +33,6 @@ logging.basicConfig(
 logger = logging.getLogger("SPARK_CORE")
 
 def get_situational_awareness():
-    """Captures active window and clipboard for the 'Observe' node."""
     try:
         window = win32gui.GetWindowText(win32gui.GetForegroundWindow())
         clipboard = pyperclip.paste()
@@ -43,7 +42,7 @@ def get_situational_awareness():
         return "Unknown", "Empty"
 
 def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVoice) -> str:
-    """OODA 'Act' Node: Physical tool execution."""
+    """OODA ACT Node: Includes post-action verification (future vision hook)."""
     tool_name = command_json.get("tool")
     arg = command_json.get("arg", "")
     logger.info(f"OODA ACT: {tool_name}({arg})")
@@ -59,14 +58,20 @@ def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVo
         else: response = f"Tool '{tool_name}' not configured."
         
         voice.speak(response)
+        
+        # --- POST-ACTION VERIFICATION LOOP ---
+        # If it's a critical navigation action, we'd take a screenshot here
+        if tool_name in ["open_website", "open_application"]:
+            logger.info("Triggering post-action verification (Simulated)")
+            # In Phase 02, we'd send tools.take_screenshot() to a Vision model
+            
         return response
     except Exception as e:
         logger.error(f"Act Error: {e}")
         return "I encountered a physical obstruction executing that task, sir."
 
 def main():
-    """Main OODA Loop for S.P.A.R.K. (Synthetic Personal Autonomous Reasoning Kernel)."""
-    logger.info("Initializing S.P.A.R.K. Mark I Cognitive Core...")
+    logger.info("Initializing S.P.A.R.K. Mark I (Bug-Fixed Architecture)...")
     
     api_key = os.getenv("GROQ_API_KEY")
     if not api_key:
@@ -87,54 +92,59 @@ def main():
     
     try:
         while True:
-            # --- 1. OBSERVE (Idle State) ---
             logger.info("System idling. Awaiting OODA trigger (F9).")
             keyboard.wait('f9')
             
-            # Clear ephemeral context for a clean wake-up
             memory.cursor.execute('DELETE FROM conversation') 
             memory.conn.commit()
             voice.speak("Yes, Sooraj?")
             
-            # --- 2. THE CONTINUOUS LOOP ---
             while True:
                 user_input = ears.listen() 
                 
+                # --- 1. THE OBSERVE FILTERS ---
                 if user_input == "TIMEOUT":
                     logger.info("Observation timeout. Auto-sleeping.")
                     voice.speak("Standing by, sir.")
                     break 
+                
+                # CONFIDENCE GATE: Handle noisy input by asking for repeat
+                if user_input == "LOW_CONFIDENCE":
+                    voice.speak("Didn't catch that clearly, sir — could you repeat?")
+                    continue
                     
                 if not user_input:
                     continue
                     
                 logger.info(f"User: {user_input}")
                 
-                # --- 3. ORIENT (Context Injection) ---
+                # --- 2. ORIENT ---
                 active_window, clipboard_data = get_situational_awareness()
                 current_time = datetime.now().strftime("%I:%M %p")
                 recent_history = memory.get_context_string(limit=4)
                 
+                # REFINED SYSTEM PROMPT (Structured JSON Enforcement)
                 system_prompt = f"""You are S.P.A.R.K. (Synthetic Personal Autonomous Reasoning Kernel), a highly intelligent AI assistant created by Sooraj.
-You possess dry wit, absolute loyalty, and a professional yet slightly sarcastic tone. Refer to Sooraj as 'Sir' occasionally.
+Persona: Dry wit, absolute loyalty, professional tone. Honorific: 'Sir'.
 
 [SITUATIONAL AWARENESS]
 Time: {current_time}
 Active Window: {active_window}
-Clipboard Snippet: {clipboard_data}
+Clipboard: {clipboard_data}
 
-[CRITICAL INSTRUCTION]
-The user is speaking through a microphone. If input is nonsensical, reply: "I'm sorry, I didn't catch that clearly."
-Tools available: open_website(site_name), get_time(), open_application(app_name), read_clipboard(), write_clipboard(text), take_screenshot(), type_text(text).
-For tool use, output ONLY JSON. Example: {{"tool": "open_website", "arg": "youtube"}}
-Otherwise, respond conversationally."""
+[MISSION CRITICAL]
+- If input is nonsensical or noisy, say: "I'm sorry, I didn't catch that clearly."
+- For ACTIONS, output ONLY valid JSON.
+- Example: {{"tool": "open_website", "arg": "youtube"}}
+- Do NOT use placeholder arguments like 'site_name' or 'url_here'. Use real data.
+- Tools: open_website, get_time, open_application, read_clipboard, write_clipboard, take_screenshot, type_text."""
 
                 messages = [{"role": "system", "content": system_prompt}]
                 if recent_history:
                     messages.append({"role": "system", "content": f"Previous context:\n{recent_history}"})
                 messages.append({"role": "user", "content": user_input})
 
-                # --- 4. DECIDE (LLM Inference) ---
+                # --- 3. DECIDE ---
                 try:
                     completion = groq_client.chat.completions.create(
                         model="llama-3.3-70b-versatile",
@@ -158,7 +168,6 @@ Otherwise, respond conversationally."""
                         except json.JSONDecodeError:
                             pass
                             
-                    # Normal Response
                     memory.remember("User", user_input)
                     memory.remember("S.P.A.R.K.", answer)
                     voice.speak(answer)
