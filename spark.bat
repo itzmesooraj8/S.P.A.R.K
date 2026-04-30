@@ -15,7 +15,17 @@ if %errorLevel% == 0 (
 
 :START_SPARK
 echo [INFO] Booting S.P.A.R.K. V1...
-cd /d %~dp0
+
+:: Ensure we are exactly in the S.P.A.R.K root folder
+cd /d "%~dp0"
+
+:: [THE FIX] Set the Python Path to the root folder so it can see 'audio' and 'core'
+set PYTHONPATH=%cd%
+
+:: Activate virtual environment
 call .venv\Scripts\activate.bat
-python core/main.py
+
+:: [THE FIX] Run main as a module, not a raw file path
+python -m core.main
+
 pause
