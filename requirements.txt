@@ -10,6 +10,10 @@ pygame>=2.5.2
 psutil>=5.9.0
 python-dotenv>=1.0.1
 keyboard>=0.13.5
+pywin32>=306
+pyperclip>=1.8.2
+Pillow>=10.2.0
+pyautogui>=0.9.54
 # ─────────────────────────────────────────────
 #  SPARK AI OS — Core Requirements
 #  Production-pinned. Update via: pip freeze > requirements.txt
