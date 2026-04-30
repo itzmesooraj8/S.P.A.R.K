@@ -6,3 +6,4 @@ __pycache__/
 Llama-3.2-3B-Instruct-Q4_K_M.gguf
 knowledge_base/*.db
 gemma-3-4b-it-Q5_K_M.gguf
+response.mp3
