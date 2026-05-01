@@ -1,0 +1,279 @@
+import { useState, useEffect, useRef, useCallback } from 'react';
+import { SystemWsMessage, SystemMetrics as ContractMetrics } from '../types/contracts';
+import { useAlertStore } from '@/store/useAlertStore';
+import { useAgentConfirmStore } from '@/store/useAgentConfirmStore';
+import { useActionFeedStore } from '@/store/useActionFeedStore';
+import { useConnectionStore } from '@/store/useConnectionStore';
+import { useFxStore } from '@/store/useFxStore';
+import { buildAuthedWsUrl, hasValidAccessToken, shouldReconnectAfterClose } from '@/lib/wsAuth';
+
+// Only log WS noise when explicitly opted-in (prevents console spam when backend is offline)
+const VERBOSE_WS = import.meta.env.VITE_VERBOSE_WS === 'true';
+const wsLog  = (...a: unknown[]) => VERBOSE_WS && console.log('[System WS]',  ...a);
+const wsWarn = (...a: unknown[]) => VERBOSE_WS && console.warn('[System WS]', ...a);
+const wsErr  = (...a: unknown[]) => VERBOSE_WS && console.error('[System WS]', ...a);
+
+const MAX_HISTORY = 30;
+
+const RECONNECT_BASE_MS  = 2_000;
+const RECONNECT_MAX_MS   = 30_000;
+const PING_INTERVAL_MS   = 20_000;
+type SystemMode = 'PASSIVE' | 'ACTIVE' | 'COMBAT';
+
+export interface MetricPoint { value: number; time: number; }
+
+export interface LegacySystemMetrics {
+  cpu: number; cpuHistory: MetricPoint[];
+  ram: number; ramHistory: MetricPoint[];
+  gpu: number; gpuHistory: MetricPoint[];
+  network: number; networkHistory: MetricPoint[];
+  battery: number; charging: boolean;
+  temperature: number;
+  threatLevel: 'low' | 'medium' | 'high';
+  firewallActive: boolean;
+  encryptionProgress: number;
+  uptime: number;
+  processes: number;
+  ping: number;
+  auditMeta?: unknown;
+}
+
+export function useSystemMetrics(): LegacySystemMetrics & { isOnline: boolean } {
+  const startTime  = useRef(Date.now());
+  const ws         = useRef<WebSocket | null>(null);
+  const retryDelay = useRef(RECONNECT_BASE_MS);
+  const pingTimer  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const mountedRef = useRef(true);
+  const lastNetSampleRef = useRef<{ bytes: number; ts: number } | null>(null);
+  const pendingModeRef = useRef<SystemMode | null>(null);
+
+  const [isOnline, setIsOnline] = useState(false);
+  const retryNonce = useConnectionStore((s) => s.retryNonce);
+
+  const [metrics, setMetrics] = useState<LegacySystemMetrics>({
+    cpu: 0, cpuHistory: [],
+    ram: 0, ramHistory: [],
+    gpu: 0, gpuHistory: [],
+    network: 0, networkHistory: [],
+    battery: 100, charging: true,
+    temperature: 45,
+    threatLevel: 'low',
+    firewallActive: true,
+    encryptionProgress: 100,
+    uptime: 0,
+    processes: 0,
+    ping: 0,
+  });
+
+  const stopPing = useCallback(() => {
+    if (pingTimer.current) { clearInterval(pingTimer.current); pingTimer.current = null; }
+  }, []);
+
+  const sendModeFrame = useCallback((mode: SystemMode) => {
+    const payload = JSON.stringify({ type: 'system_mode_change', mode });
+    const socket = ws.current;
+
+    if (socket && socket.readyState === WebSocket.OPEN) {
+      socket.send(payload);
+      pendingModeRef.current = null;
+      wsLog('mode sent:', mode);
+      return;
+    }
+
+    pendingModeRef.current = mode;
+    wsWarn('mode queued until /ws/system reconnect:', mode);
+  }, []);
+
+  const connect = useCallback(() => {
+    if (!mountedRef.current) return;
+    if (ws.current && ws.current.readyState <= WebSocket.OPEN) return;
+    if (!hasValidAccessToken()) {
+      useConnectionStore.getState().setCoreStatus('idle', 1008);
+      return;
+    }
+
+    const socket = new WebSocket(buildAuthedWsUrl('/ws/system'));
+    ws.current = socket;
+
+    socket.onopen = () => {
+      if (!mountedRef.current) { socket.close(); return; }
+      setIsOnline(true);
+      useConnectionStore.getState().setCoreStatus('connected');
+      retryDelay.current = RECONNECT_BASE_MS;
+      wsLog('connected');
+
+      if (pendingModeRef.current) {
+        sendModeFrame(pendingModeRef.current);
+      }
+
+      // Keep-alive heartbeat
+      stopPing();
+      pingTimer.current = setInterval(() => {
+        if (socket.readyState === WebSocket.OPEN) {
+          socket.send(JSON.stringify({ v: 1, type: 'PING', ts: Date.now() }));
+        }
+      }, PING_INTERVAL_MS);
+    };
+
+    socket.onmessage = (event: MessageEvent) => {
+      try {
+        const msg = JSON.parse(event.data as string);
+
+        // Ignore keep-alive replies
+        if (msg.type === 'PONG') return;
+
+        // ── ALERT frames → global alert store ───────────────────────────────
+        if (msg.type === 'ALERT') {
+          useAlertStore.getState().addAlert({
+            severity: msg.severity ?? 'info',
+            title:    msg.title   ?? 'System Alert',
+            body:     msg.body    ?? msg.message ?? '',
+            source:   msg.source  ?? 'spark-core',
+            ts:       msg.ts      ?? Date.now(),
+          });
+          return;
+        }
+
+        // ── CONFIRM_TOOL frames → agent confirm store ────────────────────────
+        if (msg.type === 'CONFIRM_TOOL') {
+          useAgentConfirmStore.getState().setPending({
+            token:       msg.token,
+            tool:        msg.tool,
+            command:     msg.command,
+            risk_level:  msg.risk_level ?? 'HIGH',
+            description: msg.description,
+            arguments:   msg.arguments,
+          });
+          return;
+        }
+
+        // ── PLAN frames → action feed store ─────────────────────────────────
+        if (msg.type === 'PLAN') {
+          useActionFeedStore.getState().addPlan({
+            plan_id: msg.plan_id,
+            intent:  msg.intent   ?? 'CHAT',
+            query:   msg.query    ?? '',
+            steps:   msg.steps    ?? [],
+            ts:      msg.ts       ?? Date.now(),
+          });
+          return;
+        }
+
+        // ── STEP frames → action feed store (update step status) ────────────
+        if (msg.type === 'STEP') {
+          useActionFeedStore.getState().updateStep(msg.plan_id, msg.step_idx, {
+            status: msg.status,
+            result: msg.result ?? null,
+            ts:     msg.ts    ?? Date.now(),
+          });
+          return;
+        }
+
+        // ── ROUTINE_FX frames → frontend FX queue (HudLayout consumer) ──────
+        if (msg.type === 'ROUTINE_FX') {
+          useFxStore.getState().pushFx(msg.fx as string, msg.args as Record<string, unknown>);
+          return;
+        }
+        if (msg.type === 'STATE_UPDATE' && msg.state?.metrics) {
+          const p: ContractMetrics & Record<string, unknown> = msg.state.metrics;
+
+          const cpu     = (p.cpu_percent  ?? (p as Record<string, unknown>).cpu  ?? 0) as number;
+          const ram     = (p.memory_percent ?? (p as Record<string, unknown>).ram ?? 0) as number;
+          const gpu     = p.gpu_stats?.load ?? ((p as Record<string, unknown>).gpu as number ?? 0);
+          const netObj  = p.net_io;
+          const now = Date.now();
+
+          let network = 0;
+          if (netObj) {
+            const totalBytes = Number(netObj.bytes_recv ?? 0) + Number(netObj.bytes_sent ?? 0);
+            const prevSample = lastNetSampleRef.current;
+
+            if (prevSample && now > prevSample.ts) {
+              const deltaBytes = Math.max(0, totalBytes - prevSample.bytes);
+              const deltaSeconds = (now - prevSample.ts) / 1000;
+              network = deltaSeconds > 0 ? (deltaBytes / (1024 * 1024)) / deltaSeconds : 0;
+            }
+
+            lastNetSampleRef.current = { bytes: totalBytes, ts: now };
+          } else {
+            network = Number((p as Record<string, unknown>).network ?? 0);
+          }
+
+          setMetrics(prev => ({
+            ...prev,
+            cpu,
+            cpuHistory:  [...prev.cpuHistory,  { value: cpu,     time: now }].slice(-MAX_HISTORY),
+            ram,
+            ramHistory:  [...prev.ramHistory,  { value: ram,     time: now }].slice(-MAX_HISTORY),
+            gpu,
+            gpuHistory:  [...prev.gpuHistory,  { value: gpu,     time: now }].slice(-MAX_HISTORY),
+            network,
+            networkHistory: [...prev.networkHistory, { value: network, time: now }].slice(-MAX_HISTORY),
+            uptime:       now - startTime.current,
+            processes:    (p.process_count ?? prev.processes) as number,
+            ping:         (p.ping_ms       ?? prev.ping) as number,
+            threatLevel:  cpu > 80 ? 'high' : cpu > 50 ? 'medium' : 'low',
+            auditMeta:    (msg.state as Record<string, unknown>).audit_meta ?? prev.auditMeta,
+          }));
+        }
+      } catch (error) {
+        wsErr('Failed to parse payload:', error);
+      }
+    };
+
+    socket.onclose = (event: CloseEvent) => {
+      stopPing();
+      setIsOnline(false);
+      useConnectionStore.getState().setCoreStatus('reconnecting', event.code);
+      if (!mountedRef.current) return;
+      if (!shouldReconnectAfterClose(event.code)) {
+        useConnectionStore.getState().setCoreStatus('idle', event.code);
+        wsWarn('WS auth unavailable; waiting for fresh login before reconnecting.');
+        return;
+      }
+      const delay = Math.min(retryDelay.current, RECONNECT_MAX_MS);
+      retryDelay.current = Math.min(retryDelay.current * 1.5, RECONNECT_MAX_MS);
+      wsWarn(`Reconnecting in ${Math.round(delay / 1000)}s…`);
+      setTimeout(connect, delay);
+    };
+
+    socket.onerror = () => {
+      wsErr('socket error');
+      socket.close();
+    };
+  }, [sendModeFrame, stopPing]);  // stable — no state deps
+
+  useEffect(() => {
+    mountedRef.current = true;
+    connect();
+    return () => {
+      mountedRef.current = false;
+      stopPing();
+      ws.current?.close(1000, 'component unmount');
+    };
+  }, [connect, stopPing]);
+
+  // Manual retry: close current socket (onclose will start reconnect cycle)
+  useEffect(() => {
+    if (retryNonce === 0) return;  // skip initial mount
+    ws.current?.close(1000, 'manual retry');
+  }, [retryNonce]);
+
+  // TopBar emits this event; keep transport in one place using existing /ws/system socket.
+  useEffect(() => {
+    const onModeChange = (event: Event) => {
+      const customEvent = event as CustomEvent<{ mode?: SystemMode }>;
+      const mode = customEvent.detail?.mode;
+      if (!mode) return;
+      sendModeFrame(mode);
+    };
+
+    window.addEventListener('spark:system-mode-change', onModeChange as EventListener);
+    return () => {
+      window.removeEventListener('spark:system-mode-change', onModeChange as EventListener);
+    };
+  }, [sendModeFrame]);
+
+  return { ...metrics, isOnline };
+}
+
