@@ -1,7 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePersonalAISocket } from '@/hooks/usePersonalAISocket';
 import { VoiceWaveform } from '../components/hud/VoiceWaveform';
-import { useSparkStore } from '../store/sparkStore';
 
 export default function PersonalAI() {
   const { messages, isConnected, activityLogs, sendToBrain, logActivity } = usePersonalAISocket();
@@ -10,19 +9,6 @@ export default function PersonalAI() {
   const chatLogRef = useRef<HTMLDivElement>(null);
   const activityLogRef = useRef<HTMLDivElement>(null);
   const [voiceActive, setVoiceActive] = useState(false);
-  const [voiceVolume, setVoiceVolume] = useState([20, 40, 60, 40, 20]);
-
-  // Simulate voice pulsing
-  useEffect(() => {
-    if (!voiceActive) {
-      setVoiceVolume([10, 10, 10, 10, 10]);
-      return;
-    }
-    const interval = setInterval(() => {
-      setVoiceVolume(Array.from({length: 5}, () => Math.floor(Math.random() * 80) + 10));
-    }, 150);
-    return () => clearInterval(interval);
-  }, [voiceActive]);
 
   const quotes = [
     "The best way to predict the future is to invent it.",

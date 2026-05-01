@@ -4,7 +4,6 @@ import { AnimatePresence, motion } from 'framer-motion';
 import ParticleBackground from './ParticleBackground';
 import TopBar from './TopBar';
 import CoreModule from './CoreModule';
-import SystemPanel from './SystemPanel';
 import ControlPanel from './ControlPanel';
 import AIPanelSlider from './AIPanelSlider';
 import SatelliteModule from './modules/SatelliteModule';
