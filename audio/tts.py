@@ -31,11 +31,28 @@ class SparkVoice:
         
         # 2. Play the audio using pygame
         pygame.mixer.music.load(audio_file)
+        
+        # Broadcast speaking state
+        import threading
+        import requests
+        def _send():
+            try:
+                requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": "speaking", "isListening": False}}, timeout=0.1)
+            except: pass
+        threading.Thread(target=_send, daemon=True).start()
+
         pygame.mixer.music.play()
         
         # 3. Wait for the audio to finish playing
         while pygame.mixer.music.get_busy():
             pygame.time.Clock().tick(10)
+            
+        # Broadcast idle state
+        def _send_idle():
+            try:
+                requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": "idle", "isListening": False}}, timeout=0.1)
+            except: pass
+        threading.Thread(target=_send_idle, daemon=True).start()
             
         # 4. Unload and clean up the file
         pygame.mixer.music.unload()

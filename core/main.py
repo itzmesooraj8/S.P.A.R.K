@@ -24,6 +24,17 @@ from core.vision import describe_screen
 from core.vector_store import SparkVectorMemory
 from tools.web_search import web_search_answer
 from audio.tts import SparkVoice
+import threading
+import requests
+
+def broadcast_hud_event(event_type: str, payload: dict):
+    """Sends async events to the FastAPI server for HUD broadcasting"""
+    def _send():
+        try:
+            requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": event_type, "payload": payload}, timeout=0.1)
+        except:
+            pass
+    threading.Thread(target=_send, daemon=True).start()
 
 logging.basicConfig(
     level=logging.INFO,
@@ -367,8 +378,16 @@ def run():
             final_response = raw_response
 
             if tool_call:
+                tool_name = tool_call.get("tool", "unknown_tool")
+                tool_arg = str(tool_call.get("arg", ""))
+                broadcast_hud_event("agent_log", {"agent": "S.P.A.R.K. Core", "action": f"Executing: {tool_name}", "data": tool_arg})
+                
                 tool_result = execute_tool(tool_call, tools, voice, portfolio_tracker=portfolio)
                 final_response = tool_result
+                
+                # Truncate result for log to avoid massive strings (like web search HTML)
+                short_result = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
+                broadcast_hud_event("agent_log", {"agent": "S.P.A.R.K. Core", "action": f"Result: {tool_name}", "data": short_result})
 
             # ── UPDATE MEMORY ────────────────────────────────────────────────
             try:

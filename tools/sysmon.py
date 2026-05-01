@@ -26,3 +26,18 @@ def get_system_health() -> str:
     except Exception as e:
         logger.error(f"Sysmon error: {e}")
         return "I am currently unable to read the hardware telemetry, sir."
+
+def get_raw_metrics() -> dict:
+    """Returns raw hardware telemetry for the React HUD WebSocket."""
+    cpu = psutil.cpu_percent(interval=0.1)
+    mem = psutil.virtual_memory()
+    disk = psutil.disk_usage('/')
+    battery = psutil.sensors_battery()
+    return {
+        "cpu": cpu,
+        "ramFree": mem.available / (1024 ** 3),
+        "ramTotal": mem.total / (1024 ** 3),
+        "diskFree": disk.free / (1024 ** 3),
+        "diskTotal": disk.total / (1024 ** 3),
+        "batteryPercent": battery.percent if battery else 100
+    }

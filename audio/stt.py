@@ -79,10 +79,21 @@ class SparkEars:
 
     def listen(self):
         try:
+            import threading
+            import requests
+            def _send_state(state):
+                try: requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": state, "isListening": state == "listening"}}, timeout=0.1)
+                except: pass
+
             with sr.Microphone(sample_rate=16000) as source:
                 try:
+                    # Broadcast listening
+                    threading.Thread(target=_send_state, args=("listening",), daemon=True).start()
                     # Capture audio
                     audio = self.recognizer.listen(source, timeout=12, phrase_time_limit=30)
+                    
+                    # Broadcast processing
+                    threading.Thread(target=_send_state, args=("processing",), daemon=True).start()
                     return self._process_audio(audio)
                 except sr.WaitTimeoutError:
                     return "TIMEOUT"
