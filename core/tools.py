@@ -95,9 +95,9 @@ class SparkTools:
             filename = f"screenshot_{timestamp}.png"
             snapshot = ImageGrab.grab()
             snapshot.save(filename)
-            return f"Screenshot captured as {filename}, sir."
+            return f"Screenshot captured as {filename}, sir.", filename
         except Exception as e:
-            return f"Failed to take screenshot: {e}"
+            return f"Failed to take screenshot: {e}", None
 
     def type_text(self, text):
         try:

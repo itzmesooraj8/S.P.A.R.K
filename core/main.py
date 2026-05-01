@@ -41,11 +41,26 @@ def get_situational_awareness():
     except Exception:
         return "Unknown", "Empty"
 
+from core.vision import describe_screen
+import time
+
+def post_action_verify(tool_name: str, screenshot_path: str) -> str:
+    questions = {
+        "open_website": "What website is open? Are there any visible errors or is it a parked domain?",
+        "open_application": "What application is in focus? Did it open successfully?",
+        "type_text": "Is there typed text visible? What does it say?",
+        "take_screenshot": "Describe what's on the screen briefly."
+    }
+    q = questions.get(tool_name, "What changed on screen?")
+    return describe_screen(screenshot_path, q)
+
 def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVoice) -> str:
-    """OODA ACT Node: Includes post-action verification (future vision hook)."""
+    """OODA ACT Node: Includes post-action verification via Vision."""
     tool_name = command_json.get("tool")
     arg = command_json.get("arg", "")
     logger.info(f"OODA ACT: {tool_name}({arg})")
+    
+    screenshot_file = None
     
     try:
         if tool_name == "open_website": response = tools.open_website(arg)
@@ -53,17 +68,25 @@ def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVo
         elif tool_name == "open_application": response = tools.open_application(arg)
         elif tool_name == "read_clipboard": response = tools.read_clipboard()
         elif tool_name == "write_clipboard": response = tools.write_clipboard(arg)
-        elif tool_name == "take_screenshot": response = tools.take_screenshot()
+        elif tool_name == "take_screenshot": 
+            response, screenshot_file = tools.take_screenshot()
         elif tool_name == "type_text": response = tools.type_text(arg)
         else: response = f"Tool '{tool_name}' not configured."
         
         voice.speak(response)
         
         # --- POST-ACTION VERIFICATION LOOP ---
-        # If it's a critical navigation action, we'd take a screenshot here
-        if tool_name in ["open_website", "open_application"]:
-            logger.info("Triggering post-action verification (Simulated)")
-            # In Phase 02, we'd send tools.take_screenshot() to a Vision model
+        if tool_name in ["open_website", "open_application", "type_text"]:
+            logger.info("Triggering post-action verification...")
+            time.sleep(2) # Give the app/site a moment to load
+            _, snap_path = tools.take_screenshot()
+            if snap_path:
+                observation = post_action_verify(tool_name, snap_path)
+                voice.speak(f"Verification: {observation}")
+                response += f" | Verification: {observation}"
+                # Clean up the verification screenshot
+                try: os.remove(snap_path) 
+                except: pass
             
         return response
     except Exception as e:
