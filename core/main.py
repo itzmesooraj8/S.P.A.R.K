@@ -93,13 +93,21 @@ def execute_tool(command_json: Dict[str, Any], tools: SparkTools, voice: SparkVo
         logger.error(f"Act Error: {e}")
         return "I encountered a physical obstruction executing that task, sir."
 
+def startup_check():
+    """Security Audit: Validates environment and core secrets before booting systems."""
+    logger.info("Running Security & Boot Diagnostics...")
+    api_key = os.getenv("GROQ_API_KEY")
+    if not api_key or len(api_key) < 10:
+        logger.critical("FATAL SECURITY: GROQ_API_KEY missing or invalid in .env file.")
+        sys.exit(1)
+    logger.info("Boot Diagnostics: PASSED. Secrets verified.")
+
 def main():
-    logger.info("Initializing S.P.A.R.K. Mark I (Bug-Fixed Architecture)...")
+    logger.info("Initializing S.P.A.R.K. Mark I (Phase 02 Security Hardened)...")
+    startup_check()
     
     api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        logger.critical("FATAL: GROQ_API_KEY missing.")
-        sys.exit(1)
+
 
     try:
         groq_client = Groq(api_key=api_key)

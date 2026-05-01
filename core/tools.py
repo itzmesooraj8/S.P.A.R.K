@@ -90,17 +90,29 @@ class SparkTools:
             return f"Failed to copy to clipboard: {e}"
 
     def take_screenshot(self):
+        import tempfile
         try:
-            timestamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"screenshot_{timestamp}.png"
+            # Security Fix: Use a secure named temporary file instead of predictable static name
+            temp_file = tempfile.NamedTemporaryFile(delete=False, suffix=".png", prefix="spark_snap_")
+            temp_file.close()
+            
             snapshot = ImageGrab.grab()
-            snapshot.save(filename)
-            return f"Screenshot captured as {filename}, sir.", filename
+            snapshot.save(temp_file.name)
+            return f"Screenshot securely captured, sir.", temp_file.name
         except Exception as e:
             return f"Failed to take screenshot: {e}", None
 
     def type_text(self, text):
+        import win32gui
         try:
+            # Security Fix: Active Window Check before typing blindly
+            active_window = win32gui.GetWindowText(win32gui.GetForegroundWindow()).lower()
+            blacklist = ["cmd", "command prompt", "powershell", "terminal", "password", "bank", "login"]
+            
+            if any(bad_word in active_window for bad_word in blacklist):
+                logger.warning(f"Aborted typing due to sensitive window focus: {active_window}")
+                return "Security override: Refusing to type into a potentially sensitive window."
+                
             pyautogui.write(text, interval=0.01)
             return "Text has been typed, sir."
         except Exception as e:
