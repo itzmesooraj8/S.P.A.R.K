@@ -27,18 +27,33 @@ export function useSparkSocket() {
           const data = JSON.parse(event.data);
           
           if (data.type === 'voice_state') {
-            setVoiceState(data.payload.state);
+            setVoiceState(data.payload.status);
           } else if (data.type === 'sys_metrics') {
             setSystemMetrics(data.payload);
           } else if (data.type === 'portfolio') {
             setPortfolio(data.payload);
           } else if (data.type === 'reminders') {
             setReminders(data.payload);
+          } else if (data.type === 'reminder') {
+            useSparkStore.getState().addReminder({
+              id: data.payload.job_id,
+              message: data.payload.message,
+              time: new Date(data.payload.timestamp).toLocaleTimeString(),
+              active: true
+            });
+          } else if (data.type === 'clipboard_assist') {
+            useSparkStore.getState().setClipboardAssist({
+              offer: data.payload.offer,
+              type: data.payload.trigger_type,
+              preview: data.payload.content_preview
+            });
+            // Clear clipboard assist after 8 seconds
+            setTimeout(() => useSparkStore.getState().setClipboardAssist(null), 8000);
           } else if (data.type === 'agent_log') {
             addAgentLog({
               timestamp: Date.now(),
               type: data.payload.type || 'info',
-              message: data.payload.message
+              message: `${data.payload.action}: ${data.payload.data}`
             });
           }
         } catch (err) {

@@ -46,8 +46,12 @@ interface SparkStore {
   setSystemMetrics: (metrics: SystemMetrics) => void;
   setPortfolio: (portfolio: PortfolioPosition[]) => void;
   setReminders: (reminders: Reminder[]) => void;
+  addReminder: (reminder: Reminder) => void;
+  removeReminder: (id: string) => void;
   addAgentLog: (entry: Omit<AgentLogEntry, 'id'>) => void;
   setTheme: (theme: 'cyan' | 'red' | 'white' | 'amber') => void;
+  clipboardAssist: { offer: string; type: string; preview: string } | null;
+  setClipboardAssist: (assist: { offer: string; type: string; preview: string } | null) => void;
 }
 
 export const useSparkStore = create<SparkStore>((set) => ({
@@ -57,13 +61,21 @@ export const useSparkStore = create<SparkStore>((set) => ({
   reminders: [],
   agentLog: [],
   activeTheme: 'cyan',
+  clipboardAssist: null,
 
   setVoiceState: (state) => set({ voiceState: state }),
   setSystemMetrics: (metrics) => set({ systemMetrics: metrics }),
   setPortfolio: (portfolio) => set({ portfolio }),
   setReminders: (reminders) => set({ reminders }),
+  addReminder: (reminder) => set((state) => ({
+    reminders: [reminder, ...state.reminders].slice(0, 5)
+  })),
+  removeReminder: (id) => set((state) => ({
+    reminders: state.reminders.filter(r => r.id !== id)
+  })),
   addAgentLog: (entry) => set((state) => ({
     agentLog: [...state.agentLog, { ...entry, id: Date.now().toString() + Math.random() }].slice(-100)
   })),
   setTheme: (theme) => set({ activeTheme: theme }),
+  setClipboardAssist: (assist) => set({ clipboardAssist: assist }),
 }));

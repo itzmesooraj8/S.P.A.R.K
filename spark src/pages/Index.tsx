@@ -3,6 +3,7 @@ import { ThemeProvider, useHudTheme } from '@/contexts/ThemeContext';
 import HudLayout from '@/components/hud/HudLayout';
 import { useSparkSocket } from '../hooks/useSparkSocket';
 import { ReminderOverlay } from '../components/hud/ReminderOverlay';
+import { ClipboardOverlay } from '../components/hud/ClipboardOverlay';
 
 function BootScreen() {
   const { setIsBooted } = useHudTheme();
@@ -76,6 +77,7 @@ function App() {
   return (
     <>
       <ReminderOverlay />
+      <ClipboardOverlay />
       {isBooted ? <HudLayout /> : <BootScreen />}
     </>
   );

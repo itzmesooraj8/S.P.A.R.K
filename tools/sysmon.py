@@ -1,5 +1,6 @@
 import psutil
 import logging
+import GPUtil
 
 logger = logging.getLogger("SPARK_SYSMON")
 
@@ -17,12 +18,22 @@ def get_system_health() -> str:
         battery = psutil.sensors_battery()
         batt_str = f", battery at {battery.percent}%" if battery else ", running on desktop power"
         
+        # GPU Check
+        gpu_status = ""
+        try:
+            gpus = GPUtil.getGPUs()
+            if gpus:
+                gpu = gpus[0]
+                gpu_status = f", {gpu.name} is at {gpu.load*100:.0f}% utilization"
+        except:
+            pass
+
         if cpu > 85 or mem.percent > 90:
             status = "System under heavy load, sir."
         else:
             status = "All systems nominal, sir."
             
-        return f"{status} CPU is at {cpu}%, with {ram_free_gb:.1f} GB of RAM available{batt_str}."
+        return f"{status} CPU is at {cpu}%, with {ram_free_gb:.1f} GB of RAM available{batt_str}{gpu_status}."
     except Exception as e:
         logger.error(f"Sysmon error: {e}")
         return "I am currently unable to read the hardware telemetry, sir."
@@ -33,11 +44,32 @@ def get_raw_metrics() -> dict:
     mem = psutil.virtual_memory()
     disk = psutil.disk_usage('/')
     battery = psutil.sensors_battery()
-    return {
+    
+    metrics = {
         "cpu": cpu,
         "ramFree": mem.available / (1024 ** 3),
         "ramTotal": mem.total / (1024 ** 3),
         "diskFree": disk.free / (1024 ** 3),
         "diskTotal": disk.total / (1024 ** 3),
-        "batteryPercent": battery.percent if battery else 100
+        "batteryPercent": battery.percent if battery else 100,
+        "cpu_percent": cpu,
+        "ram_percent": mem.percent,
+        "ram_used_gb": (mem.total - mem.available) / (1024 ** 3),
+        "ram_total_gb": mem.total / (1024 ** 3),
+        "disk_percent": disk.percent,
+        "gpu_name": "N/A",
+        "gpu_util": 0,
+        "vram_used_mb": 0
     }
+
+    try:
+        gpus = GPUtil.getGPUs()
+        if gpus:
+            gpu = gpus[0]
+            metrics["gpu_name"] = gpu.name
+            metrics["gpu_util"] = gpu.load * 100
+            metrics["vram_used_mb"] = gpu.memoryUsed
+    except:
+        pass
+
+    return metrics

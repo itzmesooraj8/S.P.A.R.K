@@ -25,7 +25,7 @@ export function ReminderOverlay() {
             </span>
             <button 
               className="text-amber-500/50 hover:text-amber-400 text-sm font-mono"
-              onClick={() => setDismissedIds(prev => new Set(prev).add(reminder.id))}
+              onClick={() => useSparkStore.getState().removeReminder(reminder.id)}
             >
               [DISMISS]
             </button>

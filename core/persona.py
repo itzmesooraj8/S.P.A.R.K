@@ -21,7 +21,8 @@ TOOL_REGISTRY = {
     "get_weather":       "Get the current weather and temperature for a specific location.",
     "portfolio":         "Manage or check the performance of the user's stock portfolio. Args: {'action': 'summary' | 'add' | 'remove', 'symbol': '...', 'qty': 10, 'price': 100}",
     "media_control":     "Control system volume and media playback. Args: {'action': 'mute' | 'unmute' | 'volume' | 'playpause' | 'next' | 'prev', 'value': 50}",
-    "file_search":       "Fuzzy search for a file in Documents/Desktop/Downloads and open it. Args: filename or query"
+    "file_search":       "Fuzzy search for a file in Documents/Desktop/Downloads and open it. Args: filename or query",
+    "set_reminder":      "Set a proactive reminder. Args: {'message': '...', 'delay_seconds': 60}"
 }
 
 
