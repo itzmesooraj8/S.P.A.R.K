@@ -11,6 +11,10 @@ import sys
 import time
 import keyboard
 from typing import Any, Dict, Optional
+from dotenv import load_dotenv
+
+# Load environment variables from .env file before any API checks
+load_dotenv()
 
 # ── Internal modules ─────────────────────────────────────────────────────────
 from audio.stt import SparkEars
