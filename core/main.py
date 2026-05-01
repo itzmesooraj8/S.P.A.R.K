@@ -69,6 +69,8 @@ from tools.sysmon import get_system_health
 from tools.weather import get_weather
 from tools.portfolio import PortfolioTracker
 from core.morning import generate_morning_briefing
+from tools.media import control_media
+from tools.file_ops import search_and_open_file
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL EXECUTION
@@ -108,6 +110,28 @@ def execute_tool(
         elif tool_name == "get_weather":
             loc = arg if isinstance(arg, str) and arg.strip() else "Palakkad"
             response = get_weather(loc)
+            voice.speak(response)
+            return response
+        elif tool_name == "media_control":
+            if isinstance(arg, dict):
+                action = arg.get("action", "")
+                val = arg.get("value")
+            elif isinstance(arg, str):
+                try:
+                    arg_dict = json.loads(arg)
+                    action = arg_dict.get("action", "")
+                    val = arg_dict.get("value")
+                except:
+                    action = arg
+                    val = None
+            else:
+                action = str(arg)
+                val = None
+            response = control_media(action, val)
+            voice.speak(response)
+            return response
+        elif tool_name == "file_search":
+            response = search_and_open_file(str(arg))
             voice.speak(response)
             return response
         elif tool_name == "portfolio" and portfolio_tracker:
@@ -337,7 +361,7 @@ def run():
             tool_call, spoken_text = parse_response(raw_response)
 
             # Speak any text that came before/after the tool JSON
-            if spoken_text and not (tool_call and tool_call.get("tool") in ["web_search", "system_monitor", "get_weather", "portfolio"]):
+            if spoken_text and not (tool_call and tool_call.get("tool") in ["web_search", "system_monitor", "get_weather", "portfolio", "media_control", "file_search"]):
                 voice.speak(spoken_text)
 
             final_response = raw_response
