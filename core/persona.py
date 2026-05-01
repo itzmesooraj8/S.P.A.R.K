@@ -16,7 +16,10 @@ TOOL_REGISTRY = {
     "write_clipboard":   "Write text to the clipboard.",
     "take_screenshot":   "Capture and save a screenshot, then describe what is on screen.",
     "type_text":         "Type text into the currently focused window (with safety check).",
-    "web_search":        "Search the web or retrieve live data: stock prices, news, weather, facts.",
+    "web_search":        "Search the web or retrieve live data: stock prices, news, facts.",
+    "system_monitor":    "Check CPU, RAM, disk, and battery health.",
+    "get_weather":       "Get the current weather and temperature for a specific location.",
+    "portfolio":         "Manage or check the performance of the user's stock portfolio. Args: {'action': 'summary' | 'add' | 'remove', 'symbol': '...', 'qty': 10, 'price': 100}"
 }
 
 

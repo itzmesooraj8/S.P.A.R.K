@@ -65,6 +65,11 @@ def post_action_verify(tool_name: str, screenshot_path: str) -> str:
     return describe_screen(screenshot_path, q)
 
 
+from tools.sysmon import get_system_health
+from tools.weather import get_weather
+from tools.portfolio import PortfolioTracker
+from core.morning import generate_morning_briefing
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL EXECUTION
 # ─────────────────────────────────────────────────────────────────────────────
@@ -73,10 +78,11 @@ def execute_tool(
     command_json: Dict[str, Any],
     tools: SparkTools,
     voice: SparkVoice,
+    portfolio_tracker: PortfolioTracker = None
 ) -> str:
     """OODA ACT node: dispatches tool call, runs vision verification on navigation actions."""
     tool_name = command_json.get("tool", "").strip()
-    arg = command_json.get("arg", "").strip()
+    arg = command_json.get("arg", "")
     logger.info(f"OODA ACT: {tool_name}({arg!r})")
 
     try:
@@ -95,10 +101,45 @@ def execute_tool(
             response, _ = tools.take_screenshot()
         elif tool_name == "type_text":
             response = tools.type_text(arg)
+        elif tool_name == "system_monitor":
+            response = get_system_health()
+            voice.speak(response)
+            return response
+        elif tool_name == "get_weather":
+            loc = arg if isinstance(arg, str) and arg.strip() else "Palakkad"
+            response = get_weather(loc)
+            voice.speak(response)
+            return response
+        elif tool_name == "portfolio" and portfolio_tracker:
+            if isinstance(arg, dict):
+                action = arg.get("action", "summary")
+                sym = arg.get("symbol", "")
+            elif isinstance(arg, str):
+                try:
+                    arg_dict = json.loads(arg)
+                    action = arg_dict.get("action", "summary")
+                    sym = arg_dict.get("symbol", "")
+                except:
+                    action = "summary"
+                    sym = arg
+            else:
+                action = "summary"
+                
+            if action == "add":
+                qty = arg.get("qty", 1) if isinstance(arg, dict) else 1
+                price = arg.get("price", 1) if isinstance(arg, dict) else 1
+                response = portfolio_tracker.add_holding(sym, qty, price)
+            elif action == "remove":
+                response = portfolio_tracker.remove_holding(sym)
+            else:
+                response = portfolio_tracker.get_portfolio_summary()
+            
+            voice.speak(response)
+            return response
         elif tool_name == "web_search":
             # Live web lookup — runs inline, no browser opened
             logger.info(f"WEB SEARCH: {arg!r}")
-            result = web_search_answer(arg)
+            result = web_search_answer(str(arg))
             if result:
                 response = result
             else:
@@ -237,10 +278,18 @@ def run():
 
     logger.info("Initializing S.P.A.R.K. Semantic Memory Core (ChromaDB)...")
     memory = SparkVectorMemory()
+    
+    portfolio = PortfolioTracker(memory)
 
     conversation_history: list = []
 
-    voice.speak("S.P.A.R.K. systems online. All modules nominal. Ready for your command, sir.")
+    # Phase 02D Morning Briefing
+    try:
+        morning_msg = generate_morning_briefing()
+        voice.speak(morning_msg)
+    except Exception as e:
+        logger.error(f"Morning briefing failed: {e}")
+        voice.speak("S.P.A.R.K. systems online. All modules nominal. Ready for your command, sir.")
     
     while True:
         logger.info("System idling. Awaiting OODA trigger (F9).")
@@ -288,13 +337,13 @@ def run():
             tool_call, spoken_text = parse_response(raw_response)
 
             # Speak any text that came before/after the tool JSON
-            if spoken_text:
+            if spoken_text and not (tool_call and tool_call.get("tool") in ["web_search", "system_monitor", "get_weather", "portfolio"]):
                 voice.speak(spoken_text)
 
             final_response = raw_response
 
             if tool_call:
-                tool_result = execute_tool(tool_call, tools, voice)
+                tool_result = execute_tool(tool_call, tools, voice, portfolio_tracker=portfolio)
                 final_response = tool_result
 
             # ── UPDATE MEMORY ────────────────────────────────────────────────
