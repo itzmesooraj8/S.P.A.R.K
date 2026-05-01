@@ -20,10 +20,10 @@ from groq import Groq
 from audio.stt import SparkEars
 from audio.tts import SparkVoice
 from core.tools import SparkTools
-from core.memory import SparkMemory
+from core.vector_store import SparkVectorMemory
 
 # ---------------------------------------------------------------------------
-# S.P.A.R.K. CORE ARCHITECTURE (Mark II Readiness)
+# S.P.A.R.K. CORE ARCHITECTURE (Phase 02B Semantic Memory)
 # ---------------------------------------------------------------------------
 logging.basicConfig(
     level=logging.INFO, 
@@ -108,13 +108,12 @@ def main():
     
     api_key = os.getenv("GROQ_API_KEY")
 
-
     try:
         groq_client = Groq(api_key=api_key)
         ears = SparkEars()
         voice = SparkVoice()
         tools = SparkTools()
-        memory = SparkMemory()
+        memory = SparkVectorMemory()
     except Exception as e:
         logger.critical(f"Initialization failure: {e}")
         sys.exit(1)
@@ -126,8 +125,7 @@ def main():
             logger.info("System idling. Awaiting OODA trigger (F9).")
             keyboard.wait('f9')
             
-            memory.cursor.execute('DELETE FROM conversation') 
-            memory.conn.commit()
+            memory.clear_ephemeral()
             voice.speak("Yes, Sooraj?")
             
             while True:
@@ -149,10 +147,10 @@ def main():
                     
                 logger.info(f"User: {user_input}")
                 
-                # --- 2. ORIENT ---
+                # --- 2. ORIENT (Semantic Memory Retrieval) ---
                 active_window, clipboard_data = get_situational_awareness()
                 current_time = datetime.now().strftime("%I:%M %p")
-                recent_history = memory.get_context_string(limit=4)
+                recent_history = memory.get_context_string(limit=4, query=user_input)
                 
                 # REFINED SYSTEM PROMPT (Structured JSON & Introspection Guard)
                 system_prompt = f"""You are S.P.A.R.K. (Synthetic Personal Autonomous Reasoning Kernel), a highly intelligent AI assistant created by Sooraj.
