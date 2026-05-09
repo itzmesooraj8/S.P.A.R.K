@@ -5,13 +5,12 @@ echo.
 echo  [33m  S.P.A.R.K. SHUTDOWN SEQUENCE[0m
 echo.
 
-echo  [2m  Stopping SPARK-CORE...[0m
+echo  [2m  Stopping SPARK-DAEMON...[0m
+taskkill /FI "WindowTitle eq SPARK-DAEMON" /F >nul 2>&1
+
+echo  [2m  Stopping legacy SPARK-CORE/SPARK-API/SPARK-HUD windows...[0m
 taskkill /FI "WindowTitle eq SPARK-CORE" /F >nul 2>&1
-
-echo  [2m  Stopping SPARK-API...[0m
 taskkill /FI "WindowTitle eq SPARK-API" /F >nul 2>&1
-
-echo  [2m  Stopping SPARK-HUD...[0m
 taskkill /FI "WindowTitle eq SPARK-HUD" /F >nul 2>&1
 
 :: Also kill any stray uvicorn/vite/node processes on the known ports

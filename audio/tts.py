@@ -2,6 +2,8 @@ import os
 import pygame
 import logging
 import asyncio
+import tempfile
+import uuid
 import edge_tts
 
 logger = logging.getLogger("SPARK_TTS")
@@ -25,7 +27,7 @@ class SparkVoice:
 
     async def _generate_and_play(self, text):
         # 1. Generate the audio file
-        audio_file = "response.mp3"
+        audio_file = os.path.join(tempfile.gettempdir(), f"spark_tts_{uuid.uuid4().hex}.mp3")
         communicate = edge_tts.Communicate(text, self.voice, rate="+10%")
         await communicate.save(audio_file)
         

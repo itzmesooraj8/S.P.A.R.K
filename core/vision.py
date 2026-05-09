@@ -1,36 +1,37 @@
 import base64
-import os
 import logging
-from groq import Groq
+from pathlib import Path
+
+import httpx
+
+from config import LLM_HOST, VISION_MODEL
 
 logger = logging.getLogger("SPARK_VISION")
 
 def describe_screen(screenshot_path: str, question: str) -> str:
-    """Takes a screenshot path and a question, returns a visual description via Groq."""
+    """Takes a screenshot path and a question, returns a visual description via Ollama."""
     try:
-        with open(screenshot_path, "rb") as f:
+        with open(Path(screenshot_path), "rb") as f:
             img_b64 = base64.b64encode(f.read()).decode()
 
-        api_key = os.getenv("GROQ_API_KEY")
-        if not api_key:
-            return "Vision error: Missing GROQ_API_KEY."
-
-        client = Groq(api_key=api_key)
-        
-        # Using LLaVA or the currently active vision model on Groq
-        response = client.chat.completions.create(
-            model="llama-3.2-11b-vision-preview", # Fallback to llama-3.2-11b-vision-preview if llava fails, but let's try the modern Llama 3.2 Vision
-            messages=[{
-                "role": "user",
-                "content": [
-                    {"type": "text", "text": question},
-                    {"type": "image_url",
-                     "image_url": {"url": f"data:image/png;base64,{img_b64}"}}
-                ]
-            }],
-            max_tokens=200
+        response = httpx.post(
+            f"{LLM_HOST}/api/chat",
+            json={
+                "model": VISION_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": question,
+                        "images": [img_b64],
+                    }
+                ],
+                "stream": False,
+            },
+            timeout=180.0,
         )
-        return response.choices[0].message.content.strip()
+        response.raise_for_status()
+        message = response.json().get("message", {})
+        return str(message.get("content", "")).strip() or "I could not verify the screen visually, sir."
     except Exception as e:
         logger.error(f"Vision API Error: {e}")
         return f"I could not verify the screen visually, sir."

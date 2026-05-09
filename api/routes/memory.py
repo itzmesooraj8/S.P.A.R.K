@@ -1,5 +1,7 @@
 import os
 import sys
+import json
+from pathlib import Path
 import numpy as np
 from fastapi import APIRouter
 
@@ -9,6 +11,41 @@ from core.vector_store import SparkVectorMemory
 
 router = APIRouter()
 memory = SparkVectorMemory()
+TURN_LOG = Path("spark_dev_memory/turns.jsonl")
+
+
+def _flatten_results(results: dict) -> list[dict]:
+    docs = results.get("documents", []) or []
+    metas = results.get("metadatas", []) or []
+    ids = results.get("ids", []) or []
+    embeddings = results.get("embeddings", []) or []
+    items: list[dict] = []
+
+    for index, doc_id in enumerate(ids):
+        items.append(
+            {
+                "id": doc_id,
+                "text": docs[index] if index < len(docs) else "",
+                "metadata": metas[index] if index < len(metas) and metas[index] else {},
+                "embedding": embeddings[index] if index < len(embeddings) else None,
+            }
+        )
+    return items
+
+
+def _read_turn_log() -> list[dict]:
+    if not TURN_LOG.exists():
+        return []
+    turns: list[dict] = []
+    for line in TURN_LOG.read_text(encoding="utf-8").splitlines():
+        stripped = line.strip()
+        if not stripped:
+            continue
+        try:
+            turns.append(json.loads(stripped))
+        except json.JSONDecodeError:
+            continue
+    return turns
 
 def cosine_similarity(a, b):
     try:
@@ -72,3 +109,64 @@ async def get_memory_graph():
                     })
             
     return {"nodes": nodes, "links": links}
+
+
+@router.get("/api/memory/recent")
+async def get_recent_turns(limit: int = 20):
+    turns = _read_turn_log()
+    return {"items": turns[-max(limit, 1):]}
+
+
+@router.get("/api/memory/chroma/recent")
+async def get_recent_chroma(limit: int = 30, session_id: str | None = None):
+    where = {"session_id": session_id} if session_id else None
+    results = memory.collection.get(include=["documents", "metadatas"], where=where)
+    items = _flatten_results(results)
+
+    def _sort_key(item: dict) -> float:
+        metadata = item.get("metadata") or {}
+        timestamp = metadata.get("timestamp")
+        if isinstance(timestamp, str):
+            try:
+                from datetime import datetime
+
+                return datetime.fromisoformat(timestamp).timestamp()
+            except Exception:
+                return 0.0
+        return 0.0
+
+    items.sort(key=_sort_key)
+    items = items[-max(limit, 1):]
+    for item in items:
+        item["saved_at"] = item.get("metadata", {}).get("timestamp")
+    return {"items": items}
+
+
+@router.get("/api/memory/chroma/search")
+async def search_chroma(q: str, limit: int = 25, session_id: str | None = None):
+    where = {"session_id": session_id} if session_id else None
+    results = memory.collection.query(query_texts=[q], n_results=max(limit, 1), where=where)
+    documents = (results.get("documents") or [[]])[0]
+    metadatas = (results.get("metadatas") or [[]])[0]
+    ids = (results.get("ids") or [[]])[0]
+    distances = (results.get("distances") or [[]])[0]
+
+    items = []
+    for index, doc_id in enumerate(ids):
+        metadata = metadatas[index] if index < len(metadatas) and metadatas[index] else {}
+        item = {
+            "id": doc_id,
+            "text": documents[index] if index < len(documents) else "",
+            "metadata": metadata,
+        }
+        if index < len(distances) and distances[index] is not None:
+            item["similarity"] = max(0.0, 1.0 - float(distances[index]))
+        items.append(item)
+
+    return {"items": items}
+
+
+@router.delete("/api/memory/chroma/{item_id}")
+async def delete_chroma_memory(item_id: str):
+    memory.collection.delete(ids=[item_id])
+    return {"status": "ok", "deleted": item_id}

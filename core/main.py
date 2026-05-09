@@ -12,6 +12,12 @@ import time
 import keyboard
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv
+import httpx
+
+if hasattr(sys.stdout, "reconfigure"):
+    sys.stdout.reconfigure(encoding="utf-8", errors="replace")
+if hasattr(sys.stderr, "reconfigure"):
+    sys.stderr.reconfigure(encoding="utf-8", errors="replace")
 
 # Load environment variables from .env file before any API checks
 load_dotenv()
@@ -29,6 +35,8 @@ import requests
 from core.scheduler import init_scheduler, set_reminder, shutdown_scheduler
 from core.background import start_watcher, stop_watcher
 from core.wake_word import start_wake_engine, stop_wake_engine
+from core.memory_loop import retrieve as retrieve_turns, write_turn
+from config import LLM_HOST, LLM_MODEL
 
 def broadcast_hud_event(event_type: str, payload: dict):
     """Sends async events to the FastAPI server for HUD broadcasting"""
@@ -54,13 +62,7 @@ logger = logging.getLogger("SPARK_CORE")
 def startup_check() -> bool:
     """Validates all required secrets and dependencies before loading models."""
     logger.info("Running Security & Boot Diagnostics...")
-    required = ["GROQ_API_KEY"]
-    missing = [k for k in required if not os.getenv(k)]
-    if missing:
-        logger.critical(f"BOOT FAILED — Missing environment variables: {missing}")
-        logger.critical("Set them in your .env file or system environment and restart.")
-        return False
-    logger.info("Boot Diagnostics: PASSED. Secrets verified.")
+    logger.info("Boot Diagnostics: PASSED. Local runtime mode enabled.")
     return True
 
 
@@ -262,26 +264,35 @@ def get_situational_awareness() -> tuple[str, str]:
 # LLM CALL
 # ─────────────────────────────────────────────────────────────────────────────
 
-def call_groq(
+def call_local_llm(
     user_input: str,
     memory_context: str,
     conversation_history: list,
-    groq_client,
 ) -> str:
-    """Sends a message to Groq and returns the raw response text."""
+    """Sends a message to the local Ollama backend and returns the raw response text."""
     system_prompt = build_system_prompt(memory_context)
 
     messages = [{"role": "system", "content": system_prompt}]
-    messages += conversation_history[-6:]  # keep last 3 turns
+    messages += conversation_history[-4:]
     messages.append({"role": "user", "content": user_input})
 
-    response = groq_client.chat.completions.create(
-        model="llama-3.3-70b-versatile",
-        messages=messages,
-        max_tokens=300,
-        temperature=0.6,
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = httpx.post(
+            f"{LLM_HOST}/api/chat",
+            json={"model": LLM_MODEL, "messages": messages, "stream": False},
+            timeout=180.0,
+        )
+        response.raise_for_status()
+        message = response.json().get("message", {})
+        content = str(message.get("content", "")).strip()
+        if content:
+            return content
+    except Exception as exc:
+        logger.warning("Local LLM unavailable, using offline fallback: %s", exc)
+
+    if memory_context.strip():
+        return f"I’m running locally, sir. I have contextual memory, but the local model is currently unavailable."
+    return "I’m running locally, sir, but the local model is currently unavailable."
 
 
 # ─────────────────────────────────────────────────────────────────────────────
@@ -313,7 +324,6 @@ voice = None
 tools = None
 memory = None
 portfolio = None
-groq_client = None
 conversation_history = []
 
 def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = False) -> str:
@@ -321,7 +331,7 @@ def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = 
     Execute one full agent turn: memory retrieval → LLM → tool use → response.
     Returns the final response string.
     """
-    global conversation_history, groq_client, memory, portfolio, tools, voice
+    global conversation_history, memory, portfolio, tools, voice
 
     if not user_input or user_input == "TIMEOUT":
         return ""
@@ -332,18 +342,32 @@ def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = 
     logger.info(f"User: {user_input}")
 
     # ── ORIENT: retrieve relevant memories ──────────────────────────
+    turn_context = ""
     try:
-        memories = memory.recall(user_input, n=3)
-        memory_context = "\n".join(f"- {m}" for m in memories) if memories else ""
+        turns = retrieve_turns(user_input)
+        turns = turns[-4:]
+        turn_context = "\n".join(
+            f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in turns
+        )
     except Exception:
-        memory_context = ""
+        turn_context = ""
+
+    try:
+        memories = memory.recall(user_input, n=2)
+        semantic_context = "\n".join(f"- {m}" for m in memories) if memories else ""
+    except Exception:
+        semantic_context = ""
+
+    memory_context = "\n\n".join(
+        [part for part in [turn_context, semantic_context] if part.strip()]
+    )
 
     # ── DECIDE: call LLM ─────────────────────────────────────────────
     try:
-        raw_response = call_groq(user_input, memory_context, conversation_history, groq_client)
+        raw_response = call_local_llm(user_input, memory_context, conversation_history)
         logger.info(f"LLM raw: {raw_response}")
     except Exception as e:
-        logger.error(f"Groq API error: {e}")
+        logger.error(f"Local LLM error: {e}")
         if not cli_mode: voice.speak("I'm experiencing a temporary connection issue, sir.")
         return "LLM Error"
 
@@ -369,9 +393,17 @@ def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = 
 
     # ── UPDATE MEMORY ────────────────────────────────────────────────
     try:
+        write_turn("user", user_input, metadata={"tool": tool_call.get("tool") if tool_call else "conversation"})
+        write_turn("assistant", final_response, metadata={"tool": tool_call.get("tool") if tool_call else "conversation"})
         memory.remember(
-            f"User: {user_input} | SPARK: {final_response[:150]}",
-            metadata={"tool": tool_call.get("tool") if tool_call else "conversation"}
+            "user",
+            user_input,
+            metadata={"tool": tool_call.get("tool") if tool_call else "conversation"},
+        )
+        memory.remember(
+            "assistant",
+            final_response,
+            metadata={"tool": tool_call.get("tool") if tool_call else "conversation"},
         )
     except Exception:
         pass
@@ -410,7 +442,7 @@ def _voice_trigger():
 
 def run():
     """Boot sequence for S.P.A.R.K. Core + Proactive Agency."""
-    global stt, voice, tools, memory, portfolio, groq_client, conversation_history
+    global stt, voice, tools, memory, portfolio, conversation_history
 
     if not startup_check():
         sys.exit(1)
@@ -431,13 +463,6 @@ def run():
     
     portfolio = PortfolioTracker(memory)
     
-    try:
-        from groq import Groq
-        groq_client = Groq(api_key=os.getenv("GROQ_API_KEY"))
-    except Exception as e:
-        logger.error(f"Failed to initialize Groq: {e}")
-        return
-
     conversation_history = []
 
     # ── 2. Phase 03: Start Proactive Daemons ──────────────────────────

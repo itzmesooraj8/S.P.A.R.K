@@ -1,16 +1,60 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi.middleware.cors import CORSMiddleware
 import asyncio
 import sys
 import os
+import uuid
 
 # Add parent directory to path to import tools
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.sysmon import get_raw_metrics
 from api.routes.memory import router as memory_router
+from api.routes.task import router as task_router
 
 app = FastAPI(title="S.P.A.R.K. Bridge API")
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=["http://localhost:5173"],
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 app.include_router(memory_router)
+app.include_router(task_router)
+
+
+@app.post("/api/auth/login")
+async def auth_login():
+    token = uuid.uuid4().hex
+    return {
+        "access_token": token,
+        "refresh_token": token,
+        "token_type": "bearer",
+        "expires_in": 3600,
+        "user": {"username": "operator", "role": "operator"},
+    }
+
+
+@app.post("/api/auth/refresh")
+async def auth_refresh():
+    token = uuid.uuid4().hex
+    return {
+        "access_token": token,
+        "refresh_token": token,
+        "token_type": "bearer",
+        "expires_in": 3600,
+        "user": {"username": "operator", "role": "operator"},
+    }
+
+
+@app.post("/api/auth/logout")
+async def auth_logout():
+    return {"status": "ok"}
+
+
+@app.get("/health")
+async def health_check():
+    return {"status": "ok"}
 
 class ConnectionManager:
     def __init__(self):
