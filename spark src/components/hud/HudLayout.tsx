@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import { AnimatePresence, motion } from 'framer-motion';
 import ParticleBackground from './ParticleBackground';
 import TopBar from './TopBar';
-import CoreModule from './CoreModule';
+import AICore from './AICore';
 import ControlPanel from './ControlPanel';
 import AIPanelSlider from './AIPanelSlider';
 import SatelliteModule from './modules/SatelliteModule';
@@ -20,7 +20,7 @@ import TelemetryModule from './modules/TelemetryModule';
 import MindModule from './modules/MindModule';
 import SparkAlertToast from './SparkAlertToast';
 import AgentConfirmModal from './AgentConfirmModal';
-import CommandBar from './CommandBar';
+import CommandDock from './CommandDock';
 import VoiceStatusPanel from './VoiceStatusPanel';
 import MemoryPanel from './MemoryPanel';
 import SecurityStatusPanel from './SecurityStatusPanel';
@@ -48,9 +48,9 @@ import WiFiAuditPanel from '@/components/combat/WiFiAuditPanel';
 import PasswordAuditPanel from '@/components/combat/PasswordAuditPanel';
 import TaskPanel from './modules/TaskPanel';
 import { useFetchTasks } from '@/hooks/useFetchTasks';
-import { SysMetrics } from './SysMetrics';
+import SystemTelemetry from './SystemTelemetry';
 import { PortfolioTicker } from './PortfolioTicker';
-import { AgentLog } from './AgentLog';
+import EventFeed from './EventFeed';
 
 type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music' | 'tasks';
 
@@ -216,10 +216,28 @@ export default function HudLayout() {
 
   const toggleMaximize = () => setIsMaximized(v => !v);
 
+  const [mousePos, setMousePos] = useState({ x: 0, y: 0 });
+
+  useEffect(() => {
+    const handleMouseMove = (e: MouseEvent) => {
+      // Normalize mouse position between -1 and 1
+      setMousePos({
+        x: (e.clientX / window.innerWidth) * 2 - 1,
+        y: (e.clientY / window.innerHeight) * 2 - 1
+      });
+    };
+    window.addEventListener('mousemove', handleMouseMove);
+    return () => window.removeEventListener('mousemove', handleMouseMove);
+  }, []);
+
   return (
-    <div className="relative w-full h-screen flex flex-col overflow-hidden"
+    <motion.div 
+      className="relative w-full h-screen flex flex-col overflow-hidden"
       data-hud-mode={hudMode}
       data-hud-phase={scenePhase}
+      animate={{
+        backgroundPosition: `${mousePos.x * 10}px ${mousePos.y * 10}px`
+      }}
       style={{ background: combatActive
         ? 'radial-gradient(ellipse at center, #1a0005 0%, ' + COMBAT_BG + ' 60%, #000000 100%)'
         : 'radial-gradient(ellipse at center, #00022e 0%, #000814 60%, #000000 100%)',
@@ -289,8 +307,8 @@ export default function HudLayout() {
         {/* LEFT PANEL */}
         {developerMode ? (
           <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
-            <div className="h-48 hud-panel rounded overflow-hidden">
-              <SysMetrics />
+            <div className="h-64">
+              <SystemTelemetry />
             </div>
             <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
               <PortfolioTicker />
@@ -325,7 +343,7 @@ export default function HudLayout() {
           <div className="flex-1 hud-panel rounded flex items-center justify-center relative overflow-hidden backdrop-blur-2xl">
             <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,245,255,0.08),transparent_55%)] pointer-events-none" />
             <div className="absolute inset-x-16 top-8 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent pointer-events-none" />
-            <CoreModule
+            <AICore
               status={voice.status}
               isListening={voice.isListening}
               amplitude={voice.amplitude}
@@ -416,8 +434,8 @@ export default function HudLayout() {
                 status={voice.status}
               />
             </div>
-            <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
-              <AgentLog />
+            <div className="flex-1 min-h-0">
+              <EventFeed />
             </div>
           </div>
         ) : (
@@ -464,8 +482,8 @@ export default function HudLayout() {
         onClose={() => setPending(null)}
       />
 
-      {/* Global command bar — Ctrl+Space (renders via Zustand store) */}
-      <CommandBar />
+      {/* Global command dock — Ctrl+Space (renders via Zustand store) */}
+      <CommandDock />
 
       {/* ── Combat Mode Modal ─────────────────────────────────────────────── */}
       <CombatModeModal open={combatModalOpen} onClose={() => {
@@ -525,6 +543,6 @@ export default function HudLayout() {
           </motion.div>
         )}
       </AnimatePresence>
-    </div>
+    </motion.div>
   );
 }

@@ -1,11 +1,13 @@
 import React from 'react';
-import { AgentLog } from '../components/hud/AgentLog';
-import { VoiceWaveform } from '../components/hud/VoiceWaveform';
-import { SysMetrics } from '../components/hud/SysMetrics';
+import EventFeed from '../components/hud/EventFeed';
+import VoiceWaveform from '../components/hud/VoiceWaveform';
+import SystemTelemetry from '../components/hud/SystemTelemetry';
 import { PortfolioTicker } from '../components/hud/PortfolioTicker';
 import { ReminderOverlay } from '../components/hud/ReminderOverlay';
+import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 
 export default function LiveFeed() {
+  const voice = useVoiceEngine();
   return (
     <div className="w-full h-screen bg-[#010812] text-white p-4 font-mono overflow-hidden relative">
       <ReminderOverlay />
@@ -45,13 +47,13 @@ export default function LiveFeed() {
           
           {/* Left Column - Agent Log */}
           <div className="col-span-3 h-full">
-            <AgentLog />
+            <EventFeed />
           </div>
 
           {/* Center Column - Voice & Main Focus */}
           <div className="col-span-6 flex flex-col gap-4 h-full">
             <div className="h-[200px] shrink-0">
-              <VoiceWaveform />
+              <VoiceWaveform amplitude={voice.amplitude} />
             </div>
             
             <div className="flex-1 hud-panel p-4 flex flex-col justify-end bg-gradient-to-t from-[#00f5ff0a] to-transparent">
@@ -79,7 +81,7 @@ export default function LiveFeed() {
           {/* Right Column - Telemetry & Markets */}
           <div className="col-span-3 flex flex-col gap-4 h-full">
             <div className="flex-none">
-              <SysMetrics />
+              <SystemTelemetry />
             </div>
             <div className="flex-1 min-h-0">
               <PortfolioTicker />

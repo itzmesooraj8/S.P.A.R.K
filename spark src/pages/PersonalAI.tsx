@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePersonalAISocket } from '@/hooks/usePersonalAISocket';
-import { VoiceWaveform } from '../components/hud/VoiceWaveform';
+import VoiceWaveform from '../components/hud/VoiceWaveform';
 
 export default function PersonalAI() {
   const { messages, isConnected, activityLogs, sendToBrain, logActivity } = usePersonalAISocket();

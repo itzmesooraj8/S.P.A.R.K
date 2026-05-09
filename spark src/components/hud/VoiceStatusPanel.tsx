@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useState } from 'react';
 import { Mic, Volume2, Activity, SlidersHorizontal, Cpu } from 'lucide-react';
 import type { TtsPlaybackState } from '@/hooks/useVoiceEngine';
+import VoiceWaveform from './VoiceWaveform';
 
 const API = import.meta.env.VITE_API_BASE ?? 'http://localhost:8000';
 
@@ -212,22 +213,15 @@ export default function VoiceStatusPanel({ status, isListening, amplitude, ttsPl
           <Mic size={10} className="text-hud-cyan/70" />
           <span className="font-orbitron text-[8px] text-hud-cyan/70">LISTENING WAVE</span>
         </div>
-        <div className="flex items-end gap-[2px] h-6">
-          {new Array(16).fill(0).map((_, idx) => {
-            const val = amplitude[idx] ?? 0;
-            const height = Math.max(2, Math.round(val * 24));
-            return (
-              <div
-                key={idx}
-                className="w-[4px] rounded-sm transition-all duration-75"
-                style={{
-                  height,
-                  background: isListening ? '#30d158' : '#00f5ff55',
-                  boxShadow: isListening ? '0 0 6px #30d158' : 'none',
-                }}
-              />
-            );
-          })}
+        <div className="flex items-center justify-center h-10 w-full mt-2">
+          <VoiceWaveform 
+            amplitude={amplitude} 
+            color={isListening ? '#00FF88' : '#00E5FF'} 
+            width={180} 
+            height={30}
+            barWidth={3}
+            gap={2}
+          />
         </div>
       </div>
 

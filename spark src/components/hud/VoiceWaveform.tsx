@@ -1,102 +1,83 @@
 import React, { useEffect, useRef } from 'react';
-import { useSparkStore } from '../../store/sparkStore';
 
-export function VoiceWaveform() {
+interface Props {
+  amplitude: number[]; // Array of normalized amplitudes (0 to 1)
+  color?: string;
+  width?: number;
+  height?: number;
+  barWidth?: number;
+  gap?: number;
+}
+
+export default function VoiceWaveform({ 
+  amplitude, 
+  color = '#00E5FF', 
+  width = 240, 
+  height = 60,
+  barWidth = 3,
+  gap = 3
+}: Props) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
-  const voiceState = useSparkStore(state => state.voiceState);
-  const activeTheme = useSparkStore(state => state.activeTheme);
 
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
+
     const ctx = canvas.getContext('2d');
     if (!ctx) return;
 
-    let animationId: number;
-    let phase = 0;
+    // Clear canvas
+    ctx.clearRect(0, 0, width, height);
 
-    const render = () => {
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+    const centerY = height / 2;
+    const numBars = Math.min(amplitude.length, Math.floor(width / (barWidth + gap)));
+    const totalContentWidth = numBars * (barWidth + gap) - gap;
+    const startX = (width - totalContentWidth) / 2;
+
+    for (let i = 0; i < numBars; i++) {
+      const amp = amplitude[i] || 0.05; // Base height of 5%
+      // Map amp (0 to 1) to bar height (min 2, max height * 0.9)
+      let barHeight = Math.max(2, amp * height * 0.9);
       
-      if (voiceState === 'idle') {
-        // Flat line
-        ctx.beginPath();
-        ctx.moveTo(0, canvas.height / 2);
-        ctx.lineTo(canvas.width, canvas.height / 2);
-        ctx.strokeStyle = activeTheme === 'cyan' ? '#00f5ff' : 
-                          activeTheme === 'red' ? '#ff2a2a' : 
-                          activeTheme === 'amber' ? '#ffb000' : '#ffffff';
-        ctx.lineWidth = 2;
-        ctx.stroke();
-      } else {
-        // Animated waveform
-        ctx.beginPath();
-        ctx.moveTo(0, canvas.height / 2);
-        
-        const bars = 40;
-        const barWidth = canvas.width / bars;
-        
-        for (let i = 0; i < bars; i++) {
-          const x = i * barWidth;
-          const noise = Math.sin(phase + i * 0.5) * Math.cos(phase * 1.2 + i * 0.2);
-          const amplitude = voiceState === 'speaking' ? 30 : 
-                            voiceState === 'listening' ? 15 : 5;
-          
-          const h = (noise * amplitude) + (Math.random() * (voiceState === 'processing' ? 10 : 2));
-          
-          ctx.lineTo(x, canvas.height / 2 + h);
-        }
-        
-        ctx.strokeStyle = activeTheme === 'cyan' ? '#00f5ff' : 
-                          activeTheme === 'red' ? '#ff2a2a' : 
-                          activeTheme === 'amber' ? '#ffb000' : '#ffffff';
-        ctx.lineWidth = 3;
-        ctx.shadowBlur = 10;
-        ctx.shadowColor = ctx.strokeStyle;
-        ctx.stroke();
-        
-        phase += 0.15;
-      }
+      // Ensure smooth corners
+      ctx.lineCap = 'round';
+      ctx.lineWidth = barWidth;
+
+      // Create gradient for the bar
+      const gradient = ctx.createLinearGradient(0, centerY - barHeight/2, 0, centerY + barHeight/2);
+      gradient.addColorStop(0, `${color}20`);
+      gradient.addColorStop(0.5, color);
+      gradient.addColorStop(1, `${color}20`);
+
+      ctx.strokeStyle = gradient;
+
+      const x = startX + i * (barWidth + gap);
       
-      animationId = requestAnimationFrame(render);
-    };
+      // Draw the bar
+      ctx.beginPath();
+      ctx.moveTo(x + barWidth/2, centerY - barHeight/2);
+      ctx.lineTo(x + barWidth/2, centerY + barHeight/2);
+      ctx.stroke();
 
-    render();
+      // Add a subtle glow
+      ctx.shadowColor = color;
+      ctx.shadowBlur = amp > 0.3 ? 10 : 0;
+    }
 
-    return () => cancelAnimationFrame(animationId);
-  }, [voiceState, activeTheme]);
+    // Reset shadow for next frame
+    ctx.shadowBlur = 0;
+
+  }, [amplitude, color, width, height, barWidth, gap]);
 
   return (
-    <div className="relative overflow-hidden hud-panel-glow p-4 flex flex-col items-center justify-center min-h-[140px] rounded-xl">
-      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(0,245,255,0.10) 0%, transparent 55%)' }} />
-      <div className="absolute inset-x-8 top-8 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
-      <div className={`relative z-10 text-[10px] mb-3 uppercase tracking-[0.35em] ${
-        voiceState === 'idle' ? 'text-white/35' : `neon-text-${activeTheme}`
-      }`}>
-        {voiceState === 'idle' ? 'MIC STANDBY' : 
-         voiceState === 'listening' ? 'OBSERVING INPUT' :
-         voiceState === 'processing' ? 'ORIENTING LOGIC' : 'ACTING'}
-      </div>
+    <div className="relative flex items-center justify-center py-2">
+      <div className="absolute inset-0 bg-gradient-to-r from-transparent via-cyan-500/10 to-transparent blur-md rounded-full" />
       <canvas 
         ref={canvasRef} 
-        width={360} 
-        height={84} 
-        className="relative z-10 w-full max-w-[360px]"
+        width={width} 
+        height={height} 
+        className="relative z-10 w-full max-w-full"
       />
-      <div className="relative z-10 mt-3 flex items-center gap-1.5 opacity-60">
-        {new Array(10).fill(0).map((_, index) => (
-          <span
-            key={index}
-            className="w-1 rounded-full"
-            style={{
-              height: `${6 + ((index % 4) * 4)}px`,
-              background: voiceState === 'idle' ? 'rgba(255,255,255,0.16)' : 'rgba(0,245,255,0.65)',
-              animation: 'waveform 1.2s ease-in-out infinite',
-              animationDelay: `${index * 0.08}s`,
-            }}
-          />
-        ))}
-      </div>
     </div>
   );
 }

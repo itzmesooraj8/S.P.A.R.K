@@ -1,4 +1,4 @@
-@import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;500;600;700;800;900&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600&family=Space+Grotesk:wght@400;500;600;700&family=Orbitron:wght@400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600&family=Rajdhani:wght@300;400;500;600;700&family=Share+Tech+Mono&display=swap');
 
 @tailwind base;
 @tailwind components;
@@ -231,8 +231,16 @@
     font-family: 'Rajdhani', sans-serif;
   }
 
+  .font-inter {
+    font-family: 'Inter', sans-serif;
+  }
+
+  .font-space {
+    font-family: 'Space Grotesk', sans-serif;
+  }
+
   .font-mono-tech {
-    font-family: 'Share Tech Mono', monospace;
+    font-family: 'JetBrains Mono', 'Share Tech Mono', monospace;
   }
 
   .glass-line {
