@@ -4,12 +4,19 @@ import asyncio
 import sys
 import os
 import uuid
+import json
+import threading
+from typing import Any
 
 # Add parent directory to path to import tools
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.sysmon import get_raw_metrics
 from api.routes.memory import router as memory_router
 from api.routes.task import router as task_router
+from api.routes.runtime import router as runtime_router
+from api.routes.security import router as security_router
+import core.main as spark_main
+from core.main import run_agent_turn
 
 app = FastAPI(title="S.P.A.R.K. Bridge API")
 app.add_middleware(
@@ -21,6 +28,8 @@ app.add_middleware(
 
 app.include_router(memory_router)
 app.include_router(task_router)
+app.include_router(runtime_router)
+app.include_router(security_router)
 
 
 @app.post("/api/auth/login")
@@ -65,7 +74,8 @@ class ConnectionManager:
         self.active_connections.append(websocket)
 
     def disconnect(self, websocket: WebSocket):
-        self.active_connections.remove(websocket)
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
 
     async def broadcast(self, message: dict):
         for connection in self.active_connections:
@@ -74,7 +84,27 @@ class ConnectionManager:
             except Exception:
                 pass
 
+
+class AIDispatcher:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def send(self, websocket: WebSocket, message: dict[str, Any]):
+        try:
+            await websocket.send_json(message)
+        except Exception:
+            pass
+
 manager = ConnectionManager()
+ai_manager = AIDispatcher()
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -97,6 +127,74 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
     except Exception as e:
         manager.disconnect(websocket)
+
+
+@app.websocket("/ws/ai")
+async def websocket_ai_endpoint(websocket: WebSocket):
+    token = websocket.query_params.get("token")
+    if not token:
+        await websocket.close(code=1008)
+        return
+
+    await ai_manager.connect(websocket)
+    current_cancel = threading.Event()
+
+    async def _forward(queue: asyncio.Queue[dict[str, Any]]):
+        while True:
+            message = await queue.get()
+            if message.get("type") == "__close__":
+                return
+            await ai_manager.send(websocket, message)
+
+    try:
+        while True:
+            data = await websocket.receive_json()
+            message_type = str(data.get("type") or data.get("messageType") or "").upper()
+
+            if message_type == "CANCEL":
+                current_cancel.set()
+                try:
+                    if spark_main.voice:
+                        spark_main.voice.stop()
+                except Exception:
+                    pass
+                await websocket.send_json({"type": "ERROR", "message": "Generation cancelled.", "code": "cancelled"})
+                await websocket.send_json({"type": "DONE"})
+                continue
+
+            text = str(data.get("content") or data.get("message") or "").strip()
+            if not text:
+                continue
+
+            current_cancel = threading.Event()
+            queue: asyncio.Queue[dict[str, Any]] = asyncio.Queue()
+            done_emitted = threading.Event()
+            loop = asyncio.get_running_loop()
+
+            def sink(event_type: str, payload: dict[str, Any]):
+                normalized_type = event_type if event_type in {"response_token", "response_done", "status", "error"} else event_type.upper()
+                frame: dict[str, Any] = {"type": normalized_type, **payload}
+                if normalized_type in {"response_done", "error"}:
+                    done_emitted.set()
+                loop.call_soon_threadsafe(queue.put_nowait, frame)
+
+            forward_task = asyncio.create_task(_forward(queue))
+            await websocket.send_json({"type": "STATUS", "state": "thinking"})
+
+            try:
+                result = await asyncio.to_thread(run_agent_turn, text, True, False, sink, current_cancel)
+                if not done_emitted.is_set():
+                    await queue.put({"type": "response_done", "content": result})
+            finally:
+                await queue.put({"type": "__close__"})
+                await forward_task
+
+    except WebSocketDisconnect:
+        ai_manager.disconnect(websocket)
+    except Exception:
+        ai_manager.disconnect(websocket)
+    finally:
+        ai_manager.disconnect(websocket)
 
 @app.post("/internal/broadcast")
 async def broadcast_event(request: Request):

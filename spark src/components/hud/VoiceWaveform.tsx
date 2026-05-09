@@ -67,9 +67,11 @@ export function VoiceWaveform() {
   }, [voiceState, activeTheme]);
 
   return (
-    <div className="hud-panel p-4 flex flex-col items-center justify-center min-h-[120px]">
-      <div className={`text-xs mb-2 uppercase tracking-widest ${
-        voiceState === 'idle' ? 'text-gray-500' : `neon-text-${activeTheme}`
+    <div className="relative overflow-hidden hud-panel-glow p-4 flex flex-col items-center justify-center min-h-[140px] rounded-xl">
+      <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(circle at center, rgba(0,245,255,0.10) 0%, transparent 55%)' }} />
+      <div className="absolute inset-x-8 top-8 h-px bg-gradient-to-r from-transparent via-cyan-300/70 to-transparent" />
+      <div className={`relative z-10 text-[10px] mb-3 uppercase tracking-[0.35em] ${
+        voiceState === 'idle' ? 'text-white/35' : `neon-text-${activeTheme}`
       }`}>
         {voiceState === 'idle' ? 'MIC STANDBY' : 
          voiceState === 'listening' ? 'OBSERVING INPUT' :
@@ -77,10 +79,24 @@ export function VoiceWaveform() {
       </div>
       <canvas 
         ref={canvasRef} 
-        width={300} 
-        height={60} 
-        className="w-full max-w-[300px]"
+        width={360} 
+        height={84} 
+        className="relative z-10 w-full max-w-[360px]"
       />
+      <div className="relative z-10 mt-3 flex items-center gap-1.5 opacity-60">
+        {new Array(10).fill(0).map((_, index) => (
+          <span
+            key={index}
+            className="w-1 rounded-full"
+            style={{
+              height: `${6 + ((index % 4) * 4)}px`,
+              background: voiceState === 'idle' ? 'rgba(255,255,255,0.16)' : 'rgba(0,245,255,0.65)',
+              animation: 'waveform 1.2s ease-in-out infinite',
+              animationDelay: `${index * 0.08}s`,
+            }}
+          />
+        ))}
+      </div>
     </div>
   );
 }

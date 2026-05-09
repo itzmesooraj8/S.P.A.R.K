@@ -35,6 +35,10 @@ export default function ParticleBackground({ className = '', count = 150 }: Prop
 
     let frame: number;
     const CONNECT_DIST = 120;
+    const vignette = ctx.createRadialGradient(canvas.width / 2, canvas.height / 2, canvas.width * 0.05, canvas.width / 2, canvas.height / 2, canvas.width * 0.7);
+    vignette.addColorStop(0, 'rgba(0, 245, 255, 0.06)');
+    vignette.addColorStop(0.5, 'rgba(0, 8, 20, 0.0)');
+    vignette.addColorStop(1, 'rgba(0, 0, 0, 0.38)');
 
     const draw = () => {
       ctx.clearRect(0, 0, canvas.width, canvas.height);
@@ -80,6 +84,19 @@ export default function ParticleBackground({ className = '', count = 150 }: Prop
         ctx.fill();
       }
 
+      // Atmospheric halo
+      ctx.fillStyle = vignette;
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+      // Soft scanline band
+      const scanY = (Date.now() * 0.03) % canvas.height;
+      const scanGrad = ctx.createLinearGradient(0, scanY - 16, 0, scanY + 16);
+      scanGrad.addColorStop(0, 'rgba(0,245,255,0)');
+      scanGrad.addColorStop(0.5, 'rgba(0,245,255,0.08)');
+      scanGrad.addColorStop(1, 'rgba(0,245,255,0)');
+      ctx.fillStyle = scanGrad;
+      ctx.fillRect(0, scanY - 16, canvas.width, 32);
+
       frame = requestAnimationFrame(draw);
     };
 
@@ -94,7 +111,7 @@ export default function ParticleBackground({ className = '', count = 150 }: Prop
     <canvas
       ref={canvasRef}
       className={`fixed inset-0 pointer-events-none ${className}`}
-      style={{ zIndex: 0 }}
+      style={{ zIndex: 0, mixBlendMode: 'screen', opacity: 0.9 }}
     />
   );
 }

@@ -13,6 +13,12 @@ from config import LLM_HOST, LLM_MODEL
 from core.planner import TaskPlanner
 from core.memory_loop import write_turn
 from core.tools import SparkTools
+from core.orchestrator.agent_bus import get_agent_bus
+from core.orchestrator.router import get_orchestrator_router
+from security.audit import record_audit
+from security.action_guard import guard_tool_function
+from security.content_sanitizer import sanitize_for_llm
+from security.intent_validator import validate_intent_text
 from tools.file_ops import search_and_open_file
 from tools.media import control_media
 from tools.sysmon import get_system_health
@@ -24,6 +30,8 @@ router = APIRouter()
 
 _tools = SparkTools()
 _planner: TaskPlanner | None = None
+_orchestrator = get_orchestrator_router()
+_bus = get_agent_bus()
 _task_status: dict[str, dict[str, Any]] = {}
 
 
@@ -95,16 +103,16 @@ def _llm_call(prompt: str) -> str:
 
 def _tool_map() -> dict[str, Any]:
     return {
-        "open_website": _tools.open_website,
-        "open_application": _tools.open_application,
-        "read_clipboard": lambda _: _tools.read_clipboard(),
-        "write_clipboard": _tools.write_clipboard,
-        "get_time": lambda _: _tools.get_time(),
-        "web_search": web_search_answer,
-        "system_monitor": lambda _: get_system_health(),
-        "get_weather": lambda arg: get_weather(arg or "Palakkad"),
-        "file_search": search_and_open_file,
-        "media_control": control_media,
+        "open_website": guard_tool_function("open_website", _tools.open_website, source="task", risk="medium"),
+        "open_application": guard_tool_function("open_application", _tools.open_application, source="task", risk="medium"),
+        "read_clipboard": guard_tool_function("read_clipboard", lambda _: _tools.read_clipboard(), source="task", risk="low"),
+        "write_clipboard": guard_tool_function("write_clipboard", _tools.write_clipboard, source="task", risk="medium"),
+        "get_time": guard_tool_function("get_time", lambda _: _tools.get_time(), source="task", risk="low"),
+        "web_search": guard_tool_function("web_search", web_search_answer, source="task", risk="low"),
+        "system_monitor": guard_tool_function("system_monitor", lambda _: get_system_health(), source="task", risk="low"),
+        "get_weather": guard_tool_function("get_weather", lambda arg: get_weather(arg or "Palakkad"), source="task", risk="low"),
+        "file_search": guard_tool_function("file_search", search_and_open_file, source="task", risk="medium"),
+        "media_control": guard_tool_function("media_control", control_media, source="task", risk="low"),
     }
 
 
@@ -117,15 +125,32 @@ def get_planner() -> TaskPlanner:
 
 def run_task_sync(goal: str) -> dict[str, Any]:
     task_id = uuid.uuid4().hex
-    _task_status[task_id] = {"task_id": task_id, "goal": goal, "status": "running", "steps": [], "results": []}
+    validation = validate_intent_text(goal)
+    sanitized_goal = sanitize_for_llm(validation.cleaned_text or goal)
+    if not validation.allowed:
+        blocked = {
+            "task_id": task_id,
+            "goal": goal,
+            "status": "blocked",
+            "steps": [],
+            "results": ["Security policy blocked the requested goal."],
+            "orchestration": {},
+        }
+        _task_status[task_id] = blocked
+        record_audit("task_goal_blocked", {"task_id": task_id, "goal": goal, "score": validation.score, "reasons": list(validation.reasons)})
+        return blocked
+
+    _task_status[task_id] = {"task_id": task_id, "goal": sanitized_goal, "status": "running", "steps": [], "results": []}
     try:
-        write_turn("user", goal, metadata={"source": "planner", "task_id": task_id})
+        orchestration = _orchestrator.route(sanitized_goal, {"task_id": task_id, "source": "planner"})
+        _bus.emit("execution_started", {"task_id": task_id, "goal": sanitized_goal, "route": orchestration})
+        write_turn("user", sanitized_goal, metadata={"source": "planner", "task_id": task_id})
     except Exception:
-        pass
+        orchestration = {}
 
     try:
         planner = get_planner()
-        task = planner.plan(goal)
+        task = planner.plan(sanitized_goal)
         task = planner.execute(task)
         result_text = "\n".join(task.results) if task.results else task.status
         try:
@@ -143,18 +168,22 @@ def run_task_sync(goal: str) -> dict[str, Any]:
             "status": task.status,
             "steps": task.steps,
             "results": task.results,
+            "orchestration": orchestration,
         }
         _task_status[task_id] = result
+        _bus.emit("execution_completed", {"task_id": task_id, "goal": task.goal, "status": task.status, "steps": task.steps})
         return result
     except Exception as exc:
         failed = {
             "task_id": task_id,
-            "goal": goal,
+            "goal": sanitized_goal,
             "status": "blocked",
             "steps": [],
             "results": [str(exc)],
+            "orchestration": orchestration,
         }
         _task_status[task_id] = failed
+        _bus.emit("execution_failed", {"task_id": task_id, "goal": sanitized_goal, "error": str(exc)})
         return failed
 
 
@@ -163,10 +192,10 @@ def run_task_sync(goal: str) -> dict[str, Any]:
 async def execute_task(request: TaskRequest, background_tasks: BackgroundTasks):
     try:
         task_id = uuid.uuid4().hex
-        _task_status[task_id] = {"task_id": task_id, "goal": request.goal, "status": "queued", "steps": [], "results": []}
+        _task_status[task_id] = {"task_id": task_id, "goal": sanitize_for_llm(request.goal), "status": "queued", "steps": [], "results": []}
 
         def _run_with_task_id() -> None:
-            _task_status[task_id] = {"task_id": task_id, "goal": request.goal, "status": "running", "steps": [], "results": []}
+            _task_status[task_id] = {"task_id": task_id, "goal": sanitize_for_llm(request.goal), "status": "running", "steps": [], "results": []}
             try:
                 result = run_task_sync(request.goal)
                 result["task_id"] = task_id
@@ -174,10 +203,11 @@ async def execute_task(request: TaskRequest, background_tasks: BackgroundTasks):
             except Exception as exc:
                 _task_status[task_id] = {
                     "task_id": task_id,
-                    "goal": request.goal,
+                    "goal": sanitize_for_llm(request.goal),
                     "status": "blocked",
                     "steps": [],
                     "results": [str(exc)],
+                    "orchestration": {},
                 }
 
         background_tasks.add_task(_run_with_task_id)

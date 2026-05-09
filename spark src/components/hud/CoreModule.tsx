@@ -59,24 +59,39 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
     }
   }, [combatActive])
 
-  const size = 260;
+  const size = 320;
   const cx = size / 2;
   const cy = size / 2;
+  const energy = Math.max(0.18, Math.min(1, amplitude.reduce((sum, value) => sum + value, 0) / Math.max(amplitude.length, 1) * 1.15));
+  const energyGlow = `0 0 ${18 + energy * 26}px ${cfg.color}80, 0 0 ${42 + energy * 48}px ${cfg.color}28`;
 
   return (
-    <div className="flex flex-col items-center justify-center h-full gap-3">
+    <div className="flex flex-col items-center justify-center h-full gap-4 relative">
       {/* Wake word indicator */}
-      <div className="flex items-center gap-2">
-        <div className={`w-2 h-2 rounded-full ${status === 'idle' ? 'bg-hud-cyan/60 animate-pulse' : 'bg-hud-green animate-pulse'}`} />
-        <span className="font-orbitron text-[10px] tracking-widest neon-text animate-flicker">
+      <div className="flex items-center gap-3 px-3 py-1.5 rounded-full border border-white/10 bg-black/25 backdrop-blur-md shadow-[0_0_30px_rgba(0,245,255,0.08)]">
+        <div className={`w-2.5 h-2.5 rounded-full ${status === 'idle' ? 'bg-hud-cyan/70 animate-pulse' : 'bg-hud-green animate-pulse'}`} />
+        <span className="font-orbitron text-[10px] tracking-[0.35em] uppercase text-[#dffcff] animate-flicker">
           SPARK ONLINE
         </span>
-        <div className={`w-2 h-2 rounded-full ${status === 'idle' ? 'bg-hud-cyan/60 animate-pulse' : 'bg-hud-green animate-pulse'}`} />
+        <div className={`w-2.5 h-2.5 rounded-full ${status === 'idle' ? 'bg-hud-cyan/70 animate-pulse' : 'bg-hud-green animate-pulse'}`} />
       </div>
 
       {/* Core SVG */}
       <div className="relative" style={{ width: size, height: size }}>
-        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0">
+        <div
+          className="absolute inset-0 rounded-full blur-3xl opacity-70"
+          style={{ background: `radial-gradient(circle at 50% 50%, ${cfg.color}28 0%, ${cfg.color}10 34%, transparent 70%)` }}
+        />
+        <div
+          className="absolute inset-[16%] rounded-full border border-white/8 backdrop-blur-2xl"
+          style={{
+            background: 'radial-gradient(circle at 50% 50%, rgba(255,255,255,0.04) 0%, rgba(0,0,0,0.28) 58%, rgba(0,0,0,0.5) 100%)',
+            boxShadow: energyGlow,
+          }}
+        />
+        <div className="absolute inset-[29%] rounded-full border border-white/10 bg-black/35 backdrop-blur-xl shadow-[inset_0_0_48px_rgba(0,245,255,0.08)]" />
+
+        <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="absolute inset-0 overflow-visible">
           {/* Background circles */}
           {[120, 105, 90, 75, 60].map((r, i) => (
             <circle key={i} cx={cx} cy={cy} r={r}
@@ -149,6 +164,16 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
               <stop offset="0%" stopColor={cfg.color} stopOpacity="0.6" />
               <stop offset="100%" stopColor={cfg.color} stopOpacity="0" />
             </radialGradient>
+            <radialGradient id="coreGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor={cfg.color} stopOpacity="0.95" />
+              <stop offset="55%" stopColor={cfg.color} stopOpacity="0.35" />
+              <stop offset="100%" stopColor={cfg.color} stopOpacity="0.05" />
+            </radialGradient>
+            <linearGradient id="waveGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+              <stop offset="0%" stopColor={cfg.color} stopOpacity="0.15" />
+              <stop offset="50%" stopColor={cfg.color} stopOpacity="1" />
+              <stop offset="100%" stopColor={cfg.color} stopOpacity="0.15" />
+            </linearGradient>
           </defs>
           <path
             d={`M ${cx} ${cy} L ${cx + 70} ${cy} A 70 70 0 0 1 ${cx + 70 * Math.cos(Math.PI / 3)} ${cy + 70 * Math.sin(Math.PI / 3)} Z`}
@@ -160,7 +185,7 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
 
           {/* Core circle */}
           <circle cx={cx} cy={cy} r={50}
-            fill={`${cfg.color}18`}
+            fill="url(#coreGlow)"
             stroke={cfg.color}
             strokeWidth={2}
             opacity={1}
@@ -193,10 +218,10 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
                 y1={cy + Math.sin(angle) * innerR}
                 x2={cx + Math.cos(angle) * outerR}
                 y2={cy + Math.sin(angle) * outerR}
-                stroke={cfg.color}
-                strokeWidth={2.5}
+                stroke="url(#waveGradient)"
+                strokeWidth={2.5 + amp * 1.2}
                 opacity={0.5 + amp * 0.5}
-                style={{ filter: amp > 0.5 ? `drop-shadow(0 0 3px ${cfg.color})` : 'none' }}
+                style={{ filter: amp > 0.5 ? `drop-shadow(0 0 3px ${cfg.color})` : 'none', strokeLinecap: 'round' }}
               />
             );
           })}
@@ -224,11 +249,26 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
             ? <AlertTriangle size={20} style={{ color: cfg.color, filter: `drop-shadow(0 0 6px ${cfg.color})` }} />
             : <Brain size={20} style={{ color: cfg.color, filter: `drop-shadow(0 0 6px ${cfg.color})` }} />
           }
-          <div className="font-orbitron text-[9px] mt-1 tracking-widest"
+          <div className="font-orbitron text-[9px] mt-1 tracking-[0.3em] uppercase"
             style={{ color: cfg.color, textShadow: `0 0 8px ${cfg.color}` }}>
             {cfg.label}
           </div>
-          <div className="font-rajdhani text-[8px] text-hud-cyan/50 mt-0.5">{aiMode} MODE</div>
+          <div className="font-rajdhani text-[8px] text-white/45 mt-0.5 tracking-[0.18em] uppercase">{aiMode} MODE</div>
+          <div className="mt-3 flex items-center gap-1.5">
+            {Array.from({ length: 5 }).map((_, index) => (
+              <span
+                key={index}
+                className="w-1.5 rounded-full"
+                style={{
+                  height: `${6 + Math.round(energy * (index + 1) * 6)}px`,
+                  background: index % 2 === 0 ? cfg.color : '#ffffff55',
+                  boxShadow: `0 0 10px ${cfg.color}55`,
+                  animation: 'waveform 1.4s ease-in-out infinite',
+                  animationDelay: `${index * 0.12}s`,
+                }}
+              />
+            ))}
+          </div>
         </div>
       </div>
 
@@ -260,7 +300,7 @@ export default function CoreModule({ status, isListening, amplitude, onToggleMic
       </button>
 
       {/* Status bar */}
-      <div className="flex gap-3">
+      <div className="flex gap-3 px-4 py-2 rounded-full border border-white/8 bg-black/20 backdrop-blur-md shadow-[0_0_20px_rgba(0,245,255,0.06)]">
         {(['idle', 'listening', 'thinking', 'responding', ...(combatActive ? ['combat'] : [])] as string[]).map(s => (
           <div key={s} className="flex flex-col items-center gap-0.5">
             <div className={`w-1.5 h-1.5 rounded-full transition-all duration-300 ${effectiveStatus === s ? 'scale-125' : 'opacity-30'

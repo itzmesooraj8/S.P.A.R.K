@@ -34,6 +34,8 @@ import { CustomMonitorPanel } from '@/components/monitor/CustomMonitorPanel';
 import { SnapshotPlayback } from '@/components/monitor/SnapshotPlayback';
 import { CaseDrawer } from '@/components/monitor/CaseDrawer';
 import ProviderHealthPanel from '@/components/monitor/ProviderHealthPanel';
+import RuntimeArchitecturePanel from '@/components/monitor/RuntimeArchitecturePanel';
+import RuntimeOrchestratorPanel from '@/components/monitor/RuntimeOrchestratorPanel';
 import { LayerTogglePanel } from '@/components/monitor/LayerTogglePanel';
 import { AICore } from '@/components/monitor/AICore';
 import { CommandPalette, useCommandPalette } from '@/components/monitor/CommandPalette';
@@ -319,6 +321,8 @@ const GlobeMonitor = () => {
                       )}
                       {rightTab === 'health' && (
                         <motion.div key="health" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
+                          <RuntimeOrchestratorPanel accentColor={accentColor} />
+                          <RuntimeArchitecturePanel accentColor={accentColor} />
                           <ProviderHealthPanel accentColor={accentColor} />
                         </motion.div>
                       )}
@@ -441,6 +445,8 @@ const GlobeMonitor = () => {
               )}
               {mobileTab === 'right' && (
                 <>
+                  <RuntimeOrchestratorPanel accentColor={accentColor} />
+                  <RuntimeArchitecturePanel accentColor={accentColor} />
                   <InstabilityIndex accentColor={accentColor} />
                   <FusionPanel accentColor={MODE_COLORS.tech} />
                   <ProviderHealthPanel accentColor={accentColor} />

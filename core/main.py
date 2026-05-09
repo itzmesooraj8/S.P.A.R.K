@@ -37,6 +37,10 @@ from core.background import start_watcher, stop_watcher
 from core.wake_word import start_wake_engine, stop_wake_engine
 from core.memory_loop import retrieve as retrieve_turns, write_turn
 from config import LLM_HOST, LLM_MODEL
+from security.action_guard import guard_action
+from security.audit import record_audit
+from security.content_sanitizer import sanitize_for_llm, sanitize_memory_context
+from security.intent_validator import validate_intent_text
 
 def broadcast_hud_event(event_type: str, payload: dict):
     """Sends async events to the FastAPI server for HUD broadcasting"""
@@ -46,6 +50,15 @@ def broadcast_hud_event(event_type: str, payload: dict):
         except:
             pass
     threading.Thread(target=_send, daemon=True).start()
+
+
+def _emit_stream(stream_sink, event_type: str, payload: dict):
+    if not stream_sink:
+        return
+    try:
+        stream_sink(event_type, payload)
+    except Exception:
+        pass
 
 logging.basicConfig(
     level=logging.INFO,
@@ -96,12 +109,26 @@ def execute_tool(
     command_json: Dict[str, Any],
     tools: SparkTools,
     voice: SparkVoice,
-    portfolio_tracker: PortfolioTracker = None
+    portfolio_tracker: PortfolioTracker = None,
+    source: str = "voice",
 ) -> str:
     """OODA ACT node: dispatches tool call, runs vision verification on navigation actions."""
     tool_name = command_json.get("tool", "").strip()
     arg = command_json.get("arg", "")
     logger.info(f"OODA ACT: {tool_name}({arg!r})")
+
+    allowed, message, _request = guard_action(
+        tool_name,
+        source=source,
+        risk="high" if tool_name in {"open_application", "open_website", "type_text", "take_screenshot"} else "medium" if tool_name in {"write_clipboard", "file_search"} else "low",
+        requires_confirmation=tool_name in {"open_application", "open_website", "type_text", "take_screenshot"},
+        args=arg,
+        payload=command_json,
+    )
+    if not allowed:
+        if voice:
+            voice.speak(message)
+        return message
 
     try:
         # ── Tool dispatch ─────────────────────────────────────────────────
@@ -268,13 +295,56 @@ def call_local_llm(
     user_input: str,
     memory_context: str,
     conversation_history: list,
+    stream_sink=None,
+    cancel_event: threading.Event | None = None,
 ) -> str:
     """Sends a message to the local Ollama backend and returns the raw response text."""
-    system_prompt = build_system_prompt(memory_context)
+    system_prompt = build_system_prompt(sanitize_memory_context(memory_context))
+
+    user_scan = validate_intent_text(user_input)
+    if not user_scan.allowed:
+        record_audit("prompt_blocked", {"reason": "unsafe_user_input", "score": user_scan.score, "reasons": list(user_scan.reasons)})
+        return "I cannot act on that instruction safely, sir."
+
+    user_input = sanitize_for_llm(user_scan.cleaned_text or user_input)
 
     messages = [{"role": "system", "content": system_prompt}]
     messages += conversation_history[-4:]
     messages.append({"role": "user", "content": user_input})
+
+    if stream_sink:
+        try:
+            with httpx.stream(
+                "POST",
+                f"{LLM_HOST}/api/chat",
+                json={"model": LLM_MODEL, "messages": messages, "stream": True},
+                timeout=180.0,
+            ) as response:
+                response.raise_for_status()
+                chunks: list[str] = []
+                for line in response.iter_lines():
+                    if cancel_event and cancel_event.is_set():
+                        _emit_stream(stream_sink, "error", {"message": "Generation cancelled"})
+                        return ""
+                    if not line:
+                        continue
+                    try:
+                        data = json.loads(line)
+                    except Exception:
+                        continue
+                    message = data.get("message", {}) if isinstance(data, dict) else {}
+                    chunk = str(message.get("content", ""))
+                    if chunk:
+                        chunks.append(chunk)
+                        _emit_stream(stream_sink, "response_token", {"token": chunk, "content": chunk})
+                    if data.get("done"):
+                        break
+                content = "".join(chunks).strip()
+                if content:
+                    _emit_stream(stream_sink, "response_done", {"content": content})
+                    return content
+        except Exception as exc:
+            logger.warning("Streaming LLM unavailable, falling back to non-streaming mode: %s", exc)
 
     try:
         response = httpx.post(
@@ -326,7 +396,13 @@ memory = None
 portfolio = None
 conversation_history = []
 
-def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = False) -> str:
+def run_agent_turn(
+    user_input: str,
+    voice_output: bool = True,
+    cli_mode: bool = False,
+    stream_sink=None,
+    cancel_event: threading.Event | None = None,
+) -> str:
     """
     Execute one full agent turn: memory retrieval → LLM → tool use → response.
     Returns the final response string.
@@ -340,6 +416,11 @@ def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = 
         user_input = "I'm sorry, I muttered something unclear."
 
     logger.info(f"User: {user_input}")
+    if voice:
+        try:
+            voice.stop()
+        except Exception:
+            pass
 
     # ── ORIENT: retrieve relevant memories ──────────────────────────
     turn_context = ""
@@ -364,12 +445,21 @@ def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = 
 
     # ── DECIDE: call LLM ─────────────────────────────────────────────
     try:
-        raw_response = call_local_llm(user_input, memory_context, conversation_history)
+        raw_response = call_local_llm(
+            user_input,
+            memory_context,
+            conversation_history,
+            stream_sink=stream_sink,
+            cancel_event=cancel_event,
+        )
         logger.info(f"LLM raw: {raw_response}")
     except Exception as e:
         logger.error(f"Local LLM error: {e}")
         if not cli_mode: voice.speak("I'm experiencing a temporary connection issue, sir.")
         return "LLM Error"
+
+    if not raw_response.strip() and cancel_event and cancel_event.is_set():
+        return ""
 
     # ── ACT: parse and dispatch ──────────────────────────────────────
     tool_call, spoken_text = parse_response(raw_response)
@@ -384,12 +474,14 @@ def run_agent_turn(user_input: str, voice_output: bool = True, cli_mode: bool = 
         tool_name = tool_call.get("tool", "unknown_tool")
         tool_arg = str(tool_call.get("arg", ""))
         broadcast_hud_event("agent_log", {"agent": "S.P.A.R.K. Core", "action": f"Executing: {tool_name}", "data": tool_arg})
+        _emit_stream(stream_sink, "tool_execute", {"tool": tool_name, "arguments": {"arg": tool_arg}})
         
-        tool_result = execute_tool(tool_call, tools, voice, portfolio_tracker=portfolio)
+        tool_result = execute_tool(tool_call, tools, voice, portfolio_tracker=portfolio, source="voice")
         final_response = tool_result
         
         short_result = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
         broadcast_hud_event("agent_log", {"agent": "S.P.A.R.K. Core", "action": f"Result: {tool_name}", "data": short_result})
+        _emit_stream(stream_sink, "tool_result", {"tool": tool_name, "status": "completed", "output": tool_result})
 
     # ── UPDATE MEMORY ────────────────────────────────────────────────
     try:

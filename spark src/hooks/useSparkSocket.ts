@@ -49,6 +49,12 @@ export function useSparkSocket() {
             });
             // Clear clipboard assist after 8 seconds
             setTimeout(() => useSparkStore.getState().setClipboardAssist(null), 8000);
+          } else if (data.type === 'runtime_event') {
+            addAgentLog({
+              timestamp: Date.now(),
+              type: 'system',
+              message: `${data.payload?.type || 'runtime'}: ${JSON.stringify(data.payload?.payload || {})}`
+            });
           } else if (data.type === 'agent_log') {
             addAgentLog({
               timestamp: Date.now(),

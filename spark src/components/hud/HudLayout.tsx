@@ -23,6 +23,7 @@ import AgentConfirmModal from './AgentConfirmModal';
 import CommandBar from './CommandBar';
 import VoiceStatusPanel from './VoiceStatusPanel';
 import MemoryPanel from './MemoryPanel';
+import SecurityStatusPanel from './SecurityStatusPanel';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 import { useHudTheme } from '@/contexts/ThemeContext';
@@ -221,7 +222,17 @@ export default function HudLayout() {
         </div>
       )}
 
-      <ParticleBackground count={120} />
+      <ParticleBackground count={130} />
+
+      {/* Cinematic aura around the core */}
+      <div className="pointer-events-none fixed inset-0 z-[2]">
+        <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 w-[42rem] h-[42rem] rounded-full blur-3xl opacity-60"
+          style={{ background: 'radial-gradient(circle, rgba(0,245,255,0.16) 0%, rgba(0,245,255,0.06) 26%, rgba(0,0,0,0) 68%)' }} />
+        <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 w-[34rem] h-[34rem] rounded-full border border-cyan-300/10"
+          style={{ boxShadow: '0 0 120px rgba(0,245,255,0.08), inset 0 0 60px rgba(0,245,255,0.05)' }} />
+        <div className="absolute left-1/2 top-[46%] -translate-x-1/2 -translate-y-1/2 w-[26rem] h-[26rem] rounded-full border border-white/6"
+          style={{ boxShadow: '0 0 80px rgba(255,255,255,0.03)' }} />
+      </div>
 
       {/* Grid overlay */}
       <div className="fixed inset-0 pointer-events-none z-[1] opacity-[0.025]"
@@ -235,6 +246,7 @@ export default function HudLayout() {
           onMicTranscript={(transcript) => voice.processInput(transcript)}
         />
         <OpSecBanner />
+        <SecurityStatusPanel />
       </div>
 
       {/* Main content */}
@@ -253,9 +265,12 @@ export default function HudLayout() {
         </div>
 
         {/* CENTER */}
-        <div className="flex-1 flex flex-col gap-1.5 min-w-0">
+        <div className="flex-1 flex flex-col gap-1.5 min-w-0 relative">
+          <div className="pointer-events-none absolute inset-x-14 top-1 bottom-1 rounded-[2rem] border border-cyan-300/10 bg-gradient-to-b from-cyan-300/5 via-transparent to-cyan-300/5 blur-[0.3px] shadow-[0_0_60px_rgba(0,245,255,0.08)]" />
           {/* Core module */}
-          <div className="flex-1 hud-panel rounded flex items-center justify-center relative overflow-hidden">
+          <div className="flex-1 hud-panel rounded flex items-center justify-center relative overflow-hidden backdrop-blur-2xl">
+            <div className="absolute inset-0 bg-[radial-gradient(circle_at_center,rgba(0,245,255,0.08),transparent_55%)] pointer-events-none" />
+            <div className="absolute inset-x-16 top-8 h-px bg-gradient-to-r from-transparent via-cyan-300/40 to-transparent pointer-events-none" />
             <CoreModule
               status={voice.status}
               isListening={voice.isListening}
@@ -266,7 +281,7 @@ export default function HudLayout() {
             {/* AI Panel button */}
             <button
               onClick={() => setShowAiPanel(v => !v)}
-              className="absolute top-2 right-2 hud-btn p-1.5 rounded"
+              className="absolute top-2 right-2 hud-btn p-1.5 rounded backdrop-blur-md"
               title="AI Personality Panel"
             >
               <Brain size={14} />
@@ -287,8 +302,8 @@ export default function HudLayout() {
                 animate={{ opacity: 1, y: 0 }}
                 exit={{ opacity: 0, y: 20 }}
                 className={isMaximized
-                  ? "fixed inset-0 z-50 hud-panel-glow rounded overflow-hidden bg-black/95 backdrop-blur-xl"
-                  : "absolute inset-x-[232px] bottom-14 top-14 z-30 hud-panel-glow rounded overflow-hidden"}
+                  ? "fixed inset-0 z-50 hud-panel-glow rounded overflow-hidden bg-black/92 backdrop-blur-2xl"
+                  : "absolute inset-x-[232px] bottom-14 top-14 z-30 hud-panel-glow rounded overflow-hidden bg-black/50 backdrop-blur-2xl"}
               >
                 <div className="flex items-center justify-between px-3 py-2 border-b border-hud-cyan/20 bg-hud-black/50">
                   <span className="font-orbitron text-[10px] neon-text">{MODULE_TITLES[activeModule]}</span>
