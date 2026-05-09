@@ -60,6 +60,11 @@ def _emit_stream(stream_sink, event_type: str, payload: dict):
     except Exception:
         pass
 
+
+def _speak_if_available(voice: SparkVoice | None, message: str) -> None:
+    if voice and message:
+        voice.speak(message)
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -101,6 +106,22 @@ from core.morning import generate_morning_briefing
 from tools.media import control_media
 from tools.file_ops import search_and_open_file
 
+
+def ensure_runtime_components() -> None:
+    """Lazily initialize the shared runtime pieces used by the API and core loops."""
+    global memory, tools, portfolio
+
+    if memory is None:
+        logger.info("Initializing semantic memory for shared runtime access...")
+        memory = SparkVectorMemory()
+
+    if tools is None:
+        logger.info("Initializing shared tool suite for command execution...")
+        tools = SparkTools()
+
+    if portfolio is None:
+        portfolio = PortfolioTracker(memory)
+
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL EXECUTION
 # ─────────────────────────────────────────────────────────────────────────────
@@ -126,8 +147,7 @@ def execute_tool(
         payload=command_json,
     )
     if not allowed:
-        if voice:
-            voice.speak(message)
+        _speak_if_available(voice, message)
         return message
 
     try:
@@ -148,12 +168,12 @@ def execute_tool(
             response = tools.type_text(arg)
         elif tool_name == "system_monitor":
             response = get_system_health()
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         elif tool_name == "get_weather":
             loc = arg if isinstance(arg, str) and arg.strip() else "Palakkad"
             response = get_weather(loc)
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         elif tool_name == "media_control":
             if isinstance(arg, dict):
@@ -171,11 +191,11 @@ def execute_tool(
                 action = str(arg)
                 val = None
             response = control_media(action, val)
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         elif tool_name == "file_search":
             response = search_and_open_file(str(arg))
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         elif tool_name == "portfolio" and portfolio_tracker:
             if isinstance(arg, dict):
@@ -201,7 +221,7 @@ def execute_tool(
             else:
                 response = portfolio_tracker.get_portfolio_summary()
             
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         elif tool_name == "web_search":
             # Live web lookup — runs inline, no browser opened
@@ -215,7 +235,7 @@ def execute_tool(
                     "You may want to check your network connection."
                 )
             # Web search never needs vision verification — return directly
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         elif tool_name == "set_reminder":
             if isinstance(arg, dict):
@@ -230,7 +250,7 @@ def execute_tool(
                     message = str(arg)
                     delay_seconds = 60
             response = set_reminder(message, delay_seconds)
-            voice.speak(response)
+            _speak_if_available(voice, response)
             return response
         else:
             response = (
@@ -262,7 +282,7 @@ def execute_tool(
         err_msg = f"Tool execution error in '{tool_name}': {e}"
         logger.error(err_msg)
         fallback = f"I encountered an error executing that command, sir. {e}"
-        voice.speak(fallback)
+        _speak_if_available(voice, fallback)
         return fallback
 
 
@@ -416,6 +436,7 @@ def run_agent_turn(
         user_input = "I'm sorry, I muttered something unclear."
 
     logger.info(f"User: {user_input}")
+    ensure_runtime_components()
     if voice:
         try:
             voice.stop()
@@ -455,7 +476,8 @@ def run_agent_turn(
         logger.info(f"LLM raw: {raw_response}")
     except Exception as e:
         logger.error(f"Local LLM error: {e}")
-        if not cli_mode: voice.speak("I'm experiencing a temporary connection issue, sir.")
+        if not cli_mode:
+            _speak_if_available(voice, "I'm experiencing a temporary connection issue, sir.")
         return "LLM Error"
 
     if not raw_response.strip() and cancel_event and cancel_event.is_set():
@@ -465,7 +487,7 @@ def run_agent_turn(
     tool_call, spoken_text = parse_response(raw_response)
 
     # Speak any text that came before/after the tool JSON
-    if spoken_text and voice_output and not (tool_call and tool_call.get("tool") in ["web_search", "system_monitor", "get_weather", "portfolio", "media_control", "file_search", "set_reminder"]):
+    if spoken_text and voice_output and voice and not (tool_call and tool_call.get("tool") in ["web_search", "system_monitor", "get_weather", "portfolio", "media_control", "file_search", "set_reminder"]):
         voice.speak(spoken_text)
 
     final_response = raw_response
@@ -557,6 +579,7 @@ def run():
     
     conversation_history = []
 
+    from core.heartbeat import start_heartbeat, stop_heartbeat
     # ── 2. Phase 03: Start Proactive Daemons ──────────────────────────
     logger.info("[PHASE 03] Initializing proactive agency daemons...")
     
@@ -567,6 +590,9 @@ def run():
     # We pass a simple lambda for LLM queries so the watcher can do intent checks
     llm_query = lambda p: run_agent_turn(p, voice_output=False, cli_mode=True)
     start_watcher(voice=voice, llm_query_fn=llm_query)
+
+    # Heartbeat Engine (Periodic System Checks)
+    start_heartbeat()
 
     # ── 3. Phase 04: Start Wake Engine ────────────────────────────────
     # This replaces the keyboard.wait loop.
@@ -586,13 +612,14 @@ def run():
     
     try:
         while True:
-            # The background threads (scheduler, watcher, wake_word) do the work.
+            # The background threads (scheduler, watcher, wake_word, heartbeat) do the work.
             # We just stay alive here.
             time.sleep(1)
     except KeyboardInterrupt:
         logger.info("Shutdown sequence initiated...")
     finally:
         # ── 5. Graceful Exit ──────────────────────────────────────────
+        stop_heartbeat()
         stop_wake_engine()
         stop_watcher()
         shutdown_scheduler()

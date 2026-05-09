@@ -45,3 +45,24 @@ class SparkMemory:
             context += f"{role}: {content}\n"
 
         return context
+
+import time
+import chromadb
+
+chroma_client = chromadb.PersistentClient(path="knowledge_base/chroma_db")
+chroma_collection = chroma_client.get_or_create_collection("spark_episodes")
+
+async def get_context(query: str, top_k: int = 5) -> str:
+    """Retrieve relevant memories for the current query."""
+    results = chroma_collection.query(query_texts=[query], n_results=top_k)
+    if not results.get("documents") or not results["documents"][0]:
+        return ""
+    return "\n".join(results["documents"][0])
+
+async def save_memory(query: str, response: str):
+    """Write this interaction to long-term memory."""
+    chroma_collection.add(
+        documents=[f"User: {query}\nSPARK: {response}"],
+        ids=[f"mem_{int(time.time()*1000)}"],
+        metadatas=[{"timestamp": time.time(), "type": "conversation"}]
+    )
