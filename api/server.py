@@ -12,6 +12,8 @@ from typing import Any
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from tools.sysmon import get_raw_metrics
 from api.routes.memory import router as memory_router
+from api.routes.projects import router as projects_router
+from api.routes.personal import router as personal_router
 from api.routes.task import router as task_router
 from api.routes.runtime import router as runtime_router
 from api.routes.security import router as security_router
@@ -27,6 +29,8 @@ app.add_middleware(
 )
 
 app.include_router(memory_router)
+app.include_router(projects_router)
+app.include_router(personal_router)
 app.include_router(task_router)
 app.include_router(runtime_router)
 app.include_router(security_router)
@@ -106,8 +110,7 @@ class AIDispatcher:
 manager = ConnectionManager()
 ai_manager = AIDispatcher()
 
-@app.websocket("/ws")
-async def websocket_endpoint(websocket: WebSocket):
+async def _system_websocket(websocket: WebSocket):
     await manager.connect(websocket)
     try:
         # Push initial sysmon state immediately
@@ -129,13 +132,42 @@ async def websocket_endpoint(websocket: WebSocket):
         manager.disconnect(websocket)
 
 
+@app.websocket("/ws")
+@app.websocket("/ws/system")
+async def websocket_endpoint(websocket: WebSocket):
+    await _system_websocket(websocket)
+
+
+@app.websocket("/ws/globe")
+async def websocket_globe_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if message.lower() == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
+@app.websocket("/ws/combat")
+async def websocket_combat_endpoint(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if message.lower() == "ping":
+                await websocket.send_text("pong")
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
+
+
 @app.websocket("/ws/ai")
 async def websocket_ai_endpoint(websocket: WebSocket):
-    token = websocket.query_params.get("token")
-    if not token:
-        await websocket.close(code=1008)
-        return
-
     await ai_manager.connect(websocket)
     current_cancel = threading.Event()
 
@@ -195,6 +227,21 @@ async def websocket_ai_endpoint(websocket: WebSocket):
         ai_manager.disconnect(websocket)
     finally:
         ai_manager.disconnect(websocket)
+
+
+@app.websocket("/ws/personal/chat")
+async def websocket_personal_chat(websocket: WebSocket):
+    await websocket.accept()
+    try:
+        while True:
+            message = await websocket.receive_text()
+            if not message.strip():
+                continue
+            await websocket.send_text(f"SPARK Personal AI: {message}")
+    except WebSocketDisconnect:
+        pass
+    except Exception:
+        pass
 
 @app.post("/internal/broadcast")
 async def broadcast_event(request: Request):

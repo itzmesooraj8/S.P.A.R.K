@@ -7,6 +7,7 @@ import { useConnectionStore } from '@/store/useConnectionStore';
 import { useVoiceMic } from '@/hooks/useVoiceMic';
 import { useAlertStore } from '@/store/useAlertStore';
 import type { WsStatus } from '@/store/useConnectionStore';
+import HudModeChip from './HudModeChip';
 
 type SystemMode = 'PASSIVE' | 'ACTIVE' | 'COMBAT';
 
@@ -37,7 +38,7 @@ export default function TopBar({
   onToggleTts?: () => void;
   onMicTranscript?: (transcript: string) => void;
 } = {}) {
-  const { theme, setTheme, aiMode, setAiMode } = useHudTheme();
+  const { theme, setTheme, aiMode, setAiMode, hudMode, toggleHudMode } = useHudTheme();
   const systemMode: SystemMode = aiMode;
   const { user, isAuthenticated, logout } = useAuth();
   const coreOnline  = useConnectionStore((s) => s.coreOnline);
@@ -345,6 +346,8 @@ export default function TopBar({
             </button>
           ))}
         </div>
+
+        <HudModeChip mode={hudMode} onToggle={toggleHudMode} />
 
         {/* Project Switcher — removed for cleaner TopBar */}
       </div>

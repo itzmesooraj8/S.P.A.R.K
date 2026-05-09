@@ -6,6 +6,7 @@ dist/
 logs/
 node_modules/
 spark_dev_memory/
+knowledge_base/chroma_db/
 
 Llama-3.2-3B-Instruct-Q4_K_M.gguf
 knowledge_base/*.db

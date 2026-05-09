@@ -24,6 +24,7 @@ import CommandBar from './CommandBar';
 import VoiceStatusPanel from './VoiceStatusPanel';
 import MemoryPanel from './MemoryPanel';
 import SecurityStatusPanel from './SecurityStatusPanel';
+import HudSignalRibbon from './HudSignalRibbon';
 import { useSystemMetrics } from '@/hooks/useSystemMetrics';
 import { useVoiceEngine } from '@/hooks/useVoiceEngine';
 import { useHudTheme } from '@/contexts/ThemeContext';
@@ -72,7 +73,7 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
 export default function HudLayout() {
   const metrics = useSystemMetrics();
   const voice = useVoiceEngine();
-  const { aiMode, setAiMode, isBooted, isShuttingDown } = useHudTheme();
+  const { aiMode, setAiMode, hudMode, toggleHudMode, isBooted, isShuttingDown } = useHudTheme();
   const [activeModule, setActiveModule] = useState<ModuleKey | null>(null);
   const [isMaximized, setIsMaximized] = useState(false);
   const [showAiPanel, setShowAiPanel] = useState(false);
@@ -90,6 +91,18 @@ export default function HudLayout() {
   const combatActivePanel = useCombatStore((s) => s.activePanel);
   const setInactive       = useCombatStore((s) => s.setInactive);
   useCombatWS();
+  const developerMode = hudMode === 'developer';
+  const scenePhase = combatActive
+    ? 'combat'
+    : voice.ttsPlayback.speaking
+      ? 'speaking'
+      : voice.isListening
+        ? 'listening'
+        : voice.status === 'thinking'
+          ? 'thinking'
+          : voice.status === 'responding'
+            ? 'responding'
+            : 'idle';
 
   // When user clicks the COMBAT tab → open gate modal
   useEffect(() => {
@@ -107,6 +120,18 @@ export default function HudLayout() {
       setAiMode('PASSIVE');
     }
   }, [combatActive]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.code === 'KeyO') {
+        event.preventDefault();
+        toggleHudMode();
+      }
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [toggleHudMode]);
 
   // ── Global event listeners ───────────────────────────────────────────────
   useAIEvents();                                   // listens to /ws/ai → tool store
@@ -193,6 +218,8 @@ export default function HudLayout() {
 
   return (
     <div className="relative w-full h-screen flex flex-col overflow-hidden"
+      data-hud-mode={hudMode}
+      data-hud-phase={scenePhase}
       style={{ background: combatActive
         ? 'radial-gradient(ellipse at center, #1a0005 0%, ' + COMBAT_BG + ' 60%, #000000 100%)'
         : 'radial-gradient(ellipse at center, #00022e 0%, #000814 60%, #000000 100%)',
@@ -249,20 +276,47 @@ export default function HudLayout() {
         <SecurityStatusPanel />
       </div>
 
+      <HudSignalRibbon
+        phase={scenePhase as 'idle' | 'listening' | 'thinking' | 'responding' | 'speaking' | 'executing' | 'combat'}
+        aiMode={aiMode}
+        hudMode={hudMode}
+        isListening={voice.isListening}
+        ttsSpeaking={voice.ttsPlayback.speaking}
+      />
+
       {/* Main content */}
       <div className="flex-1 flex gap-1.5 px-1.5 py-1 min-h-0 z-10 relative">
         {/* LEFT PANEL */}
-        <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
-          <div className="h-48 hud-panel rounded overflow-hidden">
-            <SysMetrics />
+        {developerMode ? (
+          <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
+            <div className="h-48 hud-panel rounded overflow-hidden">
+              <SysMetrics />
+            </div>
+            <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
+              <PortfolioTicker />
+            </div>
+            <div className="h-48 hud-panel rounded overflow-hidden">
+              <MemoryPanel />
+            </div>
           </div>
-          <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
-            <PortfolioTicker />
+        ) : (
+          <div className="hidden lg:flex w-72 shrink-0 min-h-0 flex-col justify-between gap-2 py-2">
+            <div className="rounded-2xl border border-white/8 bg-black/28 backdrop-blur-xl px-4 py-3 shadow-[0_0_24px_rgba(0,245,255,0.05)]">
+              <div className="text-[9px] uppercase tracking-[0.4em] text-white/40 font-orbitron">Operational Focus</div>
+              <div className="mt-2 text-[11px] text-white/78 font-rajdhani leading-relaxed">
+                Minimal mode keeps the core orb and live state visible while pushing diagnostics behind a single toggle.
+              </div>
+            </div>
+            <div className="rounded-2xl border border-cyan-300/10 bg-gradient-to-b from-cyan-300/8 to-transparent backdrop-blur-xl px-4 py-3">
+              <div className="flex items-center justify-between text-[8px] uppercase tracking-[0.35em] text-cyan-100/70 font-orbitron">
+                <span>Mode</span>
+                <button onClick={toggleHudMode} className="text-cyan-100/80 hover:text-cyan-50 transition-colors">Toggle</button>
+              </div>
+              <div className="mt-2 text-[12px] font-orbitron tracking-[0.35em] text-cyan-50">{hudMode.toUpperCase()}</div>
+              <div className="mt-1 text-[8px] uppercase tracking-[0.3em] text-white/35 font-mono-tech">Ctrl + Shift + O</div>
+            </div>
           </div>
-          <div className="h-48 hud-panel rounded overflow-hidden">
-            <MemoryPanel />
-          </div>
-        </div>
+        )}
 
         {/* CENTER */}
         <div className="flex-1 flex flex-col gap-1.5 min-w-0 relative">
@@ -343,28 +397,46 @@ export default function HudLayout() {
         </div>
 
         {/* RIGHT PANEL */}
-        <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
-          <div className="h-64 hud-panel rounded overflow-hidden">
-            <VoiceStatusPanel
-              status={voice.status}
-              isListening={voice.isListening}
-              amplitude={voice.amplitude}
-              ttsPlayback={voice.ttsPlayback}
-            />
+        {developerMode ? (
+          <div className="w-56 shrink-0 flex flex-col gap-1.5 min-h-0">
+            <div className="h-64 hud-panel rounded overflow-hidden">
+              <VoiceStatusPanel
+                status={voice.status}
+                isListening={voice.isListening}
+                amplitude={voice.amplitude}
+                ttsPlayback={voice.ttsPlayback}
+              />
+            </div>
+            <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
+              <ControlPanel
+                commandHistory={voice.commandHistory}
+                aiResponse={voice.aiResponse}
+                transcript={voice.transcript}
+                onProcessInput={voice.processInput}
+                status={voice.status}
+              />
+            </div>
+            <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
+              <AgentLog />
+            </div>
           </div>
-          <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
-            <ControlPanel
-              commandHistory={voice.commandHistory}
-              aiResponse={voice.aiResponse}
-              transcript={voice.transcript}
-              onProcessInput={voice.processInput}
-              status={voice.status}
-            />
+        ) : (
+          <div className="hidden lg:flex w-72 shrink-0 min-h-0 flex-col gap-2 py-2">
+            <div className="rounded-2xl border border-white/8 bg-black/28 backdrop-blur-xl px-4 py-3 shadow-[0_0_24px_rgba(0,245,255,0.05)]">
+              <div className="text-[9px] uppercase tracking-[0.4em] text-white/40 font-orbitron">Live State</div>
+              <div className="mt-2 flex items-center justify-between text-[10px] text-white/72 font-mono-tech">
+                <span>{voice.status.toUpperCase()}</span>
+                <span>{voice.ttsPlayback.speaking ? 'VOICE LIVE' : 'VOICE QUIET'}</span>
+              </div>
+            </div>
+            <div className="rounded-2xl border border-cyan-300/10 bg-black/28 backdrop-blur-xl px-4 py-3">
+              <div className="text-[9px] uppercase tracking-[0.4em] text-white/40 font-orbitron">Voice Presence</div>
+              <div className="mt-2 text-[11px] text-white/72 font-rajdhani leading-relaxed">
+                Listening, responding, and playback stay visible without pulling attention away from the core scene.
+              </div>
+            </div>
           </div>
-          <div className="flex-1 min-h-0 hud-panel rounded overflow-hidden">
-            <AgentLog />
-          </div>
-        </div>
+        )}
       </div>
 
       {/* AI personality panel */}

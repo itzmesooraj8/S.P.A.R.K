@@ -49,6 +49,7 @@ import { SigintPanel } from '@/components/combat/SigintPanel';
 import { TorGateway } from '@/components/combat/TorGateway';
 import { VaultPanel } from '@/components/combat/VaultPanel';
 import { useCombatWS } from '@/hooks/useCombatWS';
+import { useHudTheme } from '@/contexts/ThemeContext';
 
 const MODE_COLORS: Record<string, string> = {
   world:   '#00f5ff',
@@ -177,6 +178,7 @@ const GlobeMonitor = () => {
   const [combatModalOpen, setCombatModalOpen] = useState(false);
   const combatActive      = useCombatStore((s) => s.isActive);
   const combatActivePanel = useCombatStore((s) => s.activePanel);
+  const { hudMode } = useHudTheme();
   useCombatWS();
 
   useGlobeSocket();
@@ -321,8 +323,19 @@ const GlobeMonitor = () => {
                       )}
                       {rightTab === 'health' && (
                         <motion.div key="health" initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -8 }} transition={{ duration: 0.18 }} className="p-2 flex flex-col gap-2">
-                          <RuntimeOrchestratorPanel accentColor={accentColor} />
-                          <RuntimeArchitecturePanel accentColor={accentColor} />
+                          {hudMode === 'developer' ? (
+                            <>
+                              <RuntimeOrchestratorPanel accentColor={accentColor} />
+                              <RuntimeArchitecturePanel accentColor={accentColor} />
+                            </>
+                          ) : (
+                            <div className="rounded-2xl border border-white/8 bg-black/28 backdrop-blur-xl px-3 py-3 text-white/65">
+                              <div className="text-[9px] uppercase tracking-[0.35em] text-cyan-100/65 font-orbitron">Focused Health</div>
+                              <div className="mt-2 text-[11px] leading-relaxed text-white/72 font-rajdhani">
+                                Developer mode reveals the runtime graph and orchestrator stream. Normal mode stays on provider health and signal quality.
+                              </div>
+                            </div>
+                          )}
                           <ProviderHealthPanel accentColor={accentColor} />
                         </motion.div>
                       )}
@@ -445,8 +458,17 @@ const GlobeMonitor = () => {
               )}
               {mobileTab === 'right' && (
                 <>
-                  <RuntimeOrchestratorPanel accentColor={accentColor} />
-                  <RuntimeArchitecturePanel accentColor={accentColor} />
+                  {hudMode === 'developer' ? (
+                    <>
+                      <RuntimeOrchestratorPanel accentColor={accentColor} />
+                      <RuntimeArchitecturePanel accentColor={accentColor} />
+                    </>
+                  ) : (
+                    <div className="rounded-2xl border border-white/8 bg-black/28 backdrop-blur-xl px-3 py-3 text-white/70">
+                      <div className="text-[9px] uppercase tracking-[0.35em] text-cyan-100/65 font-orbitron">Runtime Hidden</div>
+                      <div className="mt-1 text-[11px] leading-relaxed text-white/65 font-rajdhani">Switch to developer mode to expose the orchestration feed.</div>
+                    </div>
+                  )}
                   <InstabilityIndex accentColor={accentColor} />
                   <FusionPanel accentColor={MODE_COLORS.tech} />
                   <ProviderHealthPanel accentColor={accentColor} />
