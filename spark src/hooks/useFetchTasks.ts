@@ -46,9 +46,6 @@ export const useFetchTasks = () => {
       const response = await fetchTasks({ limit: 100 });
       setTasks(response?.tasks || []);
     } catch (err: any) {
-      // ──────────────────────────────────────────────────────────
-      // FIX 3: Catch JSON/404 errs gracefully and fail silently
-      // ──────────────────────────────────────────────────────────
       setTasks([]);
     } finally {
       setLoading(false);
