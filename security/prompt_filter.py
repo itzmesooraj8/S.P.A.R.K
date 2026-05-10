@@ -28,6 +28,7 @@ class PromptScanResult:
 
 
 def scan_prompt(text: str) -> PromptScanResult:
+    text = text or ""
     lower = (text or "").lower()
     reasons: list[str] = []
     score = 0.0
