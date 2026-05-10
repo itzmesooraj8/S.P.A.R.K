@@ -30,7 +30,7 @@ def test_type_text_blacklisted_window(tools):
 def test_type_text_safe_window(tools):
     with patch('win32gui.GetForegroundWindow', return_value=5678), \
          patch('win32gui.GetWindowText', return_value="Notepad"), \
-         patch('pyautogui.write') as mock_write:
+         patch('core.tools.pyautogui.write') as mock_write:
         result = tools.type_text("safe text")
         assert "Text has been typed" in result
         mock_write.assert_called_once_with("safe text", interval=0.01)
