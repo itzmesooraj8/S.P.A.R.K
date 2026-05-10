@@ -57,8 +57,8 @@ def _emit_stream(stream_sink, event_type: str, payload: dict):
         return
     try:
         stream_sink(event_type, payload)
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"Error emitting stream event '{event_type}': {e}", exc_info=True)
 
 
 def _speak_if_available(voice: SparkVoice | None, message: str) -> None:
