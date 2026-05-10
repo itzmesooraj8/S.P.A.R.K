@@ -46,8 +46,8 @@ def broadcast_hud_event(event_type: str, payload: dict):
     def _send():
         try:
             requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": event_type, "payload": payload}, timeout=0.1)
-        except:
-            pass
+        except Exception as e:
+            logger.debug(f"Failed to broadcast HUD event: {e}")
     threading.Thread(target=_send, daemon=True).start()
 
 
@@ -183,7 +183,7 @@ def execute_tool(
                     arg_dict = json.loads(arg)
                     action = arg_dict.get("action", "")
                     val = arg_dict.get("value")
-                except:
+                except json.JSONDecodeError:
                     action = arg
                     val = None
             else:
@@ -205,7 +205,7 @@ def execute_tool(
                     arg_dict = json.loads(arg)
                     action = arg_dict.get("action", "summary")
                     sym = arg_dict.get("symbol", "")
-                except:
+                except json.JSONDecodeError:
                     action = "summary"
                     sym = arg
             else:
