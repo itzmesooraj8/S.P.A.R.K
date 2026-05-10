@@ -7,6 +7,9 @@ import uuid
 import threading
 import edge_tts
 
+# Keep strong references to background tasks to prevent garbage collection
+_background_tasks = set()
+
 logger = logging.getLogger("SPARK_TTS")
 
 class SparkVoice:
@@ -59,29 +62,35 @@ class SparkVoice:
             pygame.mixer.music.load(audio_file)
 
             # Broadcast speaking state
-            import requests
+            import httpx
 
-            def _send():
+            async def _send():
                 try:
-                    requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": "speaking", "isListening": False}}, timeout=0.1)
+                    async with httpx.AsyncClient() as client:
+                        await client.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": "speaking", "isListening": False}}, timeout=0.1)
                 except: pass
 
-            threading.Thread(target=_send, daemon=True).start()
+            task = asyncio.create_task(_send())
+            _background_tasks.add(task)
+            task.add_done_callback(_background_tasks.discard)
 
             pygame.mixer.music.play()
 
             # 3. Wait for the audio to finish playing or be interrupted
             while pygame.mixer.music.get_busy() and not self._stop_event.is_set():
-                pygame.time.Clock().tick(10)
+                await asyncio.sleep(0.1)
 
             pygame.mixer.music.stop()
 
             # Broadcast idle state
-            def _send_idle():
+            async def _send_idle():
                 try:
-                    requests.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": "idle", "isListening": False}}, timeout=0.1)
+                    async with httpx.AsyncClient() as client:
+                        await client.post("http://127.0.0.1:8000/internal/broadcast", json={"type": "voice_state", "payload": {"status": "idle", "isListening": False}}, timeout=0.1)
                 except: pass
-            threading.Thread(target=_send_idle, daemon=True).start()
+            idle_task = asyncio.create_task(_send_idle())
+            _background_tasks.add(idle_task)
+            idle_task.add_done_callback(_background_tasks.discard)
 
             # 4. Unload and clean up the file
             pygame.mixer.music.unload()
