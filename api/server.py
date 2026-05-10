@@ -1,6 +1,9 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
 from fastapi.middleware.cors import CORSMiddleware
 import asyncio
+import logging
+
+logger = logging.getLogger(__name__)
 import sys
 import os
 import uuid
@@ -84,8 +87,8 @@ class ConnectionManager:
         for connection in self.active_connections:
             try:
                 await connection.send_json(message)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.error(f"WebSocket error: {e}", exc_info=True)
 
 
 class AIDispatcher:
@@ -103,8 +106,8 @@ class AIDispatcher:
     async def send(self, websocket: WebSocket, message: dict[str, Any]):
         try:
             await websocket.send_json(message)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.error(f"WebSocket error: {e}", exc_info=True)
 
 manager = ConnectionManager()
 ai_manager = AIDispatcher()
@@ -128,6 +131,7 @@ async def _system_websocket(websocket: WebSocket):
     except WebSocketDisconnect:
         manager.disconnect(websocket)
     except Exception as e:
+        logger.error(f"System WebSocket error: {e}", exc_info=True)
         manager.disconnect(websocket)
 
 
@@ -147,8 +151,8 @@ async def websocket_globe_endpoint(websocket: WebSocket):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
 
 
 @app.websocket("/ws/combat")
@@ -161,8 +165,8 @@ async def websocket_combat_endpoint(websocket: WebSocket):
                 await websocket.send_text("pong")
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
 
 
 @app.websocket("/ws/ai")
@@ -187,8 +191,8 @@ async def websocket_ai_endpoint(websocket: WebSocket):
                 try:
                     if spark_main.voice:
                         spark_main.voice.stop()
-                except Exception:
-                    pass
+                except Exception as e:
+                    logger.error(f"WebSocket error: {e}", exc_info=True)
                 await websocket.send_json({"type": "ERROR", "message": "Generation cancelled.", "code": "cancelled"})
                 await websocket.send_json({"type": "DONE"})
                 continue
@@ -222,7 +226,8 @@ async def websocket_ai_endpoint(websocket: WebSocket):
 
     except WebSocketDisconnect:
         ai_manager.disconnect(websocket)
-    except Exception:
+    except Exception as e:
+        logger.error(f"AI WebSocket error: {e}", exc_info=True)
         ai_manager.disconnect(websocket)
     finally:
         ai_manager.disconnect(websocket)
@@ -239,8 +244,8 @@ async def websocket_personal_chat(websocket: WebSocket):
             await websocket.send_text(f"SPARK Personal AI: {message}")
     except WebSocketDisconnect:
         pass
-    except Exception:
-        pass
+    except Exception as e:
+        logger.error(f"WebSocket error: {e}", exc_info=True)
 
 @app.post("/internal/broadcast")
 async def broadcast_event(request: Request):
