@@ -9,7 +9,12 @@ import os
 import re
 import sys
 import time
+jules-15211068170550536705-c775779c
+import keyboard
+from typing import Any
+=======
 from typing import Any, Dict, Optional
+ master
 from dotenv import load_dotenv
 import httpx
 
@@ -126,7 +131,7 @@ def ensure_runtime_components() -> None:
 # ─────────────────────────────────────────────────────────────────────────────
 
 def execute_tool(
-    command_json: Dict[str, Any],
+    command_json: dict[str, Any],
     tools: SparkTools,
     voice: SparkVoice,
     portfolio_tracker: PortfolioTracker = None,
@@ -390,7 +395,7 @@ def call_local_llm(
 
 _JSON_RE = re.compile(r'\{[^{}]*"tool"\s*:[^{}]*\}', re.DOTALL)
 
-def parse_response(text: str) -> tuple[Optional[Dict], str]:
+def parse_response(text: str) -> tuple[dict | None, str]:
     """
     Returns (tool_dict, spoken_text).
     If a tool call JSON is found, tool_dict is populated and spoken_text is
