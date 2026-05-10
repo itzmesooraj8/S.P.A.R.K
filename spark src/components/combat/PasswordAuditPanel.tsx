@@ -20,7 +20,7 @@ type StrengthReport = {
   file_path:         string
   total_hashes:      number
   detected_format:   string
-  blank_passwords:   number
+  empty_passwords:   number
   policy_violations: number
   unique_hashes:     number
   duplicate_count:   number
@@ -90,7 +90,7 @@ const PasswordAuditPanel: React.FC = () => {
       })
       const data = await res.json()
       if (!res.ok) throw new Error(data.detail || 'Analysis failed')
-      setReport(data)
+      setReport({ ...data, empty_passwords: data.blank_passwords })
     } catch (e: unknown) { setError(e instanceof Error ? e.message : String(e)) }
     finally { setAnalyzing(false) }
   }, [analyzeFile, sessionToken])
@@ -193,7 +193,7 @@ const PasswordAuditPanel: React.FC = () => {
                     ['Total Hashes',   String(report.total_hashes)],
                     ['Unique',         String(report.unique_hashes)],
                     ['Duplicates',     String(report.duplicate_count)],
-                    ['Blank Passwords', String(report.blank_passwords)],
+                    ['Empty Passwords', String(report.empty_passwords)],
                     ['Violations',     String(report.policy_violations)],
                   ].map(([label, val]) => (
                     <div key={label} style={{ background: '#0a0002', borderRadius: 4, padding: '6px 10px' }}>
