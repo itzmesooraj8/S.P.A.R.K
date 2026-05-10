@@ -22,6 +22,10 @@ from api.routes.security import router as security_router
 import core.main as spark_main
 from core.main import run_agent_turn
 
+import logging
+
+logger = logging.getLogger(__name__)
+
 app = FastAPI(title="S.P.A.R.K. Bridge API")
 app.add_middleware(
     CORSMiddleware,
@@ -88,7 +92,11 @@ class ConnectionManager:
             try:
                 await connection.send_json(message)
             except Exception as e:
+jules-13240971422062216794-06df67fb
+                logger.error(f"Failed to broadcast to {connection.client}: {e}")
+
                 logger.error(f"WebSocket error: {e}", exc_info=True)
+master
 
 
 class AIDispatcher:
@@ -107,7 +115,11 @@ class AIDispatcher:
         try:
             await websocket.send_json(message)
         except Exception as e:
+ jules-13240971422062216794-06df67fb
+            logger.error(f"Failed to send to {websocket.client}: {e}")
+=======
             logger.error(f"WebSocket error: {e}", exc_info=True)
+ master
 
 manager = ConnectionManager()
 ai_manager = AIDispatcher()
