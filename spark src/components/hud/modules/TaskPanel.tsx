@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo } from 'react';
 import { useTaskStore, Task } from '../../../store/useTaskStore';
 import { createTask, updateTask, deleteTask, completeTask } from '../../../lib/tasks';
 import './TaskPanel.css';
@@ -59,13 +59,16 @@ export const TaskPanel: React.FC = () => {
     3: '#EF4444',
   };
 
-  const groupedTasks = statuses.reduce(
-    (acc, status) => {
-      acc[status] = tasks.filter((t) => t.status === status);
-      return acc;
-    },
-    {} as Record<string, Task[]>
-  );
+  // ⚡ Bolt: Memoize expensive task grouping to prevent recalculation on every render
+  const groupedTasks = useMemo(() => {
+    return statuses.reduce(
+      (acc, status) => {
+        acc[status] = tasks.filter((t) => t.status === status);
+        return acc;
+      },
+      {} as Record<string, Task[]>
+    );
+  }, [tasks]);
 
   return (
     <div className="task-panel">
