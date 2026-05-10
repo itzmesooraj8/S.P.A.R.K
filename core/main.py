@@ -9,7 +9,6 @@ import os
 import re
 import sys
 import time
-import keyboard
 from typing import Any, Dict, Optional
 from dotenv import load_dotenv
 import httpx
