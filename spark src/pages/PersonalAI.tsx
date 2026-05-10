@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react';
 import { usePersonalAISocket } from '@/hooks/usePersonalAISocket';
 import VoiceWaveform from '../components/hud/VoiceWaveform';
+import DOMPurify from 'dompurify';
 
 export default function PersonalAI() {
   const { messages, isConnected, activityLogs, sendToBrain, logActivity } = usePersonalAISocket();
@@ -110,7 +111,7 @@ export default function PersonalAI() {
                     ? 'bg-blue-500/10 border border-blue-500/20 self-end rounded-br-none'
                     : 'bg-emerald-500/10 border border-emerald-500/20 self-start rounded-bl-none'
                 }`}
-                dangerouslySetInnerHTML={{ __html: m.text }}
+                dangerouslySetInnerHTML={{ __html: DOMPurify.sanitize(m.text) }}
               />
             ))}
           </div>

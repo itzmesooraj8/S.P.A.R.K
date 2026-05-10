@@ -159,10 +159,10 @@ def web_search_answer(query: str) -> str:
     stock_keywords = ["stock", "share price", "nifty", "sensex", "market", "bse", "nse", "trading", "index"]
     
     # Bug 3 Fix: If user asks for "top" or "best", do a web search instead of market summary
-    is_top_query = any(k in q_lower for k in ["top", "best", "performing", "gainers", "losers", "recommendation"])
+    is_top_query = bool(re.search(r"\b(top|best|performing|gainers|losers|recommendation)\b", q_lower))
     
-    if any(k in q_lower for k in stock_keywords) and not is_top_query:
-        if any(k in q_lower for k in ["indian market", "indian stock", "nifty", "sensex", "bse", "nse"]):
+    if bool(re.search(r"\b(" + "|".join(stock_keywords) + r")\b", q_lower)) and not is_top_query:
+        if bool(re.search(r"\b(indian market|indian stock|nifty|sensex|bse|nse)\b", q_lower)):
             summary = get_indian_market_summary()
             if summary:
                 return summary
