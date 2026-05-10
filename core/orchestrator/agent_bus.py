@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections import defaultdict
 from threading import RLock
 from typing import Any, Callable
@@ -10,6 +11,8 @@ from .runtime_state import record_event, update_runtime_state
 
 
 Handler = Callable[[dict[str, Any]], None]
+
+logger = logging.getLogger(__name__)
 
 
 class AgentBus:
@@ -36,9 +39,11 @@ class AgentBus:
             try:
                 handler(event)
             except Exception:
+                logger.exception("Error in agent bus handler for topic %s", topic)
                 continue
 
         update_runtime_state(last_route={"topic": topic, "payload": payload or {}})
+
         try:
             requests.post(
                 "http://127.0.0.1:8000/internal/broadcast",
@@ -46,7 +51,8 @@ class AgentBus:
                 timeout=0.1,
             )
         except Exception:
-            pass
+            logger.debug("Failed to broadcast runtime event to HUD", exc_info=True)
+
         return event
 
 

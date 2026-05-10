@@ -28,6 +28,7 @@ class PromptScanResult:
 
 
 def scan_prompt(text: str) -> PromptScanResult:
+    text = text or ""
     lower = (text or "").lower()
     reasons: list[str] = []
     score = 0.0
@@ -35,10 +36,10 @@ def scan_prompt(text: str) -> PromptScanResult:
         if re.search(pattern, lower):
             score += 0.25
             reasons.append(pattern)
-    if text.count("```") >= 2:
+    if (text or "").count("```") >= 2:
         score += 0.1
         reasons.append("code_fence")
-    if len(text) > 1200:
+    if len(text or "") > 1200:
         score += 0.1
         reasons.append("long_content")
-    return PromptScanResult(score=min(score, 1.0), suspicious=score >= 0.5, reasons=tuple(reasons))
+    return PromptScanResult(score=round(min(score, 1.0), 2), suspicious=round(score, 2) >= 0.5, reasons=tuple(reasons))

@@ -1,7 +1,7 @@
 import logging
 import json
 from core.vector_store import SparkVectorMemory
-from tools.web_search import get_stock_summary, _fetch
+from tools.web_search import _fetch
 import urllib.parse
 import re
 

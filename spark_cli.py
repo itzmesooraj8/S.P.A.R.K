@@ -90,6 +90,95 @@ def print_success(text: str):
     print(f"{C.GREEN}  ✓ {text}{C.RESET}")
 
 
+
+def _cmd_help():
+    print(CLI_HELP)
+    return True
+
+def _cmd_clear():
+    os.system("cls" if os.name == "nt" else "clear")
+    print(SPARK_BANNER)
+    return True
+
+def _cmd_memory(memory):
+    try:
+        results = memory.collection.get(include=["documents", "metadatas"])
+        docs = results.get("documents", [])[-10:]
+        metas = results.get("metadatas", [])[-10:]
+        if not docs:
+            print_info("No memories stored yet.")
+        else:
+            print(f"\n{C.BOLD}  Last {len(docs)} memory entries:{C.RESET}")
+            for i, (doc, meta) in enumerate(zip(docs, metas)):
+                role = meta.get("role", "?") if meta else "?"
+                role_color = C.CYAN if role == "assistant" else C.AMBER
+                print(f"  {C.DIM}[{i+1}]{C.RESET} {role_color}{role:10}{C.RESET} {doc[:80]}{'...' if len(doc) > 80 else ''}")
+            print()
+    except Exception as e:
+        print_error(f"Could not read memory: {e}")
+    return True
+
+def _cmd_tools():
+    try:
+        from core.main import tools  # import registered tools dict
+        print(f"\n{C.BOLD}  Available Tools:{C.RESET}")
+        for name, info in tools.items():
+            desc = info.get("description", "No description")[:60]
+            print(f"  {C.CYAN}• {name:25}{C.RESET} {C.DIM}{desc}{C.RESET}")
+        print()
+    except Exception as e:
+        print_error(f"Could not load tools list: {e}")
+    return True
+
+def _cmd_sysmon():
+    try:
+        from tools.sysmon import get_raw_metrics
+        m = get_raw_metrics()
+        print(f"\n{C.BOLD}  System Metrics:{C.RESET}")
+        print(f"  {C.CYAN}CPU{C.RESET}      {m.get('cpu_percent', '?')}%")
+        print(f"  {C.CYAN}RAM{C.RESET}      {m.get('ram_percent', '?')}%  ({m.get('ram_used_gb', '?')} / {m.get('ram_total_gb', '?')} GB)")
+        print(f"  {C.CYAN}Disk{C.RESET}     {m.get('disk_percent', '?')}%")
+        print(f"  {C.CYAN}GPU{C.RESET}      {m.get('gpu_name', 'N/A')}  {m.get('gpu_util', '?')}%  VRAM: {m.get('vram_used_mb', '?')} MB")
+        print()
+    except Exception as e:
+        print_error(f"sysmon error: {e}")
+    return True
+
+def _cmd_reminders():
+    try:
+        from core.scheduler import list_reminders
+        jobs = list_reminders()
+        if not jobs:
+            print_info("No pending reminders.")
+        else:
+            print(f"\n{C.BOLD}  Pending Reminders:{C.RESET}")
+            for j in jobs:
+                print(f"  {C.CYAN}• {j['id'][:30]}{C.RESET}  fires at {j['next_run']}")
+                if j.get('args'):
+                    print(f"    {C.DIM}message: {j['args'][0]}{C.RESET}")
+            print()
+    except Exception as e:
+        print_error(f"Could not list reminders: {e}")
+    return True
+
+def _cmd_remind(parts):
+    # :remind <seconds> <message...>
+    if len(parts) < 3:
+        print_error("Usage: :remind <seconds> <your message>")
+        return True
+    try:
+        delay = int(parts[1])
+        message = " ".join(parts[2:])
+        from core.scheduler import set_reminder, init_scheduler
+        init_scheduler()  # ensure running in CLI mode
+        result = set_reminder(message, delay)
+        print_success(result)
+    except ValueError:
+        print_error("seconds must be an integer. Usage: :remind 120 Check the logs")
+    except Exception as e:
+        print_error(f"Could not set reminder: {e}")
+    return True
+
 def handle_cli_command(cmd: str, agent, memory, scheduler) -> bool:
     """
     Handle special CLI commands (prefixed with :).
@@ -99,92 +188,19 @@ def handle_cli_command(cmd: str, agent, memory, scheduler) -> bool:
     command = parts[0].lower() if parts else ""
 
     if command == ":help":
-        print(CLI_HELP)
-        return True
-
+        return _cmd_help()
     elif command == ":clear":
-        os.system("cls" if os.name == "nt" else "clear")
-        print(SPARK_BANNER)
-        return True
-
+        return _cmd_clear()
     elif command == ":memory":
-        try:
-            results = memory.collection.get(include=["documents", "metadatas"])
-            docs = results.get("documents", [])[-10:]
-            metas = results.get("metadatas", [])[-10:]
-            if not docs:
-                print_info("No memories stored yet.")
-            else:
-                print(f"\n{C.BOLD}  Last {len(docs)} memory entries:{C.RESET}")
-                for i, (doc, meta) in enumerate(zip(docs, metas)):
-                    role = meta.get("role", "?") if meta else "?"
-                    role_color = C.CYAN if role == "assistant" else C.AMBER
-                    print(f"  {C.DIM}[{i+1}]{C.RESET} {role_color}{role:10}{C.RESET} {doc[:80]}{'...' if len(doc) > 80 else ''}")
-                print()
-        except Exception as e:
-            print_error(f"Could not read memory: {e}")
-        return True
-
+        return _cmd_memory(memory)
     elif command == ":tools":
-        try:
-            from core.main import tools  # import registered tools dict
-            print(f"\n{C.BOLD}  Available Tools:{C.RESET}")
-            for name, info in tools.items():
-                desc = info.get("description", "No description")[:60]
-                print(f"  {C.CYAN}• {name:25}{C.RESET} {C.DIM}{desc}{C.RESET}")
-            print()
-        except Exception as e:
-            print_error(f"Could not load tools list: {e}")
-        return True
-
+        return _cmd_tools()
     elif command == ":sysmon":
-        try:
-            from tools.sysmon import get_raw_metrics
-            m = get_raw_metrics()
-            print(f"\n{C.BOLD}  System Metrics:{C.RESET}")
-            print(f"  {C.CYAN}CPU{C.RESET}      {m.get('cpu_percent', '?')}%")
-            print(f"  {C.CYAN}RAM{C.RESET}      {m.get('ram_percent', '?')}%  ({m.get('ram_used_gb', '?')} / {m.get('ram_total_gb', '?')} GB)")
-            print(f"  {C.CYAN}Disk{C.RESET}     {m.get('disk_percent', '?')}%")
-            print(f"  {C.CYAN}GPU{C.RESET}      {m.get('gpu_name', 'N/A')}  {m.get('gpu_util', '?')}%  VRAM: {m.get('vram_used_mb', '?')} MB")
-            print()
-        except Exception as e:
-            print_error(f"sysmon error: {e}")
-        return True
-
+        return _cmd_sysmon()
     elif command == ":reminders":
-        try:
-            from core.scheduler import list_reminders
-            jobs = list_reminders()
-            if not jobs:
-                print_info("No pending reminders.")
-            else:
-                print(f"\n{C.BOLD}  Pending Reminders:{C.RESET}")
-                for j in jobs:
-                    print(f"  {C.CYAN}• {j['id'][:30]}{C.RESET}  fires at {j['next_run']}")
-                    if j.get('args'):
-                        print(f"    {C.DIM}message: {j['args'][0]}{C.RESET}")
-                print()
-        except Exception as e:
-            print_error(f"Could not list reminders: {e}")
-        return True
-
+        return _cmd_reminders()
     elif command == ":remind":
-        # :remind <seconds> <message...>
-        if len(parts) < 3:
-            print_error("Usage: :remind <seconds> <your message>")
-            return True
-        try:
-            delay = int(parts[1])
-            message = " ".join(parts[2:])
-            from core.scheduler import set_reminder, init_scheduler
-            init_scheduler()  # ensure running in CLI mode
-            result = set_reminder(message, delay)
-            print_success(result)
-        except ValueError:
-            print_error("seconds must be an integer. Usage: :remind 120 Check the logs")
-        except Exception as e:
-            print_error(f"Could not set reminder: {e}")
-        return True
+        return _cmd_remind(parts)
 
     return False  # not a CLI command
 

@@ -98,15 +98,39 @@ async def get_memory_graph():
         
     if embs and len(embs) > 0:
         threshold = 0.70 # cosine similarity threshold
-        for i in range(len(embs)):
-            for j in range(i + 1, len(embs)):
-                sim = cosine_similarity(embs[i], embs[j])
-                if sim > threshold:
-                    links.append({
-                        "source": ids[i],
-                        "target": ids[j],
-                        "value": round(sim * 10, 1) # scale up for d3 link width/distance
-                    })
+
+        # Convert to numpy array for vectorized operations
+        embs_array = np.array(embs)
+
+        # Compute norms
+        norms = np.linalg.norm(embs_array, axis=1, keepdims=True)
+        # Avoid division by zero
+        norms[norms == 0] = 1e-10
+
+        # Normalize embeddings
+        embs_norm = embs_array / norms
+
+        # Compute similarity matrix
+        sim_matrix = np.dot(embs_norm, embs_norm.T)
+
+        # Extract upper triangle indices (excluding diagonal)
+        n = len(embs)
+        rows, cols = np.triu_indices(n, k=1)
+
+        # Filter by threshold
+        mask = sim_matrix[rows, cols] > threshold
+
+        valid_rows = rows[mask]
+        valid_cols = cols[mask]
+        valid_sims = sim_matrix[valid_rows, valid_cols]
+
+        # Add links
+        for i in range(len(valid_rows)):
+            links.append({
+                "source": ids[valid_rows[i]],
+                "target": ids[valid_cols[i]],
+                "value": round(float(valid_sims[i]) * 10, 1)
+            })
             
     return {"nodes": nodes, "links": links}
 
