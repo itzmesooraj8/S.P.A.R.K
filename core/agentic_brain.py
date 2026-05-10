@@ -318,26 +318,10 @@ Max 4 tools. Only include tools that are actually needed."""
             "next_steps": next_steps,
         }
 
-    def run(
-        self,
-        goal: str,
-        context_snapshot: dict[str, Any] | None = None,
-        event_sink: EventSink | None = None,
-    ) -> dict[str, Any]:
-        run = self.plan(goal, context_snapshot=context_snapshot)
-        run.status = "running"
 
-        self._emit(
-            event_sink,
-            "plan_started",
-            {
-                "goal": run.goal,
-                "step_count": len(run.steps),
-                "context_snapshot": run.context_snapshot,
-            },
-        )
 
-        run.recent_context = retrieve_turns(goal, k_recent=4, k_semantic=4)
+    def _load_context(self, run: BrainRun, event_sink: EventSink | None) -> None:
+        run.recent_context = retrieve_turns(run.goal, k_recent=4, k_semantic=4)
         if run.recent_context:
             self._emit(
                 event_sink,
@@ -354,105 +338,80 @@ Max 4 tools. Only include tools that are actually needed."""
                 },
             )
 
-        findings: dict[str, Any] = {}
-        system_metrics: dict[str, Any] = {}
+    def _execute_step(
+        self,
+        step: BrainStep,
+        run: BrainRun,
+        findings: dict[str, Any],
+        event_sink: EventSink | None,
+    ) -> str:
+        if step.tool == "web_search":
+            result = web_search_answer(step.input or run.goal)
+            findings[step.tool] = result
+            step.output = result
+            step.details = {"query": step.input or run.goal}
 
-        for step in run.steps:
+        elif step.tool == "system_check":
+            system_metrics = get_raw_metrics()
+            result = self._format_system_check(system_metrics)
+            findings[step.tool] = result
+            step.output = result
+            step.details = system_metrics
+
+        elif step.tool == "calendar_check":
+            result = self._format_calendar_check()
+            findings[step.tool] = result
+            step.output = result
+            step.details = {"reminders": list_reminders()[:5]}
+
+        elif step.tool == "file_write":
+            report_stub = BrainRun(
+                goal=run.goal,
+                context_snapshot=run.context_snapshot,
+                recent_context=run.recent_context,
+                final_answer={"findings": findings},
+            )
+            report_stub.report_path = self._build_report(report_stub)
+            result = f"Saved research brief to {report_stub.report_path}"
+            run.report_path = report_stub.report_path
+            findings[step.tool] = result
+            step.output = result
+            step.details = {"report_path": report_stub.report_path}
+            run.artifacts.append({"kind": "report", "path": report_stub.report_path})
             self._emit(
                 event_sink,
-                "step_started",
+                "artifact_written",
                 {
                     "goal": run.goal,
-                    "step": asdict(step),
+                    "path": report_stub.report_path,
+                    "kind": "report",
                 },
             )
 
+        elif step.tool == "ollama_chat":
+            result = asyncio.run(self._synthesize_with_ollama(run, findings))
             try:
-                if step.tool == "web_search":
-                    result = web_search_answer(step.input or run.goal)
-                    findings[step.tool] = result
-                    step.output = result
-                    step.details = {"query": step.input or run.goal}
+                parsed = json.loads(result)
+                run.final_answer = parsed if isinstance(parsed, dict) else {"summary": result}
+            except Exception:
+                run.final_answer = {"summary": result}
+            findings[step.tool] = run.final_answer
+            step.output = result
+            step.details = run.final_answer
 
-                elif step.tool == "system_check":
-                    system_metrics = get_raw_metrics()
-                    result = self._format_system_check(system_metrics)
-                    findings[step.tool] = result
-                    step.output = result
-                    step.details = system_metrics
+        else:
+            result = f"Unsupported step: {step.tool}"
+            findings[step.tool] = result
+            step.output = result
 
-                elif step.tool == "calendar_check":
-                    result = self._format_calendar_check()
-                    findings[step.tool] = result
-                    step.output = result
-                    step.details = {"reminders": list_reminders()[:5]}
+        return result
 
-                elif step.tool == "file_write":
-                    report_stub = BrainRun(
-                        goal=run.goal,
-                        context_snapshot=run.context_snapshot,
-                        recent_context=run.recent_context,
-                        final_answer={"findings": findings},
-                    )
-                    report_stub.report_path = self._build_report(report_stub)
-                    result = f"Saved research brief to {report_stub.report_path}"
-                    run.report_path = report_stub.report_path
-                    findings[step.tool] = result
-                    step.output = result
-                    step.details = {"report_path": report_stub.report_path}
-                    run.artifacts.append({"kind": "report", "path": report_stub.report_path})
-                    self._emit(
-                        event_sink,
-                        "artifact_written",
-                        {
-                            "goal": run.goal,
-                            "path": report_stub.report_path,
-                            "kind": "report",
-                        },
-                    )
-
-                elif step.tool == "ollama_chat":
-                    result = await self._synthesize_with_ollama(run, findings)
-                    try:
-                        parsed = json.loads(result)
-                        run.final_answer = parsed if isinstance(parsed, dict) else {"summary": result}
-                    except Exception:
-                        run.final_answer = {"summary": result}
-                    findings[step.tool] = run.final_answer
-                    step.output = result
-                    step.details = run.final_answer
-
-                else:
-                    result = f"Unsupported step: {step.tool}"
-                    findings[step.tool] = result
-                    step.output = result
-
-                step.status = "done"
-                run.results.append(result)
-                self._emit(
-                    event_sink,
-                    "step_completed",
-                    {
-                        "goal": run.goal,
-                        "step": asdict(step),
-                        "preview": _truncate(result, 220),
-                    },
-                )
-            except Exception as exc:
-                step.status = "failed"
-                step.output = str(exc)
-                run.status = "blocked"
-                self._emit(
-                    event_sink,
-                    "step_failed",
-                    {
-                        "goal": run.goal,
-                        "step": asdict(step),
-                        "error": str(exc),
-                    },
-                )
-                break
-
+    def _finalize_run(
+        self,
+        run: BrainRun,
+        findings: dict[str, Any],
+        event_sink: EventSink | None,
+    ) -> None:
         if not run.report_path:
             # Persist a report even if the final response step failed.
             fallback_stub = BrainRun(
@@ -493,6 +452,68 @@ Max 4 tools. Only include tools that are actually needed."""
                 "steps": [asdict(step) for step in run.steps],
             },
         )
+    def run(
+        self,
+        goal: str,
+        context_snapshot: dict[str, Any] | None = None,
+        event_sink: EventSink | None = None,
+    ) -> dict[str, Any]:
+        run = self.plan(goal, context_snapshot=context_snapshot)
+        run.status = "running"
+
+        self._emit(
+            event_sink,
+            "plan_started",
+            {
+                "goal": run.goal,
+                "step_count": len(run.steps),
+                "context_snapshot": run.context_snapshot,
+            },
+        )
+
+        self._load_context(run, event_sink)
+
+        findings: dict[str, Any] = {}
+
+        for step in run.steps:
+            self._emit(
+                event_sink,
+                "step_started",
+                {
+                    "goal": run.goal,
+                    "step": asdict(step),
+                },
+            )
+
+            try:
+                result = self._execute_step(step, run, findings, event_sink)
+                step.status = "done"
+                run.results.append(result)
+                self._emit(
+                    event_sink,
+                    "step_completed",
+                    {
+                        "goal": run.goal,
+                        "step": asdict(step),
+                        "preview": _truncate(result, 220),
+                    },
+                )
+            except Exception as exc:
+                step.status = "failed"
+                step.output = str(exc)
+                run.status = "blocked"
+                self._emit(
+                    event_sink,
+                    "step_failed",
+                    {
+                        "goal": run.goal,
+                        "step": asdict(step),
+                        "error": str(exc),
+                    },
+                )
+                break
+
+        self._finalize_run(run, findings, event_sink)
 
         recent_context_summary = [
             {
@@ -515,6 +536,7 @@ Max 4 tools. Only include tools that are actually needed."""
             "recent_context": recent_context_summary,
             "artifacts": run.artifacts,
         }
+
 
 
 _BRAIN = AgenticBrain()
