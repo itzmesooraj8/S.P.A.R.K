@@ -104,142 +104,115 @@ def _command_event_sink(module: str, action: str, goal: str):
     return _emit
 
 
-async def _run_commander(payload: dict[str, Any]) -> dict[str, Any]:
-    module = str(payload.get("module") or "agent")
-    action = str(payload.get("action") or "")
-    text = _extract_text(payload)
-    context_snapshot = _summarize_snapshot(payload.get("context_snapshot"))
-
-    validation = validate_intent_text(text) if text else None
-    sanitized_text = sanitize_for_llm(validation.cleaned_text or text) if validation and validation.cleaned_text else text
-
-    broadcast_hud_event(
-        "runtime_event",
-        {
-            "type": "command_received",
-            "payload": {
-                "module": module,
-                "action": action,
-                "has_text": bool(text),
-                "context_snapshot": context_snapshot,
-            },
-        },
-    )
-
+def _handle_non_agent_module(module: str, action: str, text: str, context_snapshot: dict[str, Any]) -> dict[str, Any]:
+    result = f"Module '{module}' activated."
     broadcast_hud_event(
         "agent_log",
         {
-            "type": "info",
+            "type": "system",
             "agent": "COMMAND",
-            "action": f"Received {module}",
-            "data": text or action or "module activation",
+            "action": f"No backend execution for {module}",
+            "data": action or text or module,
         },
     )
-
-    if module not in {"agent", "llm"}:
-        result = f"Module '{module}' activated."
-        broadcast_hud_event(
-            "agent_log",
-            {
-                "type": "system",
-                "agent": "COMMAND",
-                "action": f"No backend execution for {module}",
-                "data": action or text or module,
+    broadcast_hud_event(
+        "runtime_event",
+        {
+            "type": "command_complete",
+            "payload": {
+                "module": module,
+                "action": action,
+                "result_preview": result,
             },
-        )
-        broadcast_hud_event(
-            "runtime_event",
-            {
-                "type": "command_complete",
-                "payload": {
-                    "module": module,
-                    "action": action,
-                    "result_preview": result,
-                },
-            },
-        )
-        return {
-            "status": "ok",
-            "module": module,
-            "action": action,
-            "result": result,
-            "context_snapshot": context_snapshot,
-        }
+        },
+    )
+    return {
+        "status": "ok",
+        "module": module,
+        "action": action,
+        "result": result,
+        "context_snapshot": context_snapshot,
+    }
 
-    if not sanitized_text:
-        result = "No command text provided."
-        broadcast_hud_event(
-            "agent_log",
-            {
-                "type": "warning",
-                "agent": "COMMAND",
-                "action": "Rejected empty command",
-                "data": module,
-            },
-        )
-        return {
-            "status": "ignored",
-            "module": module,
-            "action": action,
-            "result": result,
-            "context_snapshot": context_snapshot,
-        }
 
-    if validation and not validation.allowed:
-        result = {
-            "status": "blocked",
-            "goal": text,
-            "reason": "Security policy blocked the requested goal.",
-        }
-        broadcast_hud_event(
-            "agent_log",
-            {
-                "type": "critical",
-                "agent": "COMMAND",
-                "action": "Blocked command",
-                "data": text,
-            },
-        )
-        return {
-            "status": "blocked",
-            "module": module,
-            "action": action,
-            "result": result,
-            "context_snapshot": context_snapshot,
-        }
+def _handle_empty_command(module: str, action: str, context_snapshot: dict[str, Any]) -> dict[str, Any]:
+    result = "No command text provided."
+    broadcast_hud_event(
+        "agent_log",
+        {
+            "type": "warning",
+            "agent": "COMMAND",
+            "action": "Rejected empty command",
+            "data": module,
+        },
+    )
+    return {
+        "status": "ignored",
+        "module": module,
+        "action": action,
+        "result": result,
+        "context_snapshot": context_snapshot,
+    }
 
+
+def _handle_blocked_command(module: str, action: str, text: str, context_snapshot: dict[str, Any]) -> dict[str, Any]:
+    result = {
+        "status": "blocked",
+        "goal": text,
+        "reason": "Security policy blocked the requested goal.",
+    }
+    broadcast_hud_event(
+        "agent_log",
+        {
+            "type": "critical",
+            "agent": "COMMAND",
+            "action": "Blocked command",
+            "data": text,
+        },
+    )
+    return {
+        "status": "blocked",
+        "module": module,
+        "action": action,
+        "result": result,
+        "context_snapshot": context_snapshot,
+    }
+
+
+async def _handle_agentic_command(module: str, action: str, sanitized_text: str, context_snapshot: dict[str, Any]) -> dict[str, Any]:
     import core.memory as memory_module
+    context = await memory_module.get_context(sanitized_text)
+    full_prompt = f"[MEMORY CONTEXT]\n{context}\n\n[CURRENT REQUEST]\n{sanitized_text}" if context else sanitized_text
 
-    if is_agentic_goal(sanitized_text):
-        context = await memory_module.get_context(sanitized_text)
-        full_prompt = f"[MEMORY CONTEXT]\n{context}\n\n[CURRENT REQUEST]\n{sanitized_text}" if context else sanitized_text
+    brain = get_agentic_brain()
+    result = await asyncio.to_thread(
+        brain.run,
+        full_prompt,
+        context_snapshot,
+        _command_event_sink(module, action, full_prompt),
+    )
 
-        brain = get_agentic_brain()
-        result = await asyncio.to_thread(
-            brain.run,
-            full_prompt,
-            context_snapshot,
-            _command_event_sink(module, action, full_prompt),
-        )
+    final_response_str = json.dumps(result.get("final_answer", {}), ensure_ascii=False)
+    try:
+        write_turn("user", sanitized_text, metadata={"source": "agentic_brain", "module": module, "action": action})
+        write_turn("assistant", final_response_str, metadata={"source": "agentic_brain", "module": module, "action": action})
+        await memory_module.save_memory(sanitized_text, final_response_str)
+    except Exception:
+        pass
 
-        final_response_str = json.dumps(result.get("final_answer", {}), ensure_ascii=False)
-        try:
-            write_turn("user", sanitized_text, metadata={"source": "agentic_brain", "module": module, "action": action})
-            write_turn("assistant", final_response_str, metadata={"source": "agentic_brain", "module": module, "action": action})
-            await memory_module.save_memory(sanitized_text, final_response_str)
-        except Exception:
-            pass
+    return {
+        "status": result.get("status", "ok"),
+        "mode": "agentic",
+        "module": module,
+        "action": action,
+        "goal": sanitized_text,
+        "plan": result,
+        "context_snapshot": context_snapshot,
+    }
 
-        return {
-            "status": result.get("status", "ok"),
-            "mode": "agentic",
-            "module": module,
-            "action": action,
-            "goal": sanitized_text,
-            "plan": result,
-            "context_snapshot": context_snapshot,
-        }
 
+async def _handle_standard_command(module: str, action: str, sanitized_text: str, context_snapshot: dict[str, Any]) -> dict[str, Any]:
+    import core.memory as memory_module
     context = await memory_module.get_context(sanitized_text)
     full_prompt = f"[MEMORY CONTEXT]\n{context}\n\n[CURRENT REQUEST]\n{sanitized_text}" if context else sanitized_text
 
@@ -276,6 +249,53 @@ async def _run_commander(payload: dict[str, Any]) -> dict[str, Any]:
         "result": result,
         "context_snapshot": context_snapshot,
     }
+
+
+async def _run_commander(payload: dict[str, Any]) -> dict[str, Any]:
+    module = str(payload.get("module") or "agent")
+    action = str(payload.get("action") or "")
+    text = _extract_text(payload)
+    context_snapshot = _summarize_snapshot(payload.get("context_snapshot"))
+
+    validation = validate_intent_text(text) if text else None
+    sanitized_text = sanitize_for_llm(validation.cleaned_text or text) if validation and validation.cleaned_text else text
+
+    broadcast_hud_event(
+        "runtime_event",
+        {
+            "type": "command_received",
+            "payload": {
+                "module": module,
+                "action": action,
+                "has_text": bool(text),
+                "context_snapshot": context_snapshot,
+            },
+        },
+    )
+
+    broadcast_hud_event(
+        "agent_log",
+        {
+            "type": "info",
+            "agent": "COMMAND",
+            "action": f"Received {module}",
+            "data": text or action or "module activation",
+        },
+    )
+
+    if module not in {"agent", "llm"}:
+        return _handle_non_agent_module(module, action, text, context_snapshot)
+
+    if not sanitized_text:
+        return _handle_empty_command(module, action, context_snapshot)
+
+    if validation and not validation.allowed:
+        return _handle_blocked_command(module, action, text, context_snapshot)
+
+    if is_agentic_goal(sanitized_text):
+        return await _handle_agentic_command(module, action, sanitized_text, context_snapshot)
+
+    return await _handle_standard_command(module, action, sanitized_text, context_snapshot)
 
 
 @router.post("/api/commander/run")
