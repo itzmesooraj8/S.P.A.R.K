@@ -1,3 +1,4 @@
+import urllib.parse
 import urllib.request
 import logging
 import json
@@ -31,4 +32,3 @@ def get_weather(location: str = "Palakkad") -> str:
         logger.error(f"Weather error: {e}")
         return f"I am unable to reach the meteorological satellites for {location} at this time, sir."
 
-import urllib.parse
