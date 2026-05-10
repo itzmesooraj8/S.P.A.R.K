@@ -32,12 +32,156 @@ interface AgentConfirmModalProps {
   onClose: () => void;
 }
 
-const RISK_STYLES: Record<string, { color: string; border: string; label: string }> = {
+interface RiskStyle {
+  color: string;
+  border: string;
+  label: string;
+}
+
+const RISK_STYLES: Record<string, RiskStyle> = {
   LOW:      { color: '#30d158', border: 'border-hud-green/40', label: 'LOW RISK' },
   MEDIUM:   { color: '#ff9f0a', border: 'border-hud-amber/50', label: 'MEDIUM RISK' },
   HIGH:     { color: '#ff6b35', border: 'border-hud-amber/70', label: 'HIGH RISK' },
   CRITICAL: { color: '#ff2d55', border: 'border-hud-red/70', label: 'CRITICAL RISK' },
 };
+
+function AgentConfirmHeader({ risk }: { risk: RiskStyle }) {
+  return (
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-10 h-10 rounded-full border-2 flex items-center justify-center"
+        style={{ borderColor: risk.color, boxShadow: `0 0 20px ${risk.color}40` }}>
+        <Shield size={18} style={{ color: risk.color }} />
+      </div>
+      <div>
+        <div className="font-orbitron text-sm font-bold" style={{ color: risk.color }}>
+          AGENT AUTHORIZATION REQUEST
+        </div>
+        <div className="font-mono-tech text-[9px] text-white/40 uppercase tracking-widest">
+          {risk.label} · Desktop Agent
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function AgentConfirmBadge({ risk }: { risk: RiskStyle }) {
+  return (
+    <div className="flex items-center gap-2 mb-4 p-2 rounded border"
+      style={{ borderColor: `${risk.color}30`, background: `${risk.color}08` }}>
+      <AlertTriangle size={12} style={{ color: risk.color }} />
+      <span className="font-orbitron text-[9px] tracking-widest" style={{ color: risk.color }}>
+        {risk.label}
+      </span>
+    </div>
+  );
+}
+
+function AgentConfirmDetails({ request }: { request: ConfirmRequest }) {
+  return (
+    <div className="space-y-2 mb-5">
+      <div>
+        <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">Tool</div>
+        <div className="font-mono-tech text-sm text-hud-cyan">{request.tool}</div>
+      </div>
+
+      <div>
+        <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">
+          <Terminal size={8} className="inline mr-1" />
+          Command
+        </div>
+        <div
+          className="rounded border border-hud-cyan/20 bg-black/60 px-3 py-2 font-mono-tech text-xs text-hud-cyan/80 break-all"
+          style={{ textShadow: '0 0 8px hsl(186 100% 50% / 0.3)' }}
+        >
+          {request.command}
+        </div>
+      </div>
+
+      {request.description && (
+        <div>
+          <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">Description</div>
+          <div className="font-mono-tech text-[10px] text-white/50">{request.description}</div>
+        </div>
+      )}
+
+      {request.arguments && Object.keys(request.arguments).length > 0 && (
+        <div>
+          <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">Arguments</div>
+          <pre className="font-mono-tech text-[8px] text-hud-cyan/40 max-h-20 overflow-y-auto">
+            {JSON.stringify(request.arguments, null, 2)}
+          </pre>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function AgentConfirmResult({ result }: { result: string | null }) {
+  return (
+    <AnimatePresence>
+      {result && (
+        <motion.div
+          initial={{ opacity: 0, height: 0 }}
+          animate={{ opacity: 1, height: 'auto' }}
+          exit={{ opacity: 0, height: 0 }}
+          className="mb-4 rounded border border-white/10 bg-white/5 px-3 py-2 font-mono-tech text-[10px] text-white/60"
+        >
+          {result}
+        </motion.div>
+      )}
+    </AnimatePresence>
+  );
+}
+
+interface AgentConfirmActionsProps {
+  status: 'idle' | 'confirming' | 'cancelling' | 'done';
+  risk: RiskStyle;
+  onCancel: () => void;
+  onConfirm: () => void;
+}
+
+function AgentConfirmActions({ status, risk, onCancel, onConfirm }: AgentConfirmActionsProps) {
+  return (
+    <>
+      {status === 'idle' && (
+        <div className="flex gap-3">
+          <button
+            onClick={onCancel}
+            className="flex-1 hud-btn py-2.5 rounded border border-hud-red/40 font-orbitron text-[10px] tracking-widest text-hud-red/80 hover:bg-hud-red/10 hover:border-hud-red/70 transition-all flex items-center justify-center gap-2"
+          >
+            <XCircle size={12} />
+            DENY
+          </button>
+          <button
+            onClick={onConfirm}
+            className="flex-1 py-2.5 rounded border font-orbitron text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
+            style={{
+              borderColor: risk.color,
+              color: risk.color,
+              background: `${risk.color}15`,
+            }}
+          >
+            <CheckCircle size={12} />
+            AUTHORIZE
+          </button>
+        </div>
+      )}
+
+      {(status === 'confirming' || status === 'cancelling') && (
+        <div className="flex items-center justify-center gap-2 py-2 font-orbitron text-[10px] text-hud-cyan/60">
+          <div className="w-3 h-3 border border-hud-cyan/60 border-t-transparent rounded-full animate-spin" />
+          {status === 'confirming' ? 'SENDING TO AGENT...' : 'CANCELLING...'}
+        </div>
+      )}
+
+      {status === 'done' && (
+        <div className="text-center font-mono-tech text-[10px] text-white/40 py-1">
+          Closing...
+        </div>
+      )}
+    </>
+  );
+}
 
 export default function AgentConfirmModal({ request, onClose }: AgentConfirmModalProps) {
   const [status, setStatus] = useState<'idle' | 'confirming' | 'cancelling' | 'done'>('idle');
@@ -129,119 +273,16 @@ export default function AgentConfirmModal({ request, onClose }: AgentConfirmModa
         <div className="h-1 w-full" style={{ background: risk.color, boxShadow: `0 0 10px ${risk.color}` }} />
 
         <div className="p-5">
-          {/* Header */}
-          <div className="flex items-center gap-3 mb-4">
-            <div className="w-10 h-10 rounded-full border-2 flex items-center justify-center"
-              style={{ borderColor: risk.color, boxShadow: `0 0 20px ${risk.color}40` }}>
-              <Shield size={18} style={{ color: risk.color }} />
-            </div>
-            <div>
-              <div className="font-orbitron text-sm font-bold" style={{ color: risk.color }}>
-                AGENT AUTHORIZATION REQUEST
-              </div>
-              <div className="font-mono-tech text-[9px] text-white/40 uppercase tracking-widest">
-                {risk.label} · Desktop Agent
-              </div>
-            </div>
-          </div>
-
-          {/* Risk badge */}
-          <div className="flex items-center gap-2 mb-4 p-2 rounded border"
-            style={{ borderColor: `${risk.color}30`, background: `${risk.color}08` }}>
-            <AlertTriangle size={12} style={{ color: risk.color }} />
-            <span className="font-orbitron text-[9px] tracking-widest" style={{ color: risk.color }}>
-              {risk.label}
-            </span>
-          </div>
-
-          {/* Tool + command */}
-          <div className="space-y-2 mb-5">
-            <div>
-              <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">Tool</div>
-              <div className="font-mono-tech text-sm text-hud-cyan">{request.tool}</div>
-            </div>
-
-            <div>
-              <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">
-                <Terminal size={8} className="inline mr-1" />
-                Command
-              </div>
-              <div
-                className="rounded border border-hud-cyan/20 bg-black/60 px-3 py-2 font-mono-tech text-xs text-hud-cyan/80 break-all"
-                style={{ textShadow: '0 0 8px hsl(186 100% 50% / 0.3)' }}
-              >
-                {request.command}
-              </div>
-            </div>
-
-            {request.description && (
-              <div>
-                <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">Description</div>
-                <div className="font-mono-tech text-[10px] text-white/50">{request.description}</div>
-              </div>
-            )}
-
-            {request.arguments && Object.keys(request.arguments).length > 0 && (
-              <div>
-                <div className="font-orbitron text-[8px] text-white/30 uppercase tracking-widest mb-1">Arguments</div>
-                <pre className="font-mono-tech text-[8px] text-hud-cyan/40 max-h-20 overflow-y-auto">
-                  {JSON.stringify(request.arguments, null, 2)}
-                </pre>
-              </div>
-            )}
-          </div>
-
-          {/* Result display */}
-          <AnimatePresence>
-            {result && (
-              <motion.div
-                initial={{ opacity: 0, height: 0 }}
-                animate={{ opacity: 1, height: 'auto' }}
-                exit={{ opacity: 0, height: 0 }}
-                className="mb-4 rounded border border-white/10 bg-white/5 px-3 py-2 font-mono-tech text-[10px] text-white/60"
-              >
-                {result}
-              </motion.div>
-            )}
-          </AnimatePresence>
-
-          {/* Action buttons */}
-          {status === 'idle' && (
-            <div className="flex gap-3">
-              <button
-                onClick={handleCancel}
-                className="flex-1 hud-btn py-2.5 rounded border border-hud-red/40 font-orbitron text-[10px] tracking-widest text-hud-red/80 hover:bg-hud-red/10 hover:border-hud-red/70 transition-all flex items-center justify-center gap-2"
-              >
-                <XCircle size={12} />
-                DENY
-              </button>
-              <button
-                onClick={handleConfirm}
-                className="flex-1 py-2.5 rounded border font-orbitron text-[10px] tracking-widest transition-all flex items-center justify-center gap-2"
-                style={{
-                  borderColor: risk.color,
-                  color: risk.color,
-                  background: `${risk.color}15`,
-                }}
-              >
-                <CheckCircle size={12} />
-                AUTHORIZE
-              </button>
-            </div>
-          )}
-
-          {(status === 'confirming' || status === 'cancelling') && (
-            <div className="flex items-center justify-center gap-2 py-2 font-orbitron text-[10px] text-hud-cyan/60">
-              <div className="w-3 h-3 border border-hud-cyan/60 border-t-transparent rounded-full animate-spin" />
-              {status === 'confirming' ? 'SENDING TO AGENT...' : 'CANCELLING...'}
-            </div>
-          )}
-
-          {status === 'done' && (
-            <div className="text-center font-mono-tech text-[10px] text-white/40 py-1">
-              Closing...
-            </div>
-          )}
+          <AgentConfirmHeader risk={risk} />
+          <AgentConfirmBadge risk={risk} />
+          <AgentConfirmDetails request={request} />
+          <AgentConfirmResult result={result} />
+          <AgentConfirmActions
+            status={status}
+            risk={risk}
+            onCancel={handleCancel}
+            onConfirm={handleConfirm}
+          />
         </div>
       </motion.div>
     </AnimatePresence>
