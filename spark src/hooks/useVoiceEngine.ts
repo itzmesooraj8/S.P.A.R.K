@@ -198,40 +198,80 @@ export function stopTTS() {
   _emitTtsState({ speaking: false, progress: 0, currentSec: 0, durationSec: 0 });
 }
 
-export function useVoiceEngine() {
-  const [status, setStatus] = useState<AiStatus>('idle');
-  const [isListening, setIsListening] = useState(false);
+function useAmplitudeTracking() {
+  const [amplitude, setAmplitude] = useState<number[]>(new Array(32).fill(0));
+  const animFrameRef = useRef<number>(0);
+  const streamRef = useRef<MediaStream | null>(null);
+  const audioContextRef = useRef<AudioContext | null>(null);
+  const analyserRef = useRef<AnalyserNode | null>(null);
+
+  const stopAmplitudeTracking = useCallback(() => {
+    cancelAnimationFrame(animFrameRef.current);
+    setAmplitude(new Array(32).fill(0));
+    if (streamRef.current) {
+      streamRef.current.getTracks().forEach(t => t.stop());
+      streamRef.current = null;
+    }
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+      audioContextRef.current = null;
+    }
+    analyserRef.current = null;
+  }, []);
+
+  const startAmplitudeTracking = useCallback(async (): Promise<MediaStream> => {
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: {
+        echoCancellation: true,
+        noiseSuppression: true,
+        autoGainControl: true,
+      },
+    });
+
+    streamRef.current = stream;
+
+    if (audioContextRef.current) {
+      audioContextRef.current.close().catch(() => {});
+    }
+
+    const ctx = new AudioContext();
+    audioContextRef.current = ctx;
+    const source = ctx.createMediaStreamSource(stream);
+    const analyser = ctx.createAnalyser();
+    analyser.fftSize = 64;
+    source.connect(analyser);
+    analyserRef.current = analyser;
+
+    const data = new Uint8Array(analyser.frequencyBinCount);
+    const tick = () => {
+      analyser.getByteFrequencyData(data);
+      setAmplitude(Array.from(data).slice(0, 32).map((v) => v / 255));
+      animFrameRef.current = requestAnimationFrame(tick);
+    };
+    tick();
+
+    return stream;
+  }, []);
+
+  useEffect(() => {
+    return () => {
+      stopAmplitudeTracking();
+    };
+  }, [stopAmplitudeTracking]);
+
+  return { amplitude, startAmplitudeTracking, stopAmplitudeTracking };
+}
+
+function useAiConnection(options: {
+  isListeningRef: React.MutableRefObject<boolean>;
+  ttsEnabled: boolean;
+  onStatusChange: (status: AiStatus | ((prev: AiStatus) => AiStatus)) => void;
+}) {
   const [isOnline, setIsOnline] = useState(false);
-  const [transcript, setTranscript] = useState('');
   const [aiResponse, setAiResponse] = useState('');
-  const [ttsEnabled, setTtsEnabled] = useState(true); // SPARK speaks by default
   const [commandHistory, setCommandHistory] = useState<CommandEntry[]>([
     { id: '0', type: 'ai', text: 'SPARK v4.1 Sovereign Core initialized. Awaiting input.', timestamp: new Date() },
   ]);
-  const [amplitude, setAmplitude] = useState<number[]>(new Array(32).fill(0));
-  const [ttsPlayback, setTtsPlayback] = useState<TtsPlaybackState>(_ttsState);
-
-  const analyserRef = useRef<AnalyserNode | null>(null);
-  const audioContextRef = useRef<AudioContext | null>(null);
-  const animFrameRef = useRef<number>(0);
-  const streamRef = useRef<MediaStream | null>(null);
-  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
-  const sttSocketRef = useRef<WebSocket | null>(null);
-  const sttChunksRef = useRef<Blob[]>([]);
-  const sttMimeTypeRef = useRef('audio/webm');
-  const sttFinalPendingRef = useRef(false);
-  const sttFinalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Real WebSocket Reference
-  const wsRef = useRef<WebSocket | null>(null);
-  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const retryDelayRef = useRef(RECONNECT_BASE_MS);
-  const outboundQueueRef = useRef<string[]>([]);
-  const awaitingResponseRef = useRef(false);
-  const mountedRef = useRef(true);
-  const ttsEnabledRef = useRef(ttsEnabled);
-  const aiResponseRef = useRef('');
-  const isListeningRef = useRef(isListening);
 
   const addEntry = useCallback((type: 'user' | 'ai', text: string) => {
     setCommandHistory(prev => [...prev.slice(-49), {
@@ -241,25 +281,25 @@ export function useVoiceEngine() {
     }]);
   }, []);
 
-  useEffect(() => {
-    ttsEnabledRef.current = ttsEnabled;
-  }, [ttsEnabled]);
+  const wsRef = useRef<WebSocket | null>(null);
+  const reconnectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const retryDelayRef = useRef(RECONNECT_BASE_MS);
+  const outboundQueueRef = useRef<string[]>([]);
+  const awaitingResponseRef = useRef(false);
+  const mountedRef = useRef(true);
+  const aiResponseRef = useRef('');
 
-  useEffect(() => {
-    aiResponseRef.current = aiResponse;
-  }, [aiResponse]);
+  const ttsEnabledRef = useRef(options.ttsEnabled);
 
-  useEffect(() => {
-    isListeningRef.current = isListening;
-  }, [isListening]);
+  useEffect(() => { ttsEnabledRef.current = options.ttsEnabled; }, [options.ttsEnabled]);
+  useEffect(() => { aiResponseRef.current = aiResponse; }, [aiResponse]);
 
-  useEffect(() => {
-    return _subscribeTtsState(setTtsPlayback);
-  }, []);
+  const onStatusChangeRef = useRef(options.onStatusChange);
+  useEffect(() => { onStatusChangeRef.current = options.onStatusChange; }, [options.onStatusChange]);
 
   const finishStreamingResponse = useCallback((opts?: { errorMessage?: string; skipTts?: boolean }) => {
     awaitingResponseRef.current = false;
-    setStatus(isListeningRef.current ? 'listening' : 'idle');
+    onStatusChangeRef.current(options.isListeningRef.current ? 'listening' : 'idle');
 
     const finalMessage = aiResponseRef.current.trim();
     aiResponseRef.current = '';
@@ -275,7 +315,7 @@ export function useVoiceEngine() {
     if (opts?.errorMessage) {
       addEntry('ai', opts.errorMessage);
     }
-  }, [addEntry]);
+  }, [addEntry, options.isListeningRef]);
 
   const flushSendQueue = useCallback(() => {
     const socket = wsRef.current;
@@ -325,7 +365,7 @@ export function useVoiceEngine() {
               : '';
 
           if (!token) return;
-          setStatus('responding');
+          onStatusChangeRef.current('responding');
           setAiResponse((prev) => {
             const next = prev + token;
             aiResponseRef.current = next;
@@ -413,7 +453,7 @@ export function useVoiceEngine() {
     if (awaitingResponseRef.current) return;
 
     addEntry('user', message);
-    setStatus('thinking');
+    onStatusChangeRef.current('thinking');
     aiResponseRef.current = '';
     setAiResponse('');
     awaitingResponseRef.current = true;
@@ -431,11 +471,61 @@ export function useVoiceEngine() {
     connectWS();
   }, [addEntry, connectWS]);
 
-  const processInput = useCallback((input: string) => {
-    sendUserMessage(input);
-  }, [sendUserMessage]);
+  const cancelGeneration = useCallback(() => {
+    awaitingResponseRef.current = false;
+    aiResponseRef.current = '';
+    setAiResponse('');
+    onStatusChangeRef.current(options.isListeningRef.current ? 'listening' : 'idle');
 
-  // ---------- Microphone / Audio Architecture ----------
+    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
+      wsRef.current.send(JSON.stringify({ type: 'CANCEL' }));
+    }
+  }, [options.isListeningRef]);
+
+  return {
+    isOnline,
+    aiResponse,
+    commandHistory,
+    addEntry,
+    sendUserMessage,
+    cancelGeneration
+  };
+}
+
+function useSpeechToText(options: {
+  onStatusChange: (status: AiStatus | ((prev: AiStatus) => AiStatus)) => void;
+  onTranscript: (transcript: string) => void;
+  onInput: (input: string) => void;
+  addEntry: (type: 'ai' | 'user', message: string) => void;
+  startAmplitudeTracking: () => Promise<MediaStream>;
+  stopAmplitudeTracking: () => void;
+}) {
+  const [isListening, setIsListening] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const sttSocketRef = useRef<WebSocket | null>(null);
+  const sttChunksRef = useRef<Blob[]>([]);
+  const sttMimeTypeRef = useRef('audio/webm');
+  const sttFinalPendingRef = useRef(false);
+  const sttFinalTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isListeningRef = useRef(isListening);
+
+  useEffect(() => { isListeningRef.current = isListening; }, [isListening]);
+
+  const onStatusChangeRef = useRef(options.onStatusChange);
+  const onTranscriptRef = useRef(options.onTranscript);
+  const onInputRef = useRef(options.onInput);
+  const addEntryRef = useRef(options.addEntry);
+  const startAmplitudeTrackingRef = useRef(options.startAmplitudeTracking);
+  const stopAmplitudeTrackingRef = useRef(options.stopAmplitudeTracking);
+
+  useEffect(() => {
+    onStatusChangeRef.current = options.onStatusChange;
+    onTranscriptRef.current = options.onTranscript;
+    onInputRef.current = options.onInput;
+    addEntryRef.current = options.addEntry;
+    startAmplitudeTrackingRef.current = options.startAmplitudeTracking;
+    stopAmplitudeTrackingRef.current = options.stopAmplitudeTracking;
+  }, [options]);
 
   const clearSttFinalTimer = useCallback(() => {
     if (sttFinalTimerRef.current) {
@@ -458,54 +548,6 @@ export function useVoiceEngine() {
     }
     sttSocketRef.current = null;
   }, [clearSttFinalTimer]);
-
-  const stopAmplitudeTracking = useCallback(() => {
-    cancelAnimationFrame(animFrameRef.current);
-    setAmplitude(new Array(32).fill(0));
-    if (streamRef.current) {
-      streamRef.current.getTracks().forEach(t => t.stop());
-      streamRef.current = null;
-    }
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-      audioContextRef.current = null;
-    }
-    analyserRef.current = null;
-  }, []);
-
-  const startAmplitudeTracking = useCallback(async (): Promise<MediaStream> => {
-    const stream = await navigator.mediaDevices.getUserMedia({
-      audio: {
-        echoCancellation: true,
-        noiseSuppression: true,
-        autoGainControl: true,
-      },
-    });
-
-    streamRef.current = stream;
-
-    if (audioContextRef.current) {
-      audioContextRef.current.close().catch(() => {});
-    }
-
-    const ctx = new AudioContext();
-    audioContextRef.current = ctx;
-    const source = ctx.createMediaStreamSource(stream);
-    const analyser = ctx.createAnalyser();
-    analyser.fftSize = 64;
-    source.connect(analyser);
-    analyserRef.current = analyser;
-
-    const data = new Uint8Array(analyser.frequencyBinCount);
-    const tick = () => {
-      analyser.getByteFrequencyData(data);
-      setAmplitude(Array.from(data).slice(0, 32).map((v) => v / 255));
-      animFrameRef.current = requestAnimationFrame(tick);
-    };
-    tick();
-
-    return stream;
-  }, []);
 
   const transcribeViaHttp = useCallback(async (audioBlob: Blob): Promise<string> => {
     const formData = new FormData();
@@ -535,29 +577,29 @@ export function useVoiceEngine() {
     closeSttSocket();
 
     if (chunks.length === 0) {
-      addEntry('ai', '[ERROR] No microphone audio captured.');
-      setStatus('idle');
+      addEntryRef.current('ai', '[ERROR] No microphone audio captured.');
+      onStatusChangeRef.current('idle');
       return;
     }
 
     try {
       const blob = new Blob(chunks, { type: sttMimeTypeRef.current || 'audio/webm' });
       const text = await transcribeViaHttp(blob);
-      setTranscript(text);
+      onTranscriptRef.current(text);
 
       if (text) {
-        processInput(text);
+        onInputRef.current(text);
       } else {
-        setStatus('idle');
+        onStatusChangeRef.current('idle');
       }
     } catch (err) {
       const message = err instanceof Error ? err.message : 'Transcription failed.';
-      addEntry('ai', `[ERROR] ${message}`);
-      setStatus('idle');
+      addEntryRef.current('ai', `[ERROR] ${message}`);
+      onStatusChangeRef.current('idle');
     } finally {
       sttChunksRef.current = [];
     }
-  }, [addEntry, closeSttSocket, processInput, transcribeViaHttp]);
+  }, [closeSttSocket, transcribeViaHttp]);
 
   const stopListening = useCallback(() => {
     isListeningRef.current = false;
@@ -565,9 +607,9 @@ export function useVoiceEngine() {
 
     const recorder = mediaRecorderRef.current;
     if (!recorder || recorder.state === 'inactive') {
-      stopAmplitudeTracking();
+      stopAmplitudeTrackingRef.current();
       closeSttSocket();
-      setStatus((prev) => {
+      onStatusChangeRef.current((prev) => {
         if (prev === 'thinking' || prev === 'responding') {
           return prev;
         }
@@ -576,10 +618,10 @@ export function useVoiceEngine() {
       return;
     }
 
-    setStatus('thinking');
+    onStatusChangeRef.current('thinking');
 
     recorder.onstop = () => {
-      stopAmplitudeTracking();
+      stopAmplitudeTrackingRef.current();
       mediaRecorderRef.current = null;
 
       const socket = sttSocketRef.current;
@@ -606,20 +648,20 @@ export function useVoiceEngine() {
     };
 
     recorder.stop();
-  }, [clearSttFinalTimer, closeSttSocket, finalizeWithFallback, stopAmplitudeTracking]);
+  }, [clearSttFinalTimer, closeSttSocket, finalizeWithFallback]);
 
   const startListening = useCallback(async () => {
     if (typeof MediaRecorder === 'undefined') {
-      addEntry('ai', '[ERROR] MediaRecorder is not supported in this browser.');
+      addEntryRef.current('ai', '[ERROR] MediaRecorder is not supported in this browser.');
       return;
     }
 
     closeSttSocket();
     sttChunksRef.current = [];
-    setTranscript('');
+    onTranscriptRef.current('');
 
     try {
-      const stream = await startAmplitudeTracking();
+      const stream = await startAmplitudeTrackingRef.current();
       const mimeType = MediaRecorder.isTypeSupported('audio/ogg;codecs=opus')
         ? 'audio/ogg;codecs=opus'
         : (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')
@@ -656,14 +698,14 @@ export function useVoiceEngine() {
             sttFinalPendingRef.current = false;
             clearSttFinalTimer();
             const text = (frame.text || '').trim();
-            setTranscript(text);
+            onTranscriptRef.current(text);
             closeSttSocket();
             sttChunksRef.current = [];
 
             if (text) {
-              processInput(text);
+              onInputRef.current(text);
             } else {
-              setStatus('idle');
+              onStatusChangeRef.current('idle');
             }
             return;
           }
@@ -711,21 +753,21 @@ export function useVoiceEngine() {
       };
 
       recorder.onerror = () => {
-        addEntry('ai', '[ERROR] Microphone recording failed.');
+        addEntryRef.current('ai', '[ERROR] Microphone recording failed.');
         stopListening();
       };
 
       recorder.start(250);
       isListeningRef.current = true;
       setIsListening(true);
-      setStatus((prev) => (prev === 'thinking' || prev === 'responding') ? prev : 'listening');
+      onStatusChangeRef.current((prev) => (prev === 'thinking' || prev === 'responding') ? prev : 'listening');
     } catch {
-      stopAmplitudeTracking();
+      stopAmplitudeTrackingRef.current();
       closeSttSocket();
-      addEntry('ai', '[ERROR] Microphone access denied or unavailable.');
-      setStatus('idle');
+      addEntryRef.current('ai', '[ERROR] Microphone access denied or unavailable.');
+      onStatusChangeRef.current('idle');
     }
-  }, [addEntry, clearSttFinalTimer, closeSttSocket, finalizeWithFallback, processInput, startAmplitudeTracking, stopAmplitudeTracking, stopListening]);
+  }, [clearSttFinalTimer, closeSttSocket, finalizeWithFallback, stopListening]);
 
   const toggleMic = useCallback(async () => {
     if (isListeningRef.current) {
@@ -734,17 +776,6 @@ export function useVoiceEngine() {
     }
     await startListening();
   }, [startListening, stopListening]);
-
-  const cancelGeneration = useCallback(() => {
-    awaitingResponseRef.current = false;
-    aiResponseRef.current = '';
-    setAiResponse('');
-    setStatus(isListeningRef.current ? 'listening' : 'idle');
-
-    if (wsRef.current && wsRef.current.readyState === WebSocket.OPEN) {
-      wsRef.current.send(JSON.stringify({ type: 'CANCEL' }));
-    }
-  }, []);
 
   useEffect(() => {
     return () => {
@@ -758,9 +789,61 @@ export function useVoiceEngine() {
         }
       }
       closeSttSocket();
-      stopAmplitudeTracking();
     };
-  }, [closeSttSocket, stopAmplitudeTracking]);
+  }, [closeSttSocket]);
+
+  return { isListening, isListeningRef, toggleMic, stopListening };
+}
+
+export function useVoiceEngine() {
+  const [status, setStatus] = useState<AiStatus>('idle');
+  const [transcript, setTranscript] = useState('');
+  const [ttsEnabled, setTtsEnabled] = useState(true);
+  const [ttsPlayback, setTtsPlayback] = useState<TtsPlaybackState>(_ttsState);
+
+  useEffect(() => {
+    return _subscribeTtsState(setTtsPlayback);
+  }, []);
+
+  const { amplitude, startAmplitudeTracking, stopAmplitudeTracking } = useAmplitudeTracking();
+
+  const handleStatusChange = useCallback((newStatus: AiStatus | ((prev: AiStatus) => AiStatus)) => {
+    setStatus(newStatus);
+  }, []);
+
+  // Use a ref to bridge the isListening state across to the connection layer
+  // so it knows whether to revert to 'listening' or 'idle' when done.
+  const sharedIsListeningRef = useRef(false);
+
+  const {
+    isOnline,
+    aiResponse,
+    commandHistory,
+    addEntry,
+    sendUserMessage,
+    cancelGeneration
+  } = useAiConnection({
+    isListeningRef: sharedIsListeningRef,
+    ttsEnabled,
+    onStatusChange: handleStatusChange
+  });
+
+  const processInput = useCallback((input: string) => {
+    sendUserMessage(input);
+  }, [sendUserMessage]);
+
+  const { isListening, isListeningRef, toggleMic } = useSpeechToText({
+    onStatusChange: handleStatusChange,
+    onTranscript: setTranscript,
+    onInput: processInput,
+    addEntry,
+    startAmplitudeTracking,
+    stopAmplitudeTracking
+  });
+
+  useEffect(() => {
+    sharedIsListeningRef.current = isListening;
+  }, [isListening]);
 
   return {
     status, isListening, isOnline, transcript,
