@@ -22,7 +22,8 @@ requests
 httpx
 
 # ── Tools ────────────────────────────────────────────────────
-psutil
+psutil>=5.9.0
+mcp>=1.0.0
 GPUtil
 duckduckgo-search
 geopy

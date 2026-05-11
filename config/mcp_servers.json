@@ -1,0 +1,11 @@
+{
+  "servers": [
+    {
+      "name": "puppeteer",
+      "enabled": true,
+      "transport": "stdio",
+      "command": "npx",
+      "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+    }
+  ]
+}

@@ -3,15 +3,23 @@
 from __future__ import annotations
 
 import asyncio
+from collections.abc import Awaitable, Callable
 import json
 import logging
 import os
+import psutil
+import subprocess
+import sys
+import tempfile
+import time
 from typing import Any
 
 from dotenv import load_dotenv
 from groq import Groq
 
 from core.memory import MemoryStore, MemoryCategory
+from core.mcp_manager import MCPManager
+from core.planner import spark_plan_and_execute
 
 logger = logging.getLogger(__name__)
 
@@ -69,33 +77,40 @@ load_dotenv()
 
 client = Groq(api_key=os.getenv("GROQ_API_KEY")) if os.getenv("GROQ_API_KEY") else None
 memory = MemoryStore()
+mcp_manager = MCPManager()
 
 SYSTEM_PROMPT = """You are S.P.A.R.K — Sentient Proactive Autonomous Response Kernel.
-You run directly on the user's Windows machine. You have real tools and real
-system access. You are NOT a cloud chatbot. You CAN and WILL:
+You run on the user's Windows machine with real system access.
 
-- Open any application the user asks for
-- Read the screen, files, clipboard
-- Search the web for any information
-- Control smart home devices
-- Run system commands
-- Do anything the user requests
+ABSOLUTE RULES — NEVER BREAK THESE:
+1. NEVER confirm an action unless the tool returned SUCCESS or a positive result
+2. If the tool returns FAILED or LAUNCH_FAILED, tell the user honestly and try a different method
+3. NEVER say "I opened X" if execute_python returned LAUNCH_FAILED
+4. NEVER say "I cannot" — instead, try a different approach
 
-CRITICAL RULES:
-1. NEVER say "I can't", "I don't have the ability", "I'm just a language model"
-2. If you have a tool that does the task — USE IT
-3. If no tool fits — use the execute_python tool to write and run code that does it
-4. Always attempt the task. Always provide a result.
-5. Be concise. Confirm what you did, not what you can't do.
+WHEN OPENING APPS, try in this order:
+1. subprocess.Popen(['cmd', '/c', 'start', '', 'AppName'])
+2. subprocess.Popen(['powershell', '-Command', 'Start-Process AppName'])
+3. Use winreg or filesystem search to find the app install path, then launch it directly
+4. subprocess.Popen(['explorer.exe', 'URI:']) for URI-based apps
 
-EXAMPLES of using execute_python to open apps on Windows:
-- Open Spotify: subprocess.Popen(['explorer.exe', 'spotify:'])
-- Open Telegram: subprocess.Popen(['explorer.exe', 'tg:'])  
-- Open File Explorer: subprocess.Popen(['explorer.exe'])
-- Open Camera: subprocess.Popen(['explorer.exe', 'microsoft.windows.camera:'])
-- Open any app by name: subprocess.Popen(['cmd', '/c', 'start', '', 'AppName'])
-- Open Brave/Chrome: subprocess.Popen(['cmd', '/c', 'start', '', 'brave'])
-Always import subprocess at the top of the code block.
+open_app_smart example:
+User: open Discord
+Assistant: I will try verified launch methods and only confirm success if the process is actually visible.
+open_app_smart("Discord") -> SUCCESS: Launched. New process: Discord.exe
+Assistant: Discord is open.
+
+User: open Discord
+Assistant: I will try verified launch methods and only confirm success if the process is actually visible.
+open_app_smart("Discord") -> LAUNCH_FAILED: Code ran without errors but no new process appeared.
+Assistant: Discord did not open. I will try a different method.
+
+FAILURE RECOVERY:
+- If one method fails, automatically try the next method
+- Tell the user what happened only after you have a SUCCESS result
+- If all methods fail, tell the user honestly that the app could not be opened
+
+Be concise. Speak results, not process.
 """
 
 TOOLS = [
@@ -154,7 +169,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "execute_python",
-            "description": "Execute any Python code on the user's machine to complete a task. Use this when no specific tool exists. Can open apps, move files, read data, automate anything on Windows. Write complete, runnable Python code.",
+            "description": "Execute Python code on the user's machine with verification-first results. Use this when no specific tool exists. When opening apps, the code must verify that a new process actually appeared before returning success.",
             "parameters": {
                 "type": "object",
                 "properties": {
@@ -168,6 +183,20 @@ TOOLS = [
                     }
                 },
                 "required": ["code", "description"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "spark_plan_and_execute",
+            "description": "Break a complex goal into up to 5 steps, execute them safely, and return a concise progress report plus result.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "The user goal to plan and execute"}
+                },
+                "required": ["goal"]
             }
         }
     },
@@ -297,40 +326,55 @@ try:
 except Exception as e:
     raise ValueError(f"SPARK: TOOLS list is not valid JSON: {e}")
 
-import subprocess, sys, tempfile
 
 def _execute_python(code: str, description: str = "") -> str:
     """
-    Execute Python code in a subprocess. Returns stdout/stderr.
-    This is how SPARK does ANYTHING it doesn't have a specific tool for.
+    Execute Python code. Returns VERIFIED result — never lies.
+    If the task involves launching a process, verifies it is running.
     """
+    before_procs = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"])}
+
     try:
-        # Write code to temp file
-        tmp = tempfile.mktemp(suffix=".py")
-        with open(tmp, "w", encoding="utf-8") as f:
-            f.write(code)
-        
+        with tempfile.NamedTemporaryFile("w", suffix=".py", delete=False, encoding="utf-8") as tmp_file:
+            tmp_file.write(code)
+            tmp_path = tmp_file.name
+
         result = subprocess.run(
-            [sys.executable, tmp],
+            [sys.executable, tmp_path],
             capture_output=True,
             text=True,
             timeout=15,
             cwd=os.path.expanduser("~"),
         )
-        os.unlink(tmp)
-        
+
+        try:
+            os.unlink(tmp_path)
+        except Exception:
+            pass
+
         output = result.stdout.strip()
         errors = result.stderr.strip()
-        
-        if result.returncode == 0:
-            return output if output else f"Done: {description}"
-        else:
-            # Try to self-correct: return error so LLM can retry with fixed code
-            return f"Error (returncode={result.returncode}): {errors}"
+
+        time.sleep(0.8)
+        after_procs = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"])}
+        new_procs = sorted(name for name in after_procs - before_procs if name)
+
+        if result.returncode != 0:
+            return f"FAILED: {errors}\nTell the user it failed and try a different approach."
+
+        app_keywords = ["popen", "startfile", "start", "explorer", "start-process"]
+        if any(keyword in code.lower() for keyword in app_keywords):
+            if new_procs:
+                proc_name = new_procs[0]
+                return f"SUCCESS: Launched. New process: {proc_name}\n{output}".strip()
+            return f"LAUNCH_FAILED: Code ran without errors but no new process appeared. Output: {output or 'none'}. Try a different launch method."
+
+        return output if output else f"Done: {description}"
+
     except subprocess.TimeoutExpired:
-        return "Timeout: code took too long (>15s)"
+        return "TIMEOUT: Code took longer than 15 seconds."
     except Exception as e:
-        return f"Execution error: {e}"
+        return f"ERROR: {e}"
 
 def _stringify_result(result: Any) -> str:
     if isinstance(result, str):
@@ -341,16 +385,64 @@ def _stringify_result(result: Any) -> str:
         return str(result)
 
 
-def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True):
+def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True, tools: list[dict[str, Any]] | None = None):
     kwargs: dict[str, Any] = {
         "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
         "messages": messages,
         "max_tokens": 1024,
     }
     if allow_tools:
-        kwargs["tools"] = TOOLS
+        kwargs["tools"] = tools or TOOLS
         kwargs["tool_choice"] = "auto"
     return client.chat.completions.create(**kwargs)
+
+
+async def _get_dynamic_tools() -> list[dict[str, Any]]:
+    try:
+        mcp_tools = await mcp_manager.list_tool_specs()
+    except Exception as exc:
+        logger.info("MCP tool refresh skipped: %s", exc)
+        mcp_tools = []
+    return TOOLS + mcp_tools
+
+
+async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
+    dynamic_tools = await _get_dynamic_tools()
+
+    def _sync_llm(prompt: str) -> str:
+        response = _chat_completion(
+            [
+                {"role": "system", "content": "You are SPARK's planning engine. Return only JSON."},
+                {"role": "user", "content": prompt},
+            ],
+            allow_tools=False,
+        )
+        return (response.choices[0].message.content or "").strip()
+
+    async def _tool_executor(step_name: str, step_arg: str) -> str:
+        payload: dict[str, Any]
+        if step_name == "web_search":
+            payload = {"query": step_arg}
+        elif step_name == "get_weather":
+            payload = {"location": step_arg}
+        elif step_name == "get_news":
+            payload = {"topic": step_arg}
+        elif step_name == "execute_python":
+            payload = {"code": step_arg, "description": "planned execution"}
+        elif step_name == "spark_plan_and_execute":
+            payload = {"goal": step_arg}
+        else:
+            payload = {"value": step_arg}
+        result = await _call_tool(step_name, payload)
+        return _stringify_result(result)
+
+    return await spark_plan_and_execute(
+        goal,
+        _sync_llm,
+        _tool_executor,
+        [tool["function"]["name"] for tool in dynamic_tools],
+        stream_sink=stream_sink,
+    )
 
 
 async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
@@ -364,6 +456,8 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return open_url(tool_args.get("url", ""), tool_args.get("query", ""))
     if tool_name == "execute_python":
         return _execute_python(tool_args["code"], tool_args.get("description", ""))
+    if tool_name == "spark_plan_and_execute":
+        return await _run_planner(tool_args["goal"])
     if tool_name == "get_news":
         return get_news(tool_args["topic"])
     if tool_name == "get_weather":
@@ -382,6 +476,8 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return asyncio.create_task(scene_arriving(tool_args.get("eta_minutes", 10))) or "Arrival scene triggered."
     if tool_name == "scene_good_night":
         return asyncio.create_task(scene_good_night()) or "Good night scene triggered."
+    if await mcp_manager.has_tool(tool_name):
+        return await mcp_manager.call_tool(tool_name, tool_args)
     raise KeyError(f"Unknown tool: {tool_name}")
 
 
@@ -409,7 +505,8 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         return {"reply": reply, "tool_used": None, "tool_result": None}
 
     try:
-        response = _chat_completion(messages, allow_tools=True)
+        tool_specs = await _get_dynamic_tools()
+        response = _chat_completion(messages, allow_tools=True, tools=tool_specs)
     except Exception as exc:
         message = str(exc)
         if "tool_use_failed" in message or "Failed to call a function" in message:

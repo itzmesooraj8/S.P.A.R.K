@@ -50,7 +50,7 @@ def listen_for_wake_word(callback: Callable[[], None]) -> None:
     try:
         model = _load_wake_model()
     except Exception as exc:
-        logger.warning("openWakeWord unavailable: %s", exc)
+        logger.info("openWakeWord unavailable; falling back to keyboard mode: %s", exc)
         return
 
     audio = pyaudio.PyAudio()

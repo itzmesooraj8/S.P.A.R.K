@@ -4,7 +4,7 @@ import json
 import logging
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
-from typing import Callable
+from typing import Any, Awaitable, Callable
 
 
 log = logging.getLogger("spark.planner")
@@ -152,3 +152,71 @@ class TaskPlanner:
 
 
 TaskQueue = TaskPlanner
+
+
+async def spark_plan_and_execute(
+    goal: str,
+    llm_call: Callable[[str], str],
+    tool_executor: Callable[[str, str], Awaitable[str]],
+    available_tools: list[str],
+    stream_sink: Callable[[str, dict[str, Any]], None] | None = None,
+    max_steps: int = 5,
+) -> dict[str, Any]:
+    """Break a goal into bounded steps and execute them sequentially."""
+    prompt = (
+        "Break this goal into up to 5 concrete steps. "
+        f"Use only these tools when appropriate: {available_tools}. "
+        'Reply only as JSON: {"steps": ["tool:arg", ...], "summary": "..."}\n\n'
+        f"Goal: {goal}"
+    )
+    raw = llm_call(prompt)
+
+    steps: list[str] = []
+    summary = ""
+    try:
+        parsed = json.loads(raw)
+        if isinstance(parsed, dict):
+            maybe_steps = parsed.get("steps", [])
+            if isinstance(maybe_steps, list):
+                steps = [str(step) for step in maybe_steps if str(step).strip()]
+            summary = str(parsed.get("summary", "")).strip()
+    except Exception:
+        steps = []
+
+    if not steps:
+        steps = [f"respond:{goal}"]
+
+    steps = steps[:max_steps]
+    results: list[str] = []
+
+    for step in steps:
+        if ":" in step:
+            tool_name, arg = step.split(":", 1)
+        else:
+            tool_name, arg = step, ""
+        tool_name = tool_name.strip()
+        arg = arg.strip()
+
+        if stream_sink:
+            stream_sink("plan_step", {"tool": tool_name, "arg": arg})
+
+        if tool_name == "respond":
+            results.append(arg or goal)
+            continue
+
+        try:
+            result = await tool_executor(tool_name, arg)
+            results.append(f"{tool_name}: {result}")
+            if stream_sink:
+                stream_sink("plan_result", {"tool": tool_name, "result": result})
+        except Exception as exc:
+            failure = f"{tool_name}: ERROR {exc}"
+            results.append(failure)
+            if stream_sink:
+                stream_sink("plan_result", {"tool": tool_name, "result": failure})
+            break
+
+    if not summary:
+        summary = results[-1] if results else "No execution results were produced."
+
+    return {"goal": goal, "steps": steps, "results": results, "summary": summary}

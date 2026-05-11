@@ -97,7 +97,8 @@ async def startup_tasks():
             _wake_lock.release()
 
     try:
-        start_wake_engine(on_wake_callback=on_wake, use_hotword=True)
+        use_hotword = os.getenv("SPARK_ENABLE_HOTWORD", "1").strip().lower() in {"1", "true", "yes", "on"}
+        start_wake_engine(on_wake_callback=on_wake, use_hotword=use_hotword)
     except Exception as exc:
         logger.warning(f"Wake engine startup failed: {exc}")
 
