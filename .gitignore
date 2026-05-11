@@ -2,6 +2,10 @@
 .venv/
 __pycache__/
 *.pyc
+*.wav
+*.mp3
+.spark_memory/
+whisper_cache/
 dist/
 logs/
 node_modules/

@@ -18,6 +18,9 @@ from tools.news import get_news
 from tools.search import web_search
 from tools.system import get_system_stats
 from tools.weather import get_weather
+from tools.screen import read_screen
+
+from core.memory import MemoryStore, MemoryCategory
 
 load_dotenv()
 
@@ -116,6 +119,14 @@ TOOLS = [
             "parameters": {"type": "object", "properties": {}},
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_screen",
+            "description": "Read the text visible on the user's screen right now using OCR. Use when user asks 'what's on my screen', 'read this for me', 'what does it say', or wants SPARK to see something.",
+            "parameters": {"type": "object", "properties": {}},
+        },
+    },
 ]
 
 
@@ -157,11 +168,18 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return get_weather(tool_args["location"])
     if tool_name == "get_network_connections":
         return get_network_connections()
+    if tool_name == "read_screen":
+        return read_screen()
     raise KeyError(f"Unknown tool: {tool_name}")
 
 
 async def handle(user_input: str, session_history: list[dict[str, Any]], stream_sink=None, cancel_event=None) -> dict[str, Any]:
-    memories = memory.recall(user_input, top_k=3)
+    memory.extract_and_store_facts(user_input)
+    
+    facts = memory.recall(user_input, top_k=3, category=MemoryCategory.FACT)
+    recent = memory.recall(user_input, top_k=3, category=MemoryCategory.CONVERSATION)
+    memories = facts + recent
+    
     memory_ctx = ("\n[MEMORY]\n" + "\n".join(f"- {m}" for m in memories)) if memories else ""
 
     messages = [
@@ -173,14 +191,9 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     if stream_sink:
         stream_sink("status", {"state": "thinking"})
 
-    try:
-        memory.extract_and_store_facts(user_input)
-    except Exception:
-        pass
-
     if client is None:
         reply = "Groq is not configured. Set GROQ_API_KEY to enable Spark Brain."
-        memory.store(f"User: {user_input} | SPARK: {reply[:200]}")
+        memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
         return {"reply": reply, "tool_used": None, "tool_result": None}
 
     try:
@@ -227,7 +240,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     if not reply:
         reply = "I do not have a response right now."
 
-    memory.store(f"User: {user_input} | SPARK: {reply[:200]}")
+    memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
 
     if stream_sink:
         stream_sink("response_done", {"content": reply})

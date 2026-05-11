@@ -22,17 +22,22 @@ DEVICES = {
 
 
 def control_device(device: str, action: str) -> str:
+    """Connect once, publish a device action, and disconnect."""
     topic = DEVICES.get(device.lower())
     if not topic:
         return f"Unknown device: {device}. Options: {list(DEVICES.keys())}"
     if mqtt is None:
         return "MQTT is unavailable on this system."
     client = mqtt.Client()
-    client.connect(MQTT_HOST, MQTT_PORT, 60)
-    client.publish(topic, json.dumps({"action": action}))
-    client.disconnect()
-    return f"{device} -> {action} ✓"
+    try:
+        client.connect(MQTT_HOST, MQTT_PORT, 60)
+        client.publish(topic, json.dumps({"action": action}))
+        client.disconnect()
+        return f"{device} → {action} ✓"
+    except Exception as exc:
+        return f"MQTT error: {exc}"
 
 
 def list_devices() -> list[str]:
+    """Return the available smart home device names."""
     return list(DEVICES.keys())

@@ -9,6 +9,7 @@ except Exception:  # pragma: no cover - optional dependency
 
 
 def get_news(topic: str = "technology", max_results: int = 5) -> list[dict]:
+    """Return a list of recent news items for a topic."""
     try:
         if DDGS is None:
             return [{"title": "Error", "body": "duckduckgo_search is not installed", "url": ""}]
@@ -24,6 +25,6 @@ def get_news(topic: str = "technology", max_results: int = 5) -> list[dict]:
             }
             for result in results
         ]
-        return items or [{"title": "No results", "body": f"No news found for {topic}", "url": ""}]
+        return items[:max_results] or [{"title": "No results", "body": f"No news found for {topic}", "url": ""}]
     except Exception as exc:
         return [{"title": "Error", "body": str(exc), "url": ""}]

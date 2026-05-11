@@ -2,12 +2,19 @@
 
 from __future__ import annotations
 
+import os
+
 try:
     from PIL import ImageGrab
     import pytesseract
 except Exception:  # pragma: no cover - optional dependency
     ImageGrab = None  # type: ignore[assignment]
     pytesseract = None  # type: ignore[assignment]
+
+if os.name == "nt" and pytesseract is not None:
+    default_path = r"C:\Program Files\Tesseract-OCR\tesseract.exe"
+    if os.path.exists(default_path):
+        pytesseract.pytesseract.tesseract_cmd = default_path
 
 
 def read_screen() -> str:
@@ -31,3 +38,14 @@ def read_region(x1: int, y1: int, x2: int, y2: int) -> str:
         return pytesseract.image_to_string(region).strip()
     except Exception as exc:
         return f"Region read error: {exc}"
+
+
+def get_screen_dimensions() -> dict:
+    """Return screen width and height."""
+    try:
+        if ImageGrab is None:
+            return {"error": "Screen capture dependencies are not installed."}
+        screen = ImageGrab.grab()
+        return {"width": screen.width, "height": screen.height}
+    except Exception as exc:
+        return {"error": str(exc)}

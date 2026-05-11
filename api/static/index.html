@@ -214,32 +214,72 @@
             max-width: 800px;
             display: flex;
             flex-direction: column;
-            gap: 16px;
+            gap: 14px;
         }
 
         .widget-zone {
-            position: absolute;
-            top: 28px;
-            right: 28px;
-            width: min(420px, 36vw);
+            width: 100%;
+            min-height: 176px;
             display: flex;
             flex-direction: column;
             gap: 12px;
-            pointer-events: auto;
-            z-index: 15;
+            overflow: hidden;
+        }
+
+        .widget-grid {
+            display: flex;
+            gap: 12px;
+            overflow-x: auto;
+            padding-bottom: 4px;
+            scrollbar-width: thin;
+        }
+
+        .widget-grid::-webkit-scrollbar {
+            height: 6px;
+        }
+
+        .widget-grid::-webkit-scrollbar-thumb {
+            background: rgba(0, 245, 255, 0.22);
+            border-radius: 999px;
         }
 
         .widget-card {
-            background: rgba(255,255,255,0.05);
-            border: 1px solid var(--border);
+            background: rgba(10, 14, 35, 0.74);
+            border: 1px solid rgba(0, 245, 255, 0.18);
             border-radius: 16px;
             padding: 16px;
             backdrop-filter: blur(18px);
             box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+            color: rgba(255,255,255,0.9);
+            outline: none;
+            animation: widgetRise 0.45s ease both;
         }
 
-        .widget-card.weather {
-            border-color: rgba(0, 245, 255, 0.25);
+        .widget-card:focus-visible,
+        .widget-link:focus-visible,
+        .listen-button:focus-visible {
+            box-shadow: 0 0 0 2px rgba(0, 245, 255, 0.18), 0 0 0 4px rgba(0, 245, 255, 0.1);
+        }
+
+        .news-card {
+            min-width: 240px;
+            max-width: calc((100% - 24px) / 3);
+            flex: 0 0 calc((100% - 24px) / 3);
+        }
+
+        .weather-card {
+            width: 100%;
+            min-height: 136px;
+            border-color: rgba(0, 245, 255, 0.28);
+            background: linear-gradient(135deg, rgba(0, 120, 255, 0.32), rgba(0, 245, 255, 0.08));
+        }
+
+        .weather-card[data-temp-band="warm"] {
+            background: linear-gradient(135deg, rgba(255, 153, 0, 0.28), rgba(255, 94, 0, 0.1));
+        }
+
+        .weather-card[data-temp-band="hot"] {
+            background: linear-gradient(135deg, rgba(255, 61, 0, 0.3), rgba(255, 153, 0, 0.1));
         }
 
         .widget-title {
@@ -251,10 +291,26 @@
             margin-bottom: 10px;
         }
 
+        .widget-title.clamp-2,
+        .widget-body.clamp-3 {
+            display: -webkit-box;
+            -webkit-box-orient: vertical;
+            overflow: hidden;
+        }
+
+        .widget-title.clamp-2 {
+            -webkit-line-clamp: 2;
+        }
+
+        .widget-body.clamp-3 {
+            -webkit-line-clamp: 3;
+        }
+
         .widget-body {
             font-size: 13px;
             line-height: 1.5;
             color: rgba(255,255,255,0.88);
+            font-family: 'Inter', sans-serif;
         }
 
         .widget-link {
@@ -263,6 +319,90 @@
             color: var(--accent);
             text-decoration: none;
             font-size: 12px;
+        }
+
+        .widget-link:focus-visible {
+            outline: none;
+        }
+
+        .widget-temp {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            margin: 4px 0 8px;
+            letter-spacing: 1px;
+        }
+
+        .widget-meta {
+            font-size: 12px;
+            color: var(--text-dim);
+            font-family: 'Share Tech Mono', monospace;
+        }
+
+        .widget-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+            margin-top: 8px;
+        }
+
+        .widget-chip {
+            padding: 6px 10px;
+            border-radius: 999px;
+            border: 1px solid rgba(0, 245, 255, 0.18);
+            background: rgba(0,0,0,0.18);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+            color: rgba(255,255,255,0.9);
+        }
+
+        @keyframes widgetRise {
+            from { opacity: 0; transform: translateY(10px) scale(0.985); }
+            to { opacity: 1; transform: translateY(0) scale(1); }
+        }
+
+        .widget-fade-in {
+            animation: widgetRise 0.45s ease both;
+        }
+
+        .listen-button {
+            width: 52px;
+            height: 52px;
+            border-radius: 16px;
+            border: 1px solid rgba(0, 245, 255, 0.18);
+            background: rgba(255,255,255,0.04);
+            color: white;
+            font-size: 20px;
+            cursor: pointer;
+            transition: transform 0.2s ease, background 0.2s ease, border-color 0.2s ease;
+        }
+
+        .listen-button:hover {
+            transform: translateY(-1px);
+            border-color: rgba(0, 245, 255, 0.34);
+        }
+
+        .listen-button.recording {
+            background: rgba(255, 59, 48, 0.18);
+            border-color: rgba(255, 59, 48, 0.4);
+            box-shadow: 0 0 16px rgba(255, 59, 48, 0.18);
+        }
+
+        .listen-status {
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            text-transform: uppercase;
+            letter-spacing: 1px;
+        }
+
+        .input-row {
+            display: flex;
+            gap: 12px;
+            align-items: center;
+        }
+
+        .input-row input {
+            flex: 1;
         }
 
         .widget-temp {
@@ -312,6 +452,9 @@
         .input-wrapper {
             position: relative;
             width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 10px;
         }
 
         input {
@@ -334,10 +477,9 @@
         }
 
         .input-hint {
-            position: absolute;
-            right: 20px;
-            top: 50%;
-            transform: translateY(-50%);
+            position: static;
+            transform: none;
+            text-align: right;
             font-family: 'Share Tech Mono', monospace;
             font-size: 10px;
             color: var(--text-dim);
@@ -411,6 +553,13 @@
             </div>
         </div>
 
+        <div class="metric-group">
+            <div class="metric-label">
+                <span>Memory</span>
+                <span id="memory-val" style="transition: all 0.3s ease;">-- entries</span>
+            </div>
+        </div>
+
         <div class="status-indicator">
             <span class="status-dot"></span>
             NEURAL ENGINE ONLINE
@@ -418,8 +567,6 @@
     </div>
 
     <div class="main">
-        <div id="widget-zone" class="widget-zone"></div>
-
         <div class="orb-container">
             <div class="orb-ring one"></div>
             <div class="orb-ring two"></div>
@@ -431,9 +578,13 @@
             <div class="chat-history" id="chat-history">
                 <div class="message spark">Welcome back, Sooraj. Neural interfaces are calibrated and ready.</div>
             </div>
+            <div id="widget-zone" class="widget-zone"></div>
             <div class="input-wrapper">
-                <input type="text" id="chat-input" placeholder="Initiate command..." autocomplete="off">
-                <div class="input-hint">PRESS ENTER</div>
+                <div class="input-row">
+                    <input type="text" id="chat-input" placeholder="Initiate command..." autocomplete="off">
+                    <button id="listen-btn" class="listen-button" type="button" aria-label="Start voice input" title="Start voice input">🎙</button>
+                </div>
+                <div class="input-hint" id="listen-status">PRESS ENTER</div>
             </div>
         </div>
     </div>
@@ -446,10 +597,14 @@
         const cpuVal = document.getElementById('cpu-val');
         const ramVal = document.getElementById('ram-val');
         const uptimeVal = document.getElementById('uptime-val');
+        const memoryVal = document.getElementById('memory-val');
         const widgetZone = document.getElementById('widget-zone');
+        const listenBtn = document.getElementById('listen-btn');
+        const listenStatus = document.getElementById('listen-status');
         let aiWs;
         let activeSparkMessage = null;
         let activeSparkText = '';
+        let isListening = false;
 
         // --- WEBSOCKET FOR METRICS ---
         let ws;
@@ -493,6 +648,10 @@
 
                 if (eventType === 'tool_execute' || eventType === 'tool_result') {
                     showToolBadge(data.tool);
+                    if (data.tool === 'memory_store') {
+                        flashMemory();
+                        fetchMemoryCount();
+                    }
                 }
 
                 if (eventType === 'widget') {
@@ -548,65 +707,184 @@
             }
         }
 
+        async function fetchMemoryCount() {
+            try {
+                const res = await fetch('/memory');
+                if (res.ok) {
+                    const data = await res.json();
+                    memoryVal.innerText = `${data.total} entries`;
+                }
+            } catch (err) {
+                console.error("Failed to fetch memory", err);
+            }
+        }
+
+        function flashMemory() {
+            if (!memoryVal) return;
+            memoryVal.style.color = '#00ff9f';
+            memoryVal.style.textShadow = '0 0 8px #00ff9f';
+            setTimeout(() => {
+                memoryVal.style.color = '';
+                memoryVal.style.textShadow = '';
+            }, 1000);
+        }
+
         function renderWidget(type, data) {
             if (!widgetZone) return;
-            widgetZone.innerHTML = '';
-
-            if (type === 'news' && Array.isArray(data)) {
-                widgetZone.innerHTML = data.map((item) => `
-                    <div class="widget-card">
-                        <div class="widget-title">${item.title || 'News'}</div>
-                        <div class="widget-body">${item.body || ''}</div>
-                        ${item.url ? `<a href="${item.url}" target="_blank" rel="noreferrer" class="widget-link">→ read more</a>` : ''}
-                    </div>
-                `).join('');
-            }
-
-            if (type === 'weather' && data && typeof data === 'object') {
-                widgetZone.innerHTML = `
-                    <div class="widget-card weather">
-                        <div class="widget-title">${data.location || 'Weather'}</div>
-                        <div class="widget-temp">${data.temperature_c ?? '--'}°C</div>
-                        <div class="widget-meta">
-                            Humidity ${data['humidity_%'] ?? '--'}% · Wind ${data.wind_kmh ?? '--'} km/h
-                        </div>
-                    </div>`;
-            }
+            widgetZone.replaceChildren();
 
             if (type === 'system') {
                 return;
             }
+
+            if (type === 'news' && Array.isArray(data)) {
+                const row = document.createElement('div');
+                row.className = 'widget-grid';
+                data.slice(0, 5).forEach((item, index) => {
+                    const card = document.createElement('article');
+                    card.className = 'widget-card news-card widget-fade-in';
+                    card.tabIndex = 0;
+                    card.style.animationDelay = `${index * 90}ms`;
+
+                    const title = document.createElement('div');
+                    title.className = 'widget-title clamp-2';
+                    title.textContent = item?.title || 'News';
+
+                    const body = document.createElement('div');
+                    body.className = 'widget-body clamp-3';
+                    body.textContent = item?.body || '';
+
+                    card.append(title, body);
+
+                    if (item?.url) {
+                        const link = document.createElement('a');
+                        link.className = 'widget-link';
+                        link.href = item.url;
+                        link.target = '_blank';
+                        link.rel = 'noreferrer noopener';
+                        link.textContent = '→ read more';
+                        card.appendChild(link);
+                    }
+
+                    row.appendChild(card);
+                });
+                widgetZone.appendChild(row);
+                return;
+            }
+
+            if (type === 'weather' && data && typeof data === 'object') {
+                const temp = Number(data.temperature_c ?? data.temperature ?? 0);
+                const band = temp <= 15 ? 'cold' : temp <= 28 ? 'warm' : 'hot';
+                const card = document.createElement('article');
+                card.className = 'widget-card weather-card widget-fade-in';
+                card.dataset.tempBand = band;
+                card.tabIndex = 0;
+
+                const title = document.createElement('div');
+                title.className = 'widget-title';
+                title.textContent = data.location || 'Weather';
+
+                const tempNode = document.createElement('div');
+                tempNode.className = 'widget-temp';
+                tempNode.textContent = `${Number.isFinite(temp) ? Math.round(temp) : '--'}°C`;
+
+                const meta = document.createElement('div');
+                meta.className = 'widget-meta';
+                meta.textContent = `Humidity ${data['humidity_%'] ?? '--'}% · Wind ${data.wind_kmh ?? '--'} km/h`;
+
+                const row = document.createElement('div');
+                row.className = 'widget-row';
+                row.append(
+                    chip(`Code ${data.weather_code ?? '--'}`),
+                    chip(band.toUpperCase()),
+                );
+
+                card.append(title, tempNode, meta, row);
+                widgetZone.appendChild(card);
+            }
+        }
+
+        function chip(text) {
+            const el = document.createElement('span');
+            el.className = 'widget-chip';
+            el.textContent = text;
+            return el;
+        }
+
+        function setListenState(active) {
+            isListening = active;
+            listenBtn.classList.toggle('recording', active);
+            listenBtn.disabled = active;
+            listenBtn.setAttribute('aria-busy', String(active));
+            listenStatus.textContent = active ? 'Listening...' : 'PRESS ENTER';
+        }
+
+        async function sendTextMessage(msg) {
+            addMessage(msg, 'user');
+            activeSparkText = '';
+            activeSparkMessage = addMessage('Thinking...', 'spark');
+
+            try {
+                if (aiWs && aiWs.readyState === WebSocket.OPEN) {
+                    aiWs.send(JSON.stringify({ message: msg }));
+                    return;
+                }
+
+                const response = await fetch('/chat', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ message: msg })
+                });
+                const data = await response.json();
+                setMessageText(activeSparkMessage, data.response || 'Ready.');
+                activeSparkMessage = null;
+            } catch (err) {
+                setMessageText(activeSparkMessage, 'Error communicating with Neural Engine.');
+                activeSparkMessage = null;
+            }
+        }
+
+        async function listenForSpeech() {
+            if (isListening) return;
+            setListenState(true);
+            try {
+                const response = await fetch('/listen', { method: 'POST' });
+                const data = await response.json();
+
+                if (data.error) {
+                    addMessage(data.error, 'spark');
+                    return;
+                }
+
+                if (data.transcript) {
+                    addMessage(`Transcribed: ${data.transcript}`, 'spark');
+                }
+
+                if (data.reply) {
+                    addMessage(data.reply, 'spark');
+                }
+
+                if (data.tool_used) {
+                    showToolBadge(data.tool_used);
+                }
+            } catch (err) {
+                addMessage('Voice pipeline error.', 'spark');
+            } finally {
+                setListenState(false);
+            }
         }
 
         // --- CHAT INTERACTION ---
-        chatInput.addEventListener('keydown', async (e) => {
+        chatInput.addEventListener('keydown', (e) => {
             if (e.key === 'Enter' && chatInput.value.trim()) {
                 const msg = chatInput.value.trim();
                 chatInput.value = '';
-                
-                // Add user message
-                addMessage(msg, 'user');
-                activeSparkText = '';
-                activeSparkMessage = addMessage('Thinking...', 'spark');
-
-                try {
-                    if (aiWs && aiWs.readyState === WebSocket.OPEN) {
-                        aiWs.send(JSON.stringify({ message: msg }));
-                    } else {
-                        const response = await fetch('/chat', {
-                            method: 'POST',
-                            headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ message: msg })
-                        });
-                        const data = await response.json();
-                        activeSparkMessage.innerText = data.response;
-                        activeSparkMessage = null;
-                    }
-                } catch (err) {
-                    activeSparkMessage.innerText = 'Error communicating with Neural Engine.';
-                    activeSparkMessage = null;
-                }
+                sendTextMessage(msg);
             }
+        });
+
+        listenBtn.addEventListener('click', () => {
+            listenForSpeech();
         });
 
         function addMessage(text, side) {
@@ -633,6 +911,7 @@
         // Start
         connectWS();
         connectAI();
+        fetchMemoryCount();
         
         // Simulating metrics update every 10s if WS is slow
         setInterval(() => {

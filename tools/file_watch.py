@@ -15,17 +15,17 @@ except Exception:  # pragma: no cover - optional dependency
     Observer = None  # type: ignore[assignment]
 
 SECRET_PATTERNS = [
-    (r"AKIA[0-9A-Z]{16}", "AWS Access Key"),
-    (r"sk-[a-zA-Z0-9]{32,}", "OpenAI/API Key"),
-    (r"ghp_[a-zA-Z0-9]{36}", "GitHub Personal Token"),
-    (r"AIza[0-9A-Za-z-_]{35}", "Google API Key"),
-    (r'["\']?api[_-]?key["\']?\s*[:=]\s*["\'][a-zA-Z0-9_-]{20,}', "Generic API Key"),
-    (r'password\s*=\s*["\'][^"\']{8,}', "Hardcoded Password"),
+    (r"AKIA[0-9A-Z]{16}", "AWS key"),
+    (r"sk-[a-zA-Z0-9]{32,}", "OpenAI key"),
+    (r"ghp_[a-zA-Z0-9]{36}", "GitHub token"),
+    (r"AIza[0-9A-Za-z-_]{35}", "Google API key"),
+    (r'(?i)(?:api[_-]?key|secret|token)\s*[:=]\s*["\']?[A-Za-z0-9_\-]{16,}', "Generic API key"),
+    (r'(?i)password\s*[:=]\s*["\']?[^"\'\s]{8,}', "Hardcoded password"),
 ]
 
 
 def scan_for_secrets(directory: str = ".") -> list[dict]:
-    """Scan a directory for exposed secrets and API keys."""
+    """Walk a directory and report any secret-like patterns that are found."""
     findings: list[dict] = []
     skip_dirs = {".git", "node_modules", "__pycache__", ".venv", "venv"}
     text_extensions = {".py", ".js", ".ts", ".env", ".yml", ".yaml", ".json", ".txt", ".md"}
@@ -46,7 +46,7 @@ def scan_for_secrets(directory: str = ".") -> list[dict]:
 
 
 def hash_file(path: str) -> str:
-    """SHA256 hash a file for integrity checking."""
+    """Return the SHA256 hash of a file's contents."""
     h = hashlib.sha256()
     with open(path, "rb") as file_handle:
         for chunk in iter(lambda: file_handle.read(4096), b""):
@@ -55,7 +55,7 @@ def hash_file(path: str) -> str:
 
 
 def build_integrity_snapshot(directory: str = ".") -> dict[str, str]:
-    """Build a hash snapshot of all Python files."""
+    """Build a SHA256 snapshot for all Python files under a directory."""
     snapshot: dict[str, str] = {}
     for path in Path(directory).rglob("*.py"):
         try:
@@ -66,7 +66,7 @@ def build_integrity_snapshot(directory: str = ".") -> dict[str, str]:
 
 
 def check_integrity(snapshot: dict[str, str]) -> list[dict]:
-    """Compare current state to snapshot. Returns changed files."""
+    """Compare the current filesystem against a saved integrity snapshot."""
     changes: list[dict] = []
     for filepath, original_hash in snapshot.items():
         try:

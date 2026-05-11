@@ -15,6 +15,7 @@ import os
 import uuid
 import threading
 from typing import Any
+import requests
 
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 STATIC_DIR = os.path.join(BASE_DIR, "api", "static")
@@ -22,7 +23,7 @@ STATIC_DIR = os.path.join(BASE_DIR, "api", "static")
 # Add parent directory to path to import tools
 sys.path.append(BASE_DIR)
 from tools.sysmon import get_raw_metrics
-from tools.voice import listen_and_transcribe, speak
+from tools.voice import listen_and_transcribe, speak, load_whisper
 from api.routes.memory import router as memory_router
 from api.routes.projects import router as projects_router
 from api.routes.personal import router as personal_router
@@ -32,6 +33,9 @@ from api.routes.security import router as security_router
 import core.main as spark_main
 from core.main import run_agent_turn
 from core.spark_brain import handle as spark_brain_handle
+from core.spark_brain import memory as spark_memory
+from core.memory import MemoryCategory
+from core.wake_word import start_wake_engine
 
 import logging
 
@@ -68,6 +72,28 @@ async def rate_limit(request: Request):
     if len(request_counts[ip]) >= 60:
         raise HTTPException(status_code=429, detail="Rate limit exceeded")
     request_counts[ip].append(now)
+
+
+@app.on_event("startup")
+async def startup_tasks():
+    try:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(None, load_whisper)
+    except Exception as exc:
+        logger.warning(f"Whisper preload failed: {exc}")
+
+    def on_wake():
+        try:
+            resp = requests.post("http://localhost:8000/listen", timeout=30)
+            reply = resp.json().get("reply", "")
+            print(f"[SPARK] {reply}")
+        except Exception as exc:
+            print(f"[SPARK] Wake handler error: {exc}")
+
+    try:
+        start_wake_engine(on_wake_callback=on_wake, use_hotword=True)
+    except Exception as exc:
+        logger.warning(f"Wake engine startup failed: {exc}")
 
 # Mount static files for the HUD
 if not os.path.exists(STATIC_DIR):
@@ -121,6 +147,15 @@ async def health_check():
 async def status():
     return {"status": "ok", "service": "S.P.A.R.K"}
 
+
+@app.get("/memory")
+async def get_memory_stats():
+    return {
+        "total": spark_memory.count(),
+        "facts": len(spark_memory.recall("", top_k=100, category=MemoryCategory.FACT)),
+        "recent": spark_memory.recall("last conversation", top_k=5),
+    }
+
 class ChatRequest(BaseModel):
     message: str
 
@@ -135,11 +170,13 @@ async def chat_endpoint(request: ChatRequest):
 @app.post("/listen")
 async def listen_endpoint():
     """Record 5s of audio, transcribe, run through SPARK."""
-    text = await asyncio.to_thread(listen_and_transcribe, 5)
+    loop = asyncio.get_running_loop()
+    text = await loop.run_in_executor(None, listen_and_transcribe, 5)
     if not text:
         return {"error": "No speech detected"}
     result = await spark_brain_handle(text, [])
     await speak(result["reply"])
+    result["transcript"] = text
     return result
 
 class ConnectionManager:

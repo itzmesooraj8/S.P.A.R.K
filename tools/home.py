@@ -9,13 +9,15 @@ from tools.voice import speak
 
 
 async def scene_leaving():
+    """Turn off the home devices and confirm departure."""
     for device in ["fan", "light", "bedroom_light", "ac"]:
         control_device(device, "off")
     await speak("All devices off. Home secured. Safe travels.")
-    return "Leaving home - all devices off."
+    return "Leaving home — all devices off."
 
 
 async def scene_arriving(eta_minutes: int = 10):
+    """Prepare the home for arrival, then finish after the ETA delay."""
     control_device("ac", "on")
     await speak("Got it. AC on. I'll have everything ready when you arrive.")
     await asyncio.sleep(eta_minutes * 60)
@@ -25,6 +27,7 @@ async def scene_arriving(eta_minutes: int = 10):
 
 
 async def scene_good_night():
+    """Switch the home into bedtime mode."""
     control_device("light", "off")
     control_device("bedroom_light", "off")
     control_device("ac", "off")

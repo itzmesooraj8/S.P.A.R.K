@@ -17,11 +17,31 @@ export default function MemoryPanel() {
   const [sessionId, setSessionId] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [memoryCount, setMemoryCount] = useState<number | null>(null);
+  const [memoryFlash, setMemoryFlash] = useState(false);
 
   const sessionQuery = useMemo(() => {
     const value = sessionId.trim();
     return value ? `&session_id=${encodeURIComponent(value)}` : '';
   }, [sessionId]);
+
+  const loadMemoryStats = async () => {
+    try {
+      const res = await fetch(`${API}/memory`);
+      if (!res.ok) return;
+      const data = await res.json();
+      const nextCount = typeof data.total === 'number' ? data.total : null;
+      setMemoryCount((prev) => {
+        if (prev !== null && nextCount !== null && prev !== nextCount) {
+          setMemoryFlash(true);
+          window.setTimeout(() => setMemoryFlash(false), 900);
+        }
+        return nextCount;
+      });
+    } catch {
+      // keep panel resilient while backend reconnects
+    }
+  };
 
   const loadRecent = async () => {
     setLoading(true);
@@ -71,8 +91,13 @@ export default function MemoryPanel() {
 
   useEffect(() => {
     loadRecent();
+    loadMemoryStats();
     const timer = window.setInterval(loadRecent, 15000);
-    return () => window.clearInterval(timer);
+    const memoryTimer = window.setInterval(loadMemoryStats, 15000);
+    return () => {
+      window.clearInterval(timer);
+      window.clearInterval(memoryTimer);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionQuery]);
 
@@ -80,6 +105,11 @@ export default function MemoryPanel() {
     <div className="h-full flex flex-col gap-2 overflow-y-auto scrollbar-hud p-2 animate-boot-left" style={{ animationDelay: '0.25s' }}>
       <div className="flex items-center justify-between pb-1 border-b border-hud-cyan/20">
         <span className="font-orbitron text-[9px] tracking-widest neon-text">MEMORY VIEWER</span>
+        <span
+          className={`font-mono-tech text-[7px] uppercase tracking-[0.24em] transition-colors ${memoryFlash ? 'text-hud-green' : 'text-hud-cyan/45'}`}
+        >
+          Memory: {memoryCount ?? '...'} entries
+        </span>
         <button
           onClick={loadRecent}
           className="p-1 rounded border border-hud-cyan/25 text-hud-cyan/60 hover:text-hud-cyan"

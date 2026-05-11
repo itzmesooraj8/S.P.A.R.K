@@ -4,51 +4,75 @@ from __future__ import annotations
 
 import logging
 import threading
+from typing import Callable
+
+logger = logging.getLogger("SPARK_WAKE")
 
 try:
     import keyboard
 except Exception:  # pragma: no cover - optional dependency at runtime
     keyboard = None
 
-logger = logging.getLogger("SPARK_WAKE")
+FORMAT = None
+CHANNELS = 1
+RATE = 16000
+CHUNK = 1280
+THRESHOLD = 0.5
 
 _listener_started = False
 _hotkey_handle = None
+oww_model = None
 
 
-def listen_for_wake_word(callback):
-    """Best-effort wake listener with openWakeWord fallback to hotkey mode."""
+def _load_wake_model():
+    """Load the openWakeWord model once if the optional dependencies exist."""
+    global oww_model, FORMAT
+    if oww_model is not None:
+        return oww_model
+    import numpy as np  # noqa: F401
+    import pyaudio
+    from openwakeword.model import Model
+
+    FORMAT = pyaudio.paInt16
+    oww_model = Model(wakeword_models=["hey_jarvis"])
+    return oww_model
+
+
+def listen_for_wake_word(callback: Callable[[], None]) -> None:
+    """Blocking mic loop that invokes a callback when the wake score crosses the threshold."""
     try:
         import numpy as np
         import pyaudio
-        from openwakeword.model import Model
-    except Exception:
-        logger.info("openWakeWord unavailable; falling back to hotkey mode.")
-        callback()
+    except Exception as exc:
+        logger.warning("Wake word dependencies unavailable: %s", exc)
         return
 
-    model = Model(wakeword_models=["hey_jarvis"])
-    format_ = pyaudio.paInt16
-    channels = 1
-    rate = 16000
-    chunk = 1280
+    try:
+        model = _load_wake_model()
+    except Exception as exc:
+        logger.warning("openWakeWord unavailable: %s", exc)
+        return
 
     audio = pyaudio.PyAudio()
-    mic = audio.open(format=format_, channels=channels, rate=rate, input=True, frames_per_buffer=chunk)
-    logger.info("[SPARK] Listening for wake word...")
+    mic = audio.open(format=FORMAT, channels=CHANNELS, rate=RATE, input=True, frames_per_buffer=CHUNK)
+    logger.info("[SPARK] Wake word listener active. Say 'Hey SPARK'...")
 
     while True:
-        pcm = mic.read(chunk, exception_on_overflow=False)
+        pcm = mic.read(CHUNK, exception_on_overflow=False)
         audio_data = np.frombuffer(pcm, dtype=np.int16)
         prediction = model.predict(audio_data)
         for _, score in prediction.items():
-            if score > 0.5:
-                logger.info("[SPARK] Wake word detected!")
-                callback()
+            if score > THRESHOLD:
+                logger.info("[SPARK] Wake word! Score: %.2f", score)
+                try:
+                    callback()
+                except Exception as exc:
+                    logger.exception("Wake callback failed: %s", exc)
                 break
 
 
 def start_wake_engine(on_wake_callback=None, use_hotword: bool = True):
+    """Start wake-word monitoring in a daemon thread or fall back to F9 hotkey."""
     global _listener_started, _hotkey_handle
     if _listener_started:
         return
@@ -88,6 +112,7 @@ def start_wake_engine(on_wake_callback=None, use_hotword: bool = True):
 
 
 def stop_wake_engine():
+    """Stop any hotkey registration created by the wake engine."""
     global _listener_started, _hotkey_handle
     if keyboard is not None and _hotkey_handle is not None:
         try:

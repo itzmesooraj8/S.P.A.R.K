@@ -38,6 +38,7 @@ async def speak(text: str) -> str:
 
 
 def load_whisper():
+    """Load the Whisper base model once and reuse it."""
     global whisper_model
     if whisper is None:
         raise RuntimeError("openai-whisper is not installed")
@@ -61,11 +62,17 @@ def record_audio(duration: int = 5, sample_rate: int = 16000) -> str:
 
 def listen_and_transcribe(duration: int = 5) -> str:
     """Record audio and return transcribed text."""
+    wav_path = ""
     try:
-        model = load_whisper()
         wav_path = record_audio(duration)
-        result = model.transcribe(wav_path)
-        os.unlink(wav_path)
+        model = load_whisper()
+        result = model.transcribe(wav_path, fp16=False)
         return result.get("text", "").strip()
-    except Exception as exc:
-        return f""
+    except Exception:
+        return ""
+    finally:
+        if wav_path and os.path.exists(wav_path):
+            try:
+                os.unlink(wav_path)
+            except Exception:
+                pass

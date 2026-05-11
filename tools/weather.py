@@ -15,6 +15,7 @@ logger = logging.getLogger("SPARK_WEATHER")
 
 
 def get_weather(location: str) -> dict:
+    """Geocode a location and return current Open-Meteo weather data."""
     try:
         if Nominatim is None:
             return {"error": "geopy is not installed"}
@@ -24,13 +25,16 @@ def get_weather(location: str) -> dict:
         if not loc:
             return {"error": f"Location not found: {location}"}
 
-        url = (
-            "https://api.open-meteo.com/v1/forecast"
-            f"?latitude={loc.latitude}&longitude={loc.longitude}"
-            "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code"
-            "&temperature_unit=celsius"
+        resp = httpx.get(
+            "https://api.open-meteo.com/v1/forecast",
+            params={
+                "latitude": loc.latitude,
+                "longitude": loc.longitude,
+                "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code",
+                "temperature_unit": "celsius",
+            },
+            timeout=10,
         )
-        resp = httpx.get(url, timeout=10)
         resp.raise_for_status()
         data = resp.json()
         current = data["current"]
