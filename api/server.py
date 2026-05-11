@@ -82,13 +82,19 @@ async def startup_tasks():
     except Exception as exc:
         logger.warning(f"Whisper preload failed: {exc}")
 
+    _wake_lock = threading.Lock()
+
     def on_wake():
+        if not _wake_lock.acquire(blocking=False):
+            return  # already processing, skip
         try:
             resp = requests.post("http://localhost:8000/listen", timeout=30)
             reply = resp.json().get("reply", "")
             print(f"[SPARK] {reply}")
         except Exception as exc:
             print(f"[SPARK] Wake handler error: {exc}")
+        finally:
+            _wake_lock.release()
 
     try:
         start_wake_engine(on_wake_callback=on_wake, use_hotword=True)
@@ -150,9 +156,15 @@ async def status():
 
 @app.get("/memory")
 async def get_memory_stats():
+    try:
+        results = spark_memory.collection.get(where={"category": "fact"})
+        facts_count = len(results["ids"]) if results and "ids" in results else 0
+    except Exception:
+        facts_count = 0
+
     return {
         "total": spark_memory.count(),
-        "facts": len(spark_memory.recall("", top_k=100, category=MemoryCategory.FACT)),
+        "facts": facts_count,
         "recent": spark_memory.recall("last conversation", top_k=5),
     }
 
