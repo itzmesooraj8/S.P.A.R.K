@@ -4,23 +4,66 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 from typing import Any
 
 from dotenv import load_dotenv
 from groq import Groq
 
-from core.memory import MemoryStore
-from tools.browser import open_app, open_url
-from tools.clipboard import get_clipboard
-from tools.network import get_network_connections
-from tools.news import get_news
-from tools.search import web_search
-from tools.system import get_system_stats
-from tools.weather import get_weather
-from tools.screen import read_screen
-
 from core.memory import MemoryStore, MemoryCategory
+
+logger = logging.getLogger(__name__)
+
+try:
+    from tools.browser import open_app, open_url
+except ImportError as e:
+    logger.warning(f"Failed to import browser tools: {e}")
+
+try:
+    from tools.clipboard import get_clipboard
+except ImportError as e:
+    logger.warning(f"Failed to import clipboard tools: {e}")
+
+try:
+    from tools.network import get_network_connections
+except ImportError as e:
+    logger.warning(f"Failed to import network tools: {e}")
+
+try:
+    from tools.news import get_news
+except ImportError as e:
+    logger.warning(f"Failed to import news tools: {e}")
+
+try:
+    from tools.search import web_search
+except ImportError as e:
+    logger.warning(f"Failed to import search tools: {e}")
+
+try:
+    from tools.system import get_system_stats
+except ImportError as e:
+    logger.warning(f"Failed to import system tools: {e}")
+
+try:
+    from tools.weather import get_weather
+except ImportError as e:
+    logger.warning(f"Failed to import weather tools: {e}")
+
+try:
+    from tools.screen import read_screen, read_region
+except ImportError as e:
+    logger.warning(f"Failed to import screen tools: {e}")
+
+try:
+    from tools.iot import control_device
+except ImportError as e:
+    logger.warning(f"Failed to import iot tools: {e}")
+
+try:
+    from tools.home import scene_leaving, scene_arriving, scene_good_night
+except ImportError as e:
+    logger.warning(f"Failed to import home tools: {e}")
 
 load_dotenv()
 
@@ -50,7 +93,11 @@ TOOLS = [
         "function": {
             "name": "get_system_stats",
             "description": "Get CPU, RAM, disk, GPU stats of the user's computer",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object", 
+                "properties": {},
+                "required": []
+            },
         },
     },
     {
@@ -58,7 +105,11 @@ TOOLS = [
         "function": {
             "name": "get_clipboard",
             "description": "Read what is currently in the user's clipboard",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object", 
+                "properties": {},
+                "required": []
+            },
         },
     },
     {
@@ -72,6 +123,7 @@ TOOLS = [
                     "url": {"type": "string"},
                     "query": {"type": "string", "description": "For maps: location to show"},
                 },
+                "required": []
             },
         },
     },
@@ -79,7 +131,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "open_app",
-            "description": "Open an installed application",
+            "description": "Open an installed desktop application by name. Supported: spotify, chrome, vscode, terminal",
             "parameters": {
                 "type": "object",
                 "properties": {"app_name": {"type": "string"}},
@@ -116,17 +168,95 @@ TOOLS = [
         "function": {
             "name": "get_network_connections",
             "description": "Show active network connections and open ports for security monitoring",
-            "parameters": {"type": "object", "properties": {}},
+            "parameters": {
+                "type": "object", 
+                "properties": {},
+                "required": []
+            },
         },
     },
     {
         "type": "function",
         "function": {
             "name": "read_screen",
-            "description": "Read the text visible on the user's screen right now using OCR. Use when user asks 'what's on my screen', 'read this for me', 'what does it say', or wants SPARK to see something.",
-            "parameters": {"type": "object", "properties": {}},
+            "description": "Read all text visible on the user's screen right now using OCR. Use when user says 'read my screen', 'what's on my screen', 'read this for me'",
+            "parameters": {
+                "type": "object", 
+                "properties": {},
+                "required": []
+            },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "read_region",
+            "description": "Read text from a specific region of the screen by pixel coordinates",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x1": {"type": "integer"},
+                    "y1": {"type": "integer"},
+                    "x2": {"type": "integer"},
+                    "y2": {"type": "integer"}
+                },
+                "required": ["x1", "y1", "x2", "y2"]
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "control_device",
+            "description": "Control a smart home device via MQTT. Devices: fan, light, bedroom_light, ac. Actions: on, off",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "device": {"type": "string"},
+                    "action": {"type": "string"}
+                },
+                "required": ["device", "action"]
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scene_leaving",
+            "description": "Trigger the scene when leaving the house",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scene_arriving",
+            "description": "Trigger the scene when arriving at the house",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "eta_minutes": {"type": "integer"}
+                },
+                "required": []
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "scene_good_night",
+            "description": "Trigger the good night scene for sleep",
+            "parameters": {
+                "type": "object",
+                "properties": {},
+                "required": []
+            },
+        },
+    }
 ]
 
 
@@ -170,6 +300,16 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return get_network_connections()
     if tool_name == "read_screen":
         return read_screen()
+    if tool_name == "read_region":
+        return read_region(tool_args["x1"], tool_args["y1"], tool_args["x2"], tool_args["y2"])
+    if tool_name == "control_device":
+        return control_device(tool_args["device"], tool_args["action"])
+    if tool_name == "scene_leaving":
+        return asyncio.create_task(scene_leaving()) or "Leaving scene triggered."
+    if tool_name == "scene_arriving":
+        return asyncio.create_task(scene_arriving(tool_args.get("eta_minutes", 10))) or "Arrival scene triggered."
+    if tool_name == "scene_good_night":
+        return asyncio.create_task(scene_good_night()) or "Good night scene triggered."
     raise KeyError(f"Unknown tool: {tool_name}")
 
 

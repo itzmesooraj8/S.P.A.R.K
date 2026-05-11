@@ -8,11 +8,13 @@ class MemoryCategory(str, Enum):
     TASK = "task"          # "I have an exam Friday", "remind me to call mom"
     CONVERSATION = "conv"  # General chat history
 
+_encoder = SentenceTransformer("all-MiniLM-L6-v2")
+
 class MemoryStore:
     def __init__(self):
         self.client = chromadb.PersistentClient(path=".spark_memory")
         self.collection = self.client.get_or_create_collection("spark_v2")
-        self.encoder = SentenceTransformer("all-MiniLM-L6-v2")
+        self.encoder = _encoder
 
     def store(self, text: str,
               category: MemoryCategory = MemoryCategory.CONVERSATION) -> None:

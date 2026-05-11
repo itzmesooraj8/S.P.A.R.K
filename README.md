@@ -93,3 +93,12 @@ To enable the `read_screen` functionality, install Tesseract OCR on your host ma
 
 After system install, ensure Python dependencies are available:
 `pip install pillow pytesseract`
+
+## Wake Word Setup
+To enable the background "Hey SPARK" wake word engine:
+```bash
+pip install openwakeword
+# If pyaudio fails on Windows, install it via pipwin:
+pip install pipwin
+pipwin install pyaudio
+```
