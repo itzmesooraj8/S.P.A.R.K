@@ -29,46 +29,65 @@ except Exception:  # pragma: no cover - optional dependency
 whisper_model = None
 
 
-async def speak(text: str) -> None:
-    """Speak text using EdgeTTS. Falls back to pyttsx3 if EdgeTTS fails."""
+import asyncio, re, threading
+
+def _speak_sync(text: str) -> None:
+    """Synchronous TTS. Runs in a thread so it never blocks."""
     if not text or not text.strip():
         return
-    # Sanitize — remove markdown
-    import re
-    clean = re.sub(r'[*_`#\[\]()]', '', text)
+    # Strip markdown
+    clean = re.sub(r'[*_`#\[\]()\-]+', ' ', text)
     clean = re.sub(r'https?://\S+', 'link', clean)
-    clean = clean[:500]  # cap length for TTS
-
+    clean = ' '.join(clean.split())[:400]
+    if not clean:
+        return
+    
+    # Try pyttsx3 first (offline, instant, no audio device issues)
     try:
-        import edge_tts
-        import tempfile, os
-        communicate = edge_tts.Communicate(clean, voice="en-US-AriaNeural")
-        tmp = tempfile.mktemp(suffix=".mp3")
-        await communicate.save(tmp)
-        # Play with pygame
-        try:
-            import pygame
-            pygame.mixer.init()
-            pygame.mixer.music.load(tmp)
-            pygame.mixer.music.play()
-            while pygame.mixer.music.get_busy():
-                await asyncio.sleep(0.1)
-            pygame.mixer.music.unload()
-        finally:
-            try:
-                os.unlink(tmp)
-            except Exception:
-                pass
-    except Exception as e:
-        # Fallback: pyttsx3 (offline, no internet needed)
-        try:
-            import pyttsx3
-            engine = pyttsx3.init()
-            engine.setProperty('rate', 175)
-            engine.say(clean)
-            engine.runAndWait()
-        except Exception as e2:
-            print(f"[SPARK] TTS failed: {e} | fallback: {e2}")
+        import pyttsx3
+        engine = pyttsx3.init()
+        engine.setProperty('rate', 180)
+        engine.setProperty('volume', 0.9)
+        # Use a natural voice if available
+        voices = engine.getProperty('voices')
+        for voice in voices:
+            if 'zira' in voice.name.lower() or 'david' in voice.name.lower():
+                engine.setProperty('voice', voice.id)
+                break
+        engine.say(clean)
+        engine.runAndWait()
+        engine.stop()
+        return
+    except Exception as e1:
+        pass
+    
+    # Fallback: EdgeTTS
+    try:
+        import edge_tts, tempfile, os
+        import pygame
+        
+        async def _edge():
+            communicate = edge_tts.Communicate(clean, voice="en-US-AriaNeural")
+            tmp = tempfile.mktemp(suffix=".mp3")
+            await communicate.save(tmp)
+            return tmp
+        
+        tmp = asyncio.run(_edge())
+        pygame.mixer.init()
+        pygame.mixer.music.load(tmp)
+        pygame.mixer.music.play()
+        import time
+        while pygame.mixer.music.get_busy():
+            time.sleep(0.1)
+        pygame.mixer.music.unload()
+        os.unlink(tmp)
+    except Exception as e2:
+        print(f"[SPARK TTS] Both engines failed: pyttsx3={e1}, edge={e2}")
+
+async def speak(text: str) -> None:
+    """Non-blocking async wrapper. Fire and forget."""
+    thread = threading.Thread(target=_speak_sync, args=(text,), daemon=True)
+    thread.start()
 
 
 def load_whisper():
@@ -112,5 +131,4 @@ def listen_and_transcribe(duration: int = 5) -> str:
                 pass
 
 if __name__ == "__main__":
-    import asyncio
-    asyncio.run(speak("SPARK voice system online. Audio confirmed."))
+    _speak_sync("S.P.A.R.K voice system online. Audio confirmed.")

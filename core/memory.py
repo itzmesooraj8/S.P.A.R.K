@@ -8,16 +8,28 @@ class MemoryCategory(str, Enum):
     TASK = "task"          # "I have an exam Friday", "remind me to call mom"
     CONVERSATION = "conv"  # General chat history
 
-_encoder = SentenceTransformer("all-MiniLM-L6-v2")
+import logging
+_logger = logging.getLogger("SPARK_MEMORY")
+
+_logger.info("Loading SentenceTransformer encoder (once)...")
+try:
+    from sentence_transformers import SentenceTransformer as _ST
+    _ENCODER = _ST("all-MiniLM-L6-v2")
+    _logger.info("SentenceTransformer encoder ready.")
+except Exception as _e:
+    _logger.error(f"SentenceTransformer failed to load: {_e}")
+    _ENCODER = None
 
 class MemoryStore:
     def __init__(self):
         self.client = chromadb.PersistentClient(path=".spark_memory")
         self.collection = self.client.get_or_create_collection("spark_v2")
-        self.encoder = _encoder
+        self.encoder = _ENCODER
 
     def store(self, text: str,
               category: MemoryCategory = MemoryCategory.CONVERSATION) -> None:
+        if self.encoder is None:
+            return
         embedding = self.encoder.encode([text])[0].tolist()
         self.collection.add(
             documents=[text],
@@ -28,6 +40,8 @@ class MemoryStore:
 
     def recall(self, query: str, top_k: int = 5,
                category: MemoryCategory = None) -> list[str]:
+        if self.encoder is None:
+            return []
         if self.collection.count() == 0:
             return []
         embedding = self.encoder.encode([query])[0].tolist()

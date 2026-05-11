@@ -71,9 +71,32 @@ client = Groq(api_key=os.getenv("GROQ_API_KEY")) if os.getenv("GROQ_API_KEY") el
 memory = MemoryStore()
 
 SYSTEM_PROMPT = """You are S.P.A.R.K — Sentient Proactive Autonomous Response Kernel.
-You are a local personal AI running on the user's machine.
-Use tools when the request clearly benefits from real data.
-Be direct and concise. Never hallucinate data you can fetch."""
+You run directly on the user's Windows machine. You have real tools and real
+system access. You are NOT a cloud chatbot. You CAN and WILL:
+
+- Open any application the user asks for
+- Read the screen, files, clipboard
+- Search the web for any information
+- Control smart home devices
+- Run system commands
+- Do anything the user requests
+
+CRITICAL RULES:
+1. NEVER say "I can't", "I don't have the ability", "I'm just a language model"
+2. If you have a tool that does the task — USE IT
+3. If no tool fits — use the execute_python tool to write and run code that does it
+4. Always attempt the task. Always provide a result.
+5. Be concise. Confirm what you did, not what you can't do.
+
+EXAMPLES of using execute_python to open apps on Windows:
+- Open Spotify: subprocess.Popen(['explorer.exe', 'spotify:'])
+- Open Telegram: subprocess.Popen(['explorer.exe', 'tg:'])  
+- Open File Explorer: subprocess.Popen(['explorer.exe'])
+- Open Camera: subprocess.Popen(['explorer.exe', 'microsoft.windows.camera:'])
+- Open any app by name: subprocess.Popen(['cmd', '/c', 'start', '', 'AppName'])
+- Open Brave/Chrome: subprocess.Popen(['cmd', '/c', 'start', '', 'brave'])
+Always import subprocess at the top of the code block.
+"""
 
 TOOLS = [
     {
@@ -130,14 +153,23 @@ TOOLS = [
     {
         "type": "function",
         "function": {
-            "name": "open_app",
-            "description": "Open any installed application on the user's computer by name. Works for Spotify, Telegram, Chrome, Camera, File Manager, Calculator, Notepad, Discord, WhatsApp, VS Code, and any other installed app. Use this whenever the user says 'open X' or 'launch X'.",
+            "name": "execute_python",
+            "description": "Execute any Python code on the user's machine to complete a task. Use this when no specific tool exists. Can open apps, move files, read data, automate anything on Windows. Write complete, runnable Python code.",
             "parameters": {
                 "type": "object",
-                "properties": {"app_name": {"type": "string"}},
-                "required": ["app_name"],
-            },
-        },
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Complete Python code to execute. Must be self-contained and runnable."
+                    },
+                    "description": {
+                        "type": "string",
+                        "description": "One sentence: what this code does"
+                    }
+                },
+                "required": ["code", "description"]
+            }
+        }
     },
     {
         "type": "function",
@@ -265,6 +297,41 @@ try:
 except Exception as e:
     raise ValueError(f"SPARK: TOOLS list is not valid JSON: {e}")
 
+import subprocess, sys, tempfile
+
+def _execute_python(code: str, description: str = "") -> str:
+    """
+    Execute Python code in a subprocess. Returns stdout/stderr.
+    This is how SPARK does ANYTHING it doesn't have a specific tool for.
+    """
+    try:
+        # Write code to temp file
+        tmp = tempfile.mktemp(suffix=".py")
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(code)
+        
+        result = subprocess.run(
+            [sys.executable, tmp],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            cwd=os.path.expanduser("~"),
+        )
+        os.unlink(tmp)
+        
+        output = result.stdout.strip()
+        errors = result.stderr.strip()
+        
+        if result.returncode == 0:
+            return output if output else f"Done: {description}"
+        else:
+            # Try to self-correct: return error so LLM can retry with fixed code
+            return f"Error (returncode={result.returncode}): {errors}"
+    except subprocess.TimeoutExpired:
+        return "Timeout: code took too long (>15s)"
+    except Exception as e:
+        return f"Execution error: {e}"
+
 def _stringify_result(result: Any) -> str:
     if isinstance(result, str):
         return result
@@ -295,8 +362,8 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return get_clipboard()
     if tool_name == "open_url":
         return open_url(tool_args.get("url", ""), tool_args.get("query", ""))
-    if tool_name == "open_app":
-        return open_app(tool_args["app_name"])
+    if tool_name == "execute_python":
+        return _execute_python(tool_args["code"], tool_args.get("description", ""))
     if tool_name == "get_news":
         return get_news(tool_args["topic"])
     if tool_name == "get_weather":
