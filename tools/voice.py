@@ -6,8 +6,6 @@ import asyncio
 import os
 import tempfile
 
-from audio.tts import SparkVoice
-
 try:
     import numpy as np
 except Exception:  # pragma: no cover - optional dependency
@@ -31,10 +29,46 @@ except Exception:  # pragma: no cover - optional dependency
 whisper_model = None
 
 
-async def speak(text: str) -> str:
-    voice = SparkVoice()
-    await asyncio.to_thread(voice.speak, text)
-    return "Speaking."
+async def speak(text: str) -> None:
+    """Speak text using EdgeTTS. Falls back to pyttsx3 if EdgeTTS fails."""
+    if not text or not text.strip():
+        return
+    # Sanitize — remove markdown
+    import re
+    clean = re.sub(r'[*_`#\[\]()]', '', text)
+    clean = re.sub(r'https?://\S+', 'link', clean)
+    clean = clean[:500]  # cap length for TTS
+
+    try:
+        import edge_tts
+        import tempfile, os
+        communicate = edge_tts.Communicate(clean, voice="en-US-AriaNeural")
+        tmp = tempfile.mktemp(suffix=".mp3")
+        await communicate.save(tmp)
+        # Play with pygame
+        try:
+            import pygame
+            pygame.mixer.init()
+            pygame.mixer.music.load(tmp)
+            pygame.mixer.music.play()
+            while pygame.mixer.music.get_busy():
+                await asyncio.sleep(0.1)
+            pygame.mixer.music.unload()
+        finally:
+            try:
+                os.unlink(tmp)
+            except Exception:
+                pass
+    except Exception as e:
+        # Fallback: pyttsx3 (offline, no internet needed)
+        try:
+            import pyttsx3
+            engine = pyttsx3.init()
+            engine.setProperty('rate', 175)
+            engine.say(clean)
+            engine.runAndWait()
+        except Exception as e2:
+            print(f"[SPARK] TTS failed: {e} | fallback: {e2}")
 
 
 def load_whisper():
@@ -76,3 +110,7 @@ def listen_and_transcribe(duration: int = 5) -> str:
                 os.unlink(wav_path)
             except Exception:
                 pass
+
+if __name__ == "__main__":
+    import asyncio
+    asyncio.run(speak("SPARK voice system online. Audio confirmed."))

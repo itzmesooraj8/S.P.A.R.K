@@ -131,7 +131,7 @@ TOOLS = [
         "type": "function",
         "function": {
             "name": "open_app",
-            "description": "Open an installed desktop application by name. Supported: spotify, chrome, vscode, terminal",
+            "description": "Open any installed application on the user's computer by name. Works for Spotify, Telegram, Chrome, Camera, File Manager, Calculator, Notepad, Discord, WhatsApp, VS Code, and any other installed app. Use this whenever the user says 'open X' or 'launch X'.",
             "parameters": {
                 "type": "object",
                 "properties": {"app_name": {"type": "string"}},
@@ -260,6 +260,11 @@ TOOLS = [
 ]
 
 
+try:
+    json.dumps(TOOLS)
+except Exception as e:
+    raise ValueError(f"SPARK: TOOLS list is not valid JSON: {e}")
+
 def _stringify_result(result: Any) -> str:
     if isinstance(result, str):
         return result
@@ -384,5 +389,20 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
 
     if stream_sink:
         stream_sink("response_done", {"content": reply})
+
+    # Speak every reply out loud
+    try:
+        from tools.voice import speak
+        asyncio.create_task(speak(reply))
+    except RuntimeError:
+        # No running event loop (e.g. called from sync context)
+        import threading
+        from tools.voice import speak
+        threading.Thread(
+            target=lambda: asyncio.run(speak(reply)),
+            daemon=True
+        ).start()
+    except Exception as e:
+        logger.error(f"TTS Error: {e}")
 
     return {"reply": reply, "tool_used": tool_used, "tool_result": tool_result}

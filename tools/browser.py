@@ -20,40 +20,94 @@ def open_url(url: str = "", query: str = "") -> str:
 
 
 def open_app(app_name: str) -> str:
-    try:
-        app = app_name.lower().strip()
-        commands = {
-            "spotify": {
-                "win32": ["cmd", "/c", "start", "", "spotify"],
-                "linux": ["spotify"],
-                "darwin": ["open", "-a", "Spotify"],
-            },
-            "chrome": {
-                "win32": ["cmd", "/c", "start", "", "chrome"],
-                "linux": ["google-chrome"],
-                "darwin": ["open", "-a", "Google Chrome"],
-            },
-            "vscode": {
-                "win32": ["cmd", "/c", "start", "", "code"],
-                "linux": ["code"],
-                "darwin": ["open", "-a", "Visual Studio Code"],
-            },
-            "terminal": {
-                "win32": ["cmd", "/c", "start", "", "cmd"],
-                "linux": ["gnome-terminal"],
-                "darwin": ["open", "-a", "Terminal"],
-            },
+    """
+    Open any application on Windows/Linux/Mac by name.
+    Uses dynamic system search instead of a hardcoded list.
+    """
+    import subprocess, sys, shutil
+
+    app = app_name.strip().lower()
+
+    # Windows: use the Start menu search via explorer shell
+    if sys.platform == "win32":
+        # Method 1: Try direct executable name
+        if shutil.which(app):
+            subprocess.Popen([app])
+            return f"Opened {app_name}."
+
+        # Method 2: Try common Windows app names
+        win_aliases = {
+            "camera": "microsoft.windows.camera:",
+            "file manager": "explorer.exe",
+            "file explorer": "explorer.exe",
+            "notepad": "notepad.exe",
+            "calculator": "calc.exe",
+            "paint": "mspaint.exe",
+            "task manager": "taskmgr.exe",
+            "settings": "ms-settings:",
+            "store": "ms-windows-store:",
+            "mail": "outlookmail:",
+            "calendar": "outlookcal:",
+            "photos": "ms-photos:",
+            "maps": "bingmaps:",
+            "music": "mswindowsmusic:",
         }
-        command_map = commands.get(app)
-        if not command_map:
-            return f"Unknown app: {app_name}"
+        if app in win_aliases:
+            target = win_aliases[app]
+            if target.endswith(".exe"):
+                subprocess.Popen([target])
+            else:
+                subprocess.Popen(["explorer.exe", target])
+            return f"Opened {app_name}."
 
-        platform_key = "win32" if sys.platform.startswith("win") else "darwin" if sys.platform == "darwin" else "linux"
-        command = command_map.get(platform_key) or command_map.get("linux") or command_map.get("win32")
-        if not command:
-            return f"Unknown app: {app_name}"
+        # Method 3: Try as a URI scheme (works for Spotify, Telegram, etc.)
+        uri_schemes = {
+            "spotify": "spotify:",
+            "telegram": "tg:",
+            "discord": "discord:",
+            "slack": "slack:",
+            "zoom": "zoommtg:",
+            "teams": "msteams:",
+            "whatsapp": "whatsapp:",
+            "vlc": "vlc:",
+        }
+        if app in uri_schemes:
+            subprocess.Popen(["explorer.exe", uri_schemes[app]])
+            return f"Opened {app_name}."
 
-        subprocess.Popen(command)
-        return f"{app} opened"
-    except Exception as exc:
-        return f"Unable to open {app_name}: {exc}"
+        # Method 4: Search Windows Start menu via PowerShell
+        try:
+            ps_cmd = (
+                f"$app = Get-StartApps | Where-Object {{$_.Name -like '*{app_name}*'}} | "
+                f"Select-Object -First 1; "
+                f"if ($app) {{ Start-Process shell:appsFolder\\$($app.AppID) }}"
+            )
+            subprocess.Popen(
+                ["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd],
+                creationflags=subprocess.CREATE_NO_WINDOW
+            )
+            return f"Searching for {app_name} in Start menu..."
+        except Exception as e:
+            return f"Could not open {app_name}: {e}"
+
+    # Linux
+    elif sys.platform.startswith("linux"):
+        linux_aliases = {
+            "file manager": ["nautilus", "thunar", "nemo", "dolphin"],
+            "camera": ["cheese", "guvcview"],
+            "terminal": ["gnome-terminal", "xterm", "konsole"],
+        }
+        candidates = linux_aliases.get(app, [app])
+        for cmd in candidates:
+            if shutil.which(cmd):
+                subprocess.Popen([cmd])
+                return f"Opened {app_name}."
+        return f"Could not find {app_name} on this system."
+
+    # macOS
+    else:
+        try:
+            subprocess.Popen(["open", "-a", app_name])
+            return f"Opened {app_name}."
+        except Exception as e:
+            return f"Could not open {app_name}: {e}"
