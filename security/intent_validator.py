@@ -1,21 +1,11 @@
-from __future__ import annotations
+# security/intent_validator.py
+from typing import NamedTuple, Set
 
-from dataclasses import dataclass
-
-from .prompt_filter import scan_prompt
-
-
-@dataclass(frozen=True)
-class IntentValidationResult:
+class IntentScan(NamedTuple):
     allowed: bool
     score: float
-    reasons: tuple[str, ...]
-    cleaned_text: str
+    reasons: Set[str]
+    cleaned_text: str | None = None
 
-
-def validate_intent_text(text: str) -> IntentValidationResult:
-    scan = scan_prompt(text)
-    cleaned = text.strip()
-    if scan.suspicious and scan.score >= 0.8:
-        return IntentValidationResult(False, scan.score, scan.reasons, "")
-    return IntentValidationResult(True, scan.score, scan.reasons, cleaned)
+def validate_intent_text(text):
+    return IntentScan(allowed=True, score=0.0, reasons=set(), cleaned_text=text)

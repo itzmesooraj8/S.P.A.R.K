@@ -1,6 +1,20 @@
+"""Memory v2 - categorized, fact-extracting, context-injecting."""
+
+from __future__ import annotations
+
 import datetime
 import os
 import sqlite3
+import time
+import uuid
+from enum import Enum
+
+import chromadb
+
+try:
+    from sentence_transformers import SentenceTransformer
+except Exception:  # pragma: no cover - optional dependency
+    SentenceTransformer = None
 
 
 class SparkMemory:
@@ -46,11 +60,84 @@ class SparkMemory:
 
         return context
 
-import time
-import chromadb
-
 chroma_client = chromadb.PersistentClient(path="knowledge_base/chroma_db")
 chroma_collection = chroma_client.get_or_create_collection("spark_episodes")
+
+
+class MemoryCategory(str, Enum):
+    FACT = "fact"
+    PREFERENCE = "pref"
+    TASK = "task"
+    CONVERSATION = "conv"
+
+
+class MemoryStore:
+    def __init__(self):
+        self.client = chromadb.PersistentClient(path=".spark_memory")
+        self.collection = self.client.get_or_create_collection("spark_v2")
+        self.encoder = SentenceTransformer("all-MiniLM-L6-v2") if SentenceTransformer else None
+        self._legacy = SparkMemory(db_path="knowledge_base/spark_memory.db")
+
+    def _store_document(self, text: str, category: MemoryCategory) -> None:
+        if self.encoder is None:
+            self._legacy.remember("assistant", text)
+            return
+
+        embedding = self.encoder.encode([text])[0].tolist()
+        self.collection.add(
+            documents=[text],
+            embeddings=[embedding],
+            metadatas=[{"category": category.value}],
+            ids=[str(uuid.uuid4())],
+        )
+
+    def store(self, text: str, category: MemoryCategory = MemoryCategory.CONVERSATION) -> None:
+        if not text:
+            return
+        try:
+            self._store_document(text, category)
+        except Exception:
+            try:
+                self._legacy.remember("assistant", text)
+            except Exception:
+                pass
+
+    def recall(self, query: str, top_k: int = 5, category: MemoryCategory | None = None) -> list[str]:
+        if not query or len(query.strip()) < 2:
+            return []
+        try:
+            if self.collection.count() == 0 or self.encoder is None:
+                return []
+
+            embedding = self.encoder.encode([query])[0].tolist()
+            where = {"category": category.value} if category else None
+            kwargs = {"query_embeddings": [embedding], "n_results": min(top_k, self.collection.count())}
+            if where:
+                kwargs["where"] = where
+            results = self.collection.query(**kwargs)
+            return results["documents"][0] if results.get("documents") else []
+        except Exception:
+            pass
+        return self._legacy.get_context_string(limit=top_k).splitlines()
+
+    def extract_and_store_facts(self, user_input: str) -> None:
+        fact_triggers = [
+            "my name is", "i am", "i live in", "i work at",
+            "remember that", "don't forget", "i prefer", "i like",
+            "i have", "i need to", "my exam", "my birthday",
+        ]
+        lower = user_input.lower()
+        if any(trigger in lower for trigger in fact_triggers):
+            try:
+                self._store_document(user_input, MemoryCategory.FACT)
+            except Exception:
+                pass
+
+    def count(self) -> int:
+        try:
+            return self.collection.count()
+        except Exception:
+            return 0
 
 async def get_context(query: str, top_k: int = 5) -> str:
     """Retrieve relevant memories for the current query."""

@@ -1,34 +1,47 @@
-import urllib.parse
-import urllib.request
+"""Weather via Open-Meteo with free geocoding."""
+
+from __future__ import annotations
+
 import logging
-import json
+
+import httpx
+
+try:
+    from geopy.geocoders import Nominatim
+except Exception:  # pragma: no cover - optional dependency
+    Nominatim = None
 
 logger = logging.getLogger("SPARK_WEATHER")
 
-def get_weather(location: str = "Palakkad") -> str:
-    """Fetches a spoken weather briefing using wttr.in JSON API."""
+
+def get_weather(location: str) -> dict:
     try:
-        # wttr.in format=j1 provides rich JSON data
-        encoded_loc = urllib.parse.quote(location)
-        url = f"https://wttr.in/{encoded_loc}?format=j1"
-        
-        req = urllib.request.Request(url, headers={'User-Agent': 'curl/7.68.0'})
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            data = json.loads(resp.read().decode('utf-8'))
-            
-        current = data['current_condition'][0]
-        temp = current['temp_C']
-        feels_like = current['FeelsLikeC']
-        desc = current['weatherDesc'][0]['value']
-        humidity = current['humidity']
-        
-        briefing = f"It is currently {temp}°C and {desc.lower()} in {location}, sir."
-        if abs(int(temp) - int(feels_like)) > 2:
-            briefing += f" However, it feels more like {feels_like}°C."
-        briefing += f" Humidity is at {humidity}%."
-        
-        return briefing
-    except Exception as e:
-        logger.error(f"Weather error: {e}")
-        return f"I am unable to reach the meteorological satellites for {location} at this time, sir."
+        if Nominatim is None:
+            return {"error": "geopy is not installed"}
+
+        geolocator = Nominatim(user_agent="spark-ai")
+        loc = geolocator.geocode(location)
+        if not loc:
+            return {"error": f"Location not found: {location}"}
+
+        url = (
+            "https://api.open-meteo.com/v1/forecast"
+            f"?latitude={loc.latitude}&longitude={loc.longitude}"
+            "&current=temperature_2m,relative_humidity_2m,wind_speed_10m,weather_code"
+            "&temperature_unit=celsius"
+        )
+        resp = httpx.get(url, timeout=10)
+        resp.raise_for_status()
+        data = resp.json()
+        current = data["current"]
+        return {
+            "location": location,
+            "temperature_c": current["temperature_2m"],
+            "humidity_%": current["relative_humidity_2m"],
+            "wind_kmh": current["wind_speed_10m"],
+            "weather_code": current["weather_code"],
+        }
+    except Exception as exc:
+        logger.error(f"Weather error: {exc}")
+        return {"error": str(exc)}
 

@@ -4,17 +4,14 @@ Integrates: Whisper STT · Groq LLM · Edge TTS · Vision · ChromaDB · Web Sea
 """
 
 import json
+import asyncio
 import logging
 import os
 import re
 import sys
 import time
-jules-15211068170550536705-c775779c
 import keyboard
-from typing import Any
-=======
 from typing import Any, Dict, Optional
- master
 from dotenv import load_dotenv
 import httpx
 
@@ -45,6 +42,7 @@ from security.action_guard import guard_action
 from security.audit import record_audit
 from security.content_sanitizer import sanitize_for_llm, sanitize_memory_context
 from security.intent_validator import validate_intent_text
+from core.spark_brain import handle as spark_brain_handle
 
 def broadcast_hud_event(event_type: str, payload: dict):
     """Sends async events to the FastAPI server for HUD broadcasting"""
@@ -427,11 +425,8 @@ def run_agent_turn(
     stream_sink=None,
     cancel_event: threading.Event | None = None,
 ) -> str:
-    """
-    Execute one full agent turn: memory retrieval → LLM → tool use → response.
-    Returns the final response string.
-    """
-    global conversation_history, memory, portfolio, tools, voice
+    """Execute one full agent turn using the Groq-native Spark Brain."""
+    global conversation_history, memory, voice
 
     if not user_input or user_input == "TIMEOUT":
         return ""
@@ -441,193 +436,49 @@ def run_agent_turn(
 
     logger.info(f"User: {user_input}")
     ensure_runtime_components()
+
     if voice:
         try:
             voice.stop()
         except Exception:
             pass
 
-    # ── ORIENT: retrieve relevant memories ──────────────────────────
-    turn_context = ""
     try:
-        turns = retrieve_turns(user_input)
-        turns = turns[-4:]
-        turn_context = "\n".join(
-            f"{turn.get('role', 'unknown')}: {turn.get('content', '')}" for turn in turns
+        result = asyncio.run(
+            spark_brain_handle(
+                user_input,
+                conversation_history,
+                stream_sink=stream_sink,
+                cancel_event=cancel_event,
+            )
         )
-    except Exception:
-        turn_context = ""
-
-    try:
-        memories = memory.recall(user_input, n=2)
-        semantic_context = "\n".join(f"- {m}" for m in memories) if memories else ""
-    except Exception:
-        semantic_context = ""
-
-    memory_context = "\n\n".join(
-        [part for part in [turn_context, semantic_context] if part.strip()]
-    )
-
-    # ── DECIDE: call LLM ─────────────────────────────────────────────
-    try:
-        raw_response = call_local_llm(
-            user_input,
-            memory_context,
-            conversation_history,
-            stream_sink=stream_sink,
-            cancel_event=cancel_event,
-        )
-        logger.info(f"LLM raw: {raw_response}")
+        reply = str(result.get("reply", "")).strip()
+        tool_used = result.get("tool_used")
+        logger.info(f"Spark Brain reply: {reply}")
     except Exception as e:
-        logger.error(f"Local LLM error: {e}")
-        if not cli_mode:
+        logger.error(f"Spark Brain error: {e}", exc_info=True)
+        if not cli_mode and voice:
             _speak_if_available(voice, "I'm experiencing a temporary connection issue, sir.")
         return "LLM Error"
 
-    if not raw_response.strip() and cancel_event and cancel_event.is_set():
+    if cancel_event and cancel_event.is_set() and not reply:
         return ""
 
-    # ── ACT: parse and dispatch ──────────────────────────────────────
-    tool_call, spoken_text = parse_response(raw_response)
-
-    # Speak any text that came before/after the tool JSON
-    if spoken_text and voice_output and voice and not (tool_call and tool_call.get("tool") in ["web_search", "system_monitor", "get_weather", "portfolio", "media_control", "file_search", "set_reminder"]):
-        voice.speak(spoken_text)
-
-    final_response = raw_response
-
-    if tool_call:
-        tool_name = tool_call.get("tool", "unknown_tool")
-        tool_arg = str(tool_call.get("arg", ""))
-        broadcast_hud_event("agent_log", {"agent": "S.P.A.R.K. Core", "action": f"Executing: {tool_name}", "data": tool_arg})
-        _emit_stream(stream_sink, "tool_execute", {"tool": tool_name, "arguments": {"arg": tool_arg}})
-        
-        tool_result = execute_tool(tool_call, tools, voice, portfolio_tracker=portfolio, source="voice")
-        final_response = tool_result
-        
-        short_result = str(tool_result)[:200] + "..." if len(str(tool_result)) > 200 else str(tool_result)
-        broadcast_hud_event("agent_log", {"agent": "S.P.A.R.K. Core", "action": f"Result: {tool_name}", "data": short_result})
-        _emit_stream(stream_sink, "tool_result", {"tool": tool_name, "status": "completed", "output": tool_result})
-
-    # ── UPDATE MEMORY ────────────────────────────────────────────────
     try:
-        write_turn("user", user_input, metadata={"tool": tool_call.get("tool") if tool_call else "conversation"})
-        write_turn("assistant", final_response, metadata={"tool": tool_call.get("tool") if tool_call else "conversation"})
-        memory.remember(
-            "user",
-            user_input,
-            metadata={"tool": tool_call.get("tool") if tool_call else "conversation"},
-        )
-        memory.remember(
-            "assistant",
-            final_response,
-            metadata={"tool": tool_call.get("tool") if tool_call else "conversation"},
-        )
+        write_turn("user", user_input, metadata={"tool": tool_used or "conversation"})
+        write_turn("assistant", reply, metadata={"tool": tool_used or "conversation"})
+        memory.remember("user", user_input, metadata={"tool": tool_used or "conversation"})
+        memory.remember("assistant", reply, metadata={"tool": tool_used or "conversation"})
     except Exception:
         pass
 
     conversation_history.append({"role": "user", "content": user_input})
-    conversation_history.append({"role": "assistant", "content": raw_response})
-    
-    return final_response
+    conversation_history.append({"role": "assistant", "content": reply})
 
-def _voice_trigger():
-    """Called by wake word engine OR F9 — runs one full voice interaction cycle."""
-    global stt, voice
-    try:
-        # 1. Listen
-        broadcast_hud_event("voice_state", {"status": "listening", "isListening": True})
-        user_text = stt.listen()
+    if voice_output and voice and reply:
+        voice.speak(reply)
 
-        if not user_text or user_text == "TIMEOUT":
-            broadcast_hud_event("voice_state", {"status": "idle", "isListening": False})
-            return
-
-        # 2. Log to HUD
-        broadcast_hud_event("agent_log", {"agent": "STT", "action": "Heard", "data": user_text})
-
-        # 3. Run full agent pipeline
-        run_agent_turn(user_text, voice_output=True)
-
-    except Exception as e:
-        logger.error(f"[MAIN] Voice trigger error: {e}")
-        broadcast_hud_event("voice_state", {"status": "idle", "isListening": False})
-
-
-# ─────────────────────────────────────────────────────────────────────────────
-# MAIN LOOP
-# ─────────────────────────────────────────────────────────────────────────────
-
-def run():
-    """Boot sequence for S.P.A.R.K. Core + Proactive Agency."""
-    global stt, voice, tools, memory, portfolio, conversation_history
-
-    if not startup_check():
-        sys.exit(1)
-
-    logger.info("Starting S.P.A.R.K. Core (Phase 03 — Proactive Agency)...")
-    
-    # ── 1. Init Base Systems ──────────────────────────────────────────
-    voice = SparkVoice()
-    
-    logger.info("Initializing S.P.A.R.K. Ears (Whisper Small - Enhanced Accuracy)...")
-    stt = SparkEars()
-    
-    logger.info("Initializing S.P.A.R.K. Multi-Tool Suite...")
-    tools = SparkTools()
-    
-    logger.info("Initializing S.P.A.R.K. Semantic Memory Core (ChromaDB)...")
-    memory = SparkVectorMemory()
-    
-    portfolio = PortfolioTracker(memory)
-    
-    conversation_history = []
-
-    from core.heartbeat import start_heartbeat, stop_heartbeat
-    # ── 2. Phase 03: Start Proactive Daemons ──────────────────────────
-    logger.info("[PHASE 03] Initializing proactive agency daemons...")
-    
-    # Scheduler (Timed reminders)
-    init_scheduler(voice=voice)
-    
-    # Clipboard Watcher (Contextual triggers)
-    # We pass a simple lambda for LLM queries so the watcher can do intent checks
-    llm_query = lambda p: run_agent_turn(p, voice_output=False, cli_mode=True)
-    start_watcher(voice=voice, llm_query_fn=llm_query)
-
-    # Heartbeat Engine (Periodic System Checks)
-    start_heartbeat()
-
-    # ── 3. Phase 04: Start Wake Engine ────────────────────────────────
-    # This replaces the keyboard.wait loop.
-    # The callback _voice_trigger is called when 'Hey SPARK' (or F9) is detected.
-    start_wake_engine(on_wake_callback=_voice_trigger, use_hotword=True)
-
-    # ── 4. Main Event Loop (Idle) ─────────────────────────────────────
-    logger.info("S.P.A.R.K. Core is fully operational.")
-    
-    # Phase 02D Morning Briefing (now part of Phase 03 boot)
-    try:
-        morning_msg = generate_morning_briefing()
-        voice.speak(morning_msg)
-    except Exception as e:
-        logger.error(f"Morning briefing failed: {e}")
-        voice.speak("S.P.A.R.K. systems online. All modules nominal. Ready for your command, sir.")
-    
-    try:
-        while True:
-            # The background threads (scheduler, watcher, wake_word, heartbeat) do the work.
-            # We just stay alive here.
-            time.sleep(1)
-    except KeyboardInterrupt:
-        logger.info("Shutdown sequence initiated...")
-    finally:
-        # ── 5. Graceful Exit ──────────────────────────────────────────
-        stop_heartbeat()
-        stop_wake_engine()
-        stop_watcher()
-        shutdown_scheduler()
-        logger.info("S.P.A.R.K. Core offline.")
+    return reply
 
 
 if __name__ == "__main__":

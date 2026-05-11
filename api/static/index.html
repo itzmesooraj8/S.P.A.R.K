@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>S.P.A.R.K — Neural HUD</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Orbitron:wght@400;500;700;900&family=Share+Tech+Mono&display=swap" rel="stylesheet">
+    <style>
+        :root {
+            --bg: #07051a;
+            --surface: rgba(13, 11, 32, 0.7);
+            --border: rgba(30, 27, 58, 0.5);
+            --purple: #6c3bdc;
+            --purple-glow: rgba(108, 59, 220, 0.4);
+            --cyan: #00f5ff;
+            --text: #ffffff;
+            --text-dim: #6b6890;
+            --accent: #a78bfa;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            user-select: none;
+        }
+
+        body {
+            background: var(--bg);
+            color: var(--text);
+            font-family: 'Inter', sans-serif;
+            height: 100vh;
+            overflow: hidden;
+            display: flex;
+        }
+
+        /* --- BACKGROUND --- */
+        .stars {
+            position: fixed;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            z-index: -1;
+            background: radial-gradient(circle at center, #12102a 0%, #07051a 100%);
+            opacity: 0.8;
+        }
+
+        .stars::after {
+            content: "";
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background-image: 
+                radial-gradient(1px 1px at 20px 30px, #fff, rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 40px 70px, #fff, rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 50px 160px, #fff, rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 90px 40px, #fff, rgba(0,0,0,0)),
+                radial-gradient(1px 1px at 130px 80px, #fff, rgba(0,0,0,0));
+            background-repeat: repeat;
+            background-size: 200px 200px;
+            opacity: 0.3;
+        }
+
+        /* --- SIDEBAR --- */
+        .sidebar {
+            width: 280px;
+            height: 100%;
+            background: var(--surface);
+            backdrop-filter: blur(20px);
+            border-right: 1px solid var(--border);
+            display: flex;
+            flex-direction: column;
+            padding: 24px;
+            z-index: 10;
+        }
+
+        .brand {
+            font-family: 'Orbitron', sans-serif;
+            font-weight: 900;
+            font-size: 18px;
+            letter-spacing: 4px;
+            color: var(--cyan);
+            margin-bottom: 48px;
+            display: flex;
+            align-items: center;
+            gap: 12px;
+        }
+
+        .brand span {
+            color: var(--accent);
+        }
+
+        .metric-group {
+            margin-bottom: 32px;
+        }
+
+        .metric-label {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 9px;
+            text-transform: uppercase;
+            letter-spacing: 2px;
+            color: var(--text-dim);
+            margin-bottom: 12px;
+            display: flex;
+            justify-content: space-between;
+        }
+
+        .metric-bar-bg {
+            height: 4px;
+            background: rgba(255,255,255,0.05);
+            border-radius: 2px;
+            overflow: hidden;
+            position: relative;
+        }
+
+        .metric-bar-fill {
+            height: 100%;
+            background: linear-gradient(90deg, var(--purple), var(--cyan));
+            width: 0%;
+            transition: width 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            box-shadow: 0 0 10px var(--purple-glow);
+        }
+
+        .status-indicator {
+            margin-top: auto;
+            padding: 16px;
+            background: rgba(255,255,255,0.02);
+            border: 1px solid var(--border);
+            border-radius: 12px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 11px;
+        }
+
+        .status-dot {
+            display: inline-block;
+            width: 6px;
+            height: 6px;
+            background: #00ff9f;
+            border-radius: 50%;
+            margin-right: 8px;
+            box-shadow: 0 0 8px #00ff9f;
+            animation: pulse-green 2s infinite;
+        }
+
+        @keyframes pulse-green {
+            0% { transform: scale(1); opacity: 1; }
+            50% { transform: scale(1.5); opacity: 0.5; }
+            100% { transform: scale(1); opacity: 1; }
+        }
+
+        /* --- MAIN AREA --- */
+        .main {
+            flex: 1;
+            position: relative;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+        }
+
+        /* Pulsing Orb */
+        .orb-container {
+            position: relative;
+            width: 300px;
+            height: 300px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .orb {
+            width: 120px;
+            height: 120px;
+            background: radial-gradient(circle at 30% 30%, #fff, var(--purple) 40%, var(--bg) 100%);
+            border-radius: 50%;
+            box-shadow: 
+                0 0 60px var(--purple-glow),
+                0 0 120px var(--purple-glow),
+                inset 0 0 20px rgba(255,255,255,0.5);
+            position: relative;
+            z-index: 5;
+            animation: float 4s ease-in-out infinite;
+        }
+
+        .orb-ring {
+            position: absolute;
+            border: 1px solid rgba(167, 139, 250, 0.2);
+            border-radius: 50%;
+            animation: rotate 20s linear infinite;
+        }
+
+        .orb-ring.one { width: 200px; height: 200px; animation-duration: 15s; }
+        .orb-ring.two { width: 260px; height: 260px; animation-duration: 25s; animation-direction: reverse; }
+        .orb-ring.three { width: 320px; height: 320px; animation-duration: 40s; }
+
+        @keyframes float {
+            0%, 100% { transform: translateY(0); }
+            50% { transform: translateY(-10px); }
+        }
+
+        @keyframes rotate {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
+        }
+
+        /* --- CHAT AREA --- */
+        .chat-container {
+            position: absolute;
+            bottom: 40px;
+            width: 80%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .widget-zone {
+            position: absolute;
+            top: 28px;
+            right: 28px;
+            width: min(420px, 36vw);
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            pointer-events: auto;
+            z-index: 15;
+        }
+
+        .widget-card {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 16px;
+            backdrop-filter: blur(18px);
+            box-shadow: 0 20px 60px rgba(0,0,0,0.25);
+        }
+
+        .widget-card.weather {
+            border-color: rgba(0, 245, 255, 0.25);
+        }
+
+        .widget-title {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 12px;
+            letter-spacing: 1px;
+            text-transform: uppercase;
+            color: var(--cyan);
+            margin-bottom: 10px;
+        }
+
+        .widget-body {
+            font-size: 13px;
+            line-height: 1.5;
+            color: rgba(255,255,255,0.88);
+        }
+
+        .widget-link {
+            display: inline-block;
+            margin-top: 10px;
+            color: var(--accent);
+            text-decoration: none;
+            font-size: 12px;
+        }
+
+        .widget-temp {
+            font-family: 'Orbitron', sans-serif;
+            font-size: 28px;
+            margin: 4px 0 8px;
+        }
+
+        .widget-meta {
+            font-size: 12px;
+            color: var(--text-dim);
+        }
+
+        .chat-history {
+            height: 200px;
+            overflow-y: auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            padding: 20px;
+            mask-image: linear-gradient(to bottom, transparent, black 20%);
+        }
+
+        .message {
+            padding: 12px 16px;
+            border-radius: 12px;
+            font-size: 14px;
+            max-width: 80%;
+            line-height: 1.5;
+            animation: fadeIn 0.3s ease-out;
+        }
+
+        .message.user {
+            align-self: flex-end;
+            background: var(--purple);
+            color: white;
+            border-bottom-right-radius: 2px;
+        }
+
+        .message.spark {
+            align-self: flex-start;
+            background: rgba(255,255,255,0.05);
+            border: 1px solid var(--border);
+            border-bottom-left-radius: 2px;
+        }
+
+        .input-wrapper {
+            position: relative;
+            width: 100%;
+        }
+
+        input {
+            width: 100%;
+            background: rgba(255,255,255,0.03);
+            border: 1px solid var(--border);
+            border-radius: 16px;
+            padding: 18px 24px;
+            color: white;
+            font-size: 16px;
+            outline: none;
+            transition: all 0.3s ease;
+            backdrop-filter: blur(10px);
+        }
+
+        input:focus {
+            border-color: var(--cyan);
+            box-shadow: 0 0 20px rgba(0, 245, 255, 0.1);
+            background: rgba(255,255,255,0.05);
+        }
+
+        .input-hint {
+            position: absolute;
+            right: 20px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            color: var(--text-dim);
+            opacity: 0.5;
+        }
+
+        /* --- TOOL BADGE --- */
+        .tool-badge {
+            background: rgba(0, 245, 255, 0.1);
+            border: 1px solid rgba(0, 245, 255, 0.3);
+            color: var(--cyan);
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-family: 'Share Tech Mono', monospace;
+            font-size: 10px;
+            text-transform: uppercase;
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            margin-top: 8px;
+            animation: slideIn 0.3s ease-out;
+        }
+
+        .tool-badge::before {
+            content: "";
+            width: 4px;
+            height: 4px;
+            background: var(--cyan);
+            border-radius: 50%;
+        }
+
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes slideIn { from { opacity: 0; transform: translateX(-10px); } to { opacity: 1; transform: translateX(0); } }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 4px; }
+        ::-webkit-scrollbar-track { background: transparent; }
+        ::-webkit-scrollbar-thumb { background: var(--border); border-radius: 10px; }
+    </style>
+</head>
+<body>
+    <div class="stars"></div>
+
+    <div class="sidebar">
+        <div class="brand">S.P.A.R.K<span>.</span></div>
+
+        <div class="metric-group">
+            <div class="metric-label">
+                <span>CPU Load</span>
+                <span id="cpu-val">--%</span>
+            </div>
+            <div class="metric-bar-bg">
+                <div id="cpu-bar" class="metric-bar-fill"></div>
+            </div>
+        </div>
+
+        <div class="metric-group">
+            <div class="metric-label">
+                <span>RAM Usage</span>
+                <span id="ram-val">--%</span>
+            </div>
+            <div class="metric-bar-bg">
+                <div id="ram-bar" class="metric-bar-fill"></div>
+            </div>
+        </div>
+
+        <div class="metric-group">
+            <div class="metric-label">
+                <span>Uptime</span>
+                <span id="uptime-val">--</span>
+            </div>
+        </div>
+
+        <div class="status-indicator">
+            <span class="status-dot"></span>
+            NEURAL ENGINE ONLINE
+        </div>
+    </div>
+
+    <div class="main">
+        <div id="widget-zone" class="widget-zone"></div>
+
+        <div class="orb-container">
+            <div class="orb-ring one"></div>
+            <div class="orb-ring two"></div>
+            <div class="orb-ring three"></div>
+            <div class="orb"></div>
+        </div>
+
+        <div class="chat-container">
+            <div class="chat-history" id="chat-history">
+                <div class="message spark">Welcome back, Sooraj. Neural interfaces are calibrated and ready.</div>
+            </div>
+            <div class="input-wrapper">
+                <input type="text" id="chat-input" placeholder="Initiate command..." autocomplete="off">
+                <div class="input-hint">PRESS ENTER</div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+        const chatInput = document.getElementById('chat-input');
+        const chatHistory = document.getElementById('chat-history');
+        const cpuBar = document.getElementById('cpu-bar');
+        const ramBar = document.getElementById('ram-bar');
+        const cpuVal = document.getElementById('cpu-val');
+        const ramVal = document.getElementById('ram-val');
+        const uptimeVal = document.getElementById('uptime-val');
+        const widgetZone = document.getElementById('widget-zone');
+        let aiWs;
+        let activeSparkMessage = null;
+        let activeSparkText = '';
+
+        // --- WEBSOCKET FOR METRICS ---
+        let ws;
+        function connectWS() {
+            ws = new WebSocket(`ws://${window.location.host}/ws`);
+            ws.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                if (data.type === 'sys_metrics' && data.payload) {
+                    updateMetrics(data.payload);
+                } else if (data.type === 'metrics' || (data.cpu !== undefined)) {
+                    updateMetrics(data);
+                }
+                if (data.type === 'tool_use') {
+                    showToolBadge(data.tool);
+                }
+            };
+            ws.onclose = () => setTimeout(connectWS, 2000);
+        }
+
+        function connectAI() {
+            aiWs = new WebSocket(`ws://${window.location.host}/ws/ai`);
+            aiWs.onmessage = (event) => {
+                const data = JSON.parse(event.data);
+                const eventType = String(data.type || '').toLowerCase();
+
+                if (eventType === 'status') {
+                    if (!activeSparkMessage) {
+                        activeSparkMessage = addMessage('Thinking...', 'spark');
+                    }
+                    setMessageText(activeSparkMessage, 'Thinking...');
+                }
+
+                if (eventType === 'response_token') {
+                    activeSparkText += data.content || data.token || '';
+                    if (!activeSparkMessage) {
+                        activeSparkMessage = addMessage(activeSparkText || 'Thinking...', 'spark');
+                    } else {
+                        setMessageText(activeSparkMessage, activeSparkText);
+                    }
+                }
+
+                if (eventType === 'tool_execute' || eventType === 'tool_result') {
+                    showToolBadge(data.tool);
+                }
+
+                if (eventType === 'widget') {
+                    renderWidget(data.widget, data.data);
+                }
+
+                if (eventType === 'tool_result') {
+                    activeSparkText = data.output || activeSparkText;
+                    if (activeSparkMessage) {
+                        setMessageText(activeSparkMessage, activeSparkText);
+                    }
+                }
+
+                if (eventType === 'response_done' || eventType === 'done') {
+                    activeSparkText = data.content || activeSparkText;
+                    if (activeSparkMessage) {
+                        setMessageText(activeSparkMessage, activeSparkText || 'Ready.');
+                    }
+                    activeSparkMessage = null;
+                    activeSparkText = '';
+                }
+
+                if (eventType === 'error') {
+                    if (!activeSparkMessage) {
+                        activeSparkMessage = addMessage(data.message || 'Error communicating with Neural Engine.', 'spark');
+                    } else {
+                        setMessageText(activeSparkMessage, data.message || 'Error communicating with Neural Engine.');
+                    }
+                    activeSparkMessage = null;
+                    activeSparkText = '';
+                }
+            };
+            aiWs.onclose = () => setTimeout(connectAI, 2000);
+        }
+
+        function updateMetrics(data) {
+            const cpu = data.cpu || 0;
+            const ram = data.ram || 0;
+            cpuBar.style.width = `${cpu}%`;
+            ramBar.style.width = `${ram}%`;
+            cpuVal.innerText = `${cpu.toFixed(1)}%`;
+            ramVal.innerText = `${ram.toFixed(1)}%`;
+            if (data.uptime) uptimeVal.innerText = data.uptime;
+        }
+
+        function showToolBadge(toolName) {
+            const lastSparkMessage = activeSparkMessage || Array.from(chatHistory.querySelectorAll('.message.spark')).at(-1) || chatHistory.lastElementChild;
+            if (lastSparkMessage && lastSparkMessage.classList.contains('spark') && !lastSparkMessage.querySelector('.tool-badge')) {
+                const badge = document.createElement('div');
+                badge.className = 'tool-badge';
+                badge.innerText = `Executed Tool: ${toolName}`;
+                lastSparkMessage.appendChild(badge);
+            }
+        }
+
+        function renderWidget(type, data) {
+            if (!widgetZone) return;
+            widgetZone.innerHTML = '';
+
+            if (type === 'news' && Array.isArray(data)) {
+                widgetZone.innerHTML = data.map((item) => `
+                    <div class="widget-card">
+                        <div class="widget-title">${item.title || 'News'}</div>
+                        <div class="widget-body">${item.body || ''}</div>
+                        ${item.url ? `<a href="${item.url}" target="_blank" rel="noreferrer" class="widget-link">→ read more</a>` : ''}
+                    </div>
+                `).join('');
+            }
+
+            if (type === 'weather' && data && typeof data === 'object') {
+                widgetZone.innerHTML = `
+                    <div class="widget-card weather">
+                        <div class="widget-title">${data.location || 'Weather'}</div>
+                        <div class="widget-temp">${data.temperature_c ?? '--'}°C</div>
+                        <div class="widget-meta">
+                            Humidity ${data['humidity_%'] ?? '--'}% · Wind ${data.wind_kmh ?? '--'} km/h
+                        </div>
+                    </div>`;
+            }
+
+            if (type === 'system') {
+                return;
+            }
+        }
+
+        // --- CHAT INTERACTION ---
+        chatInput.addEventListener('keydown', async (e) => {
+            if (e.key === 'Enter' && chatInput.value.trim()) {
+                const msg = chatInput.value.trim();
+                chatInput.value = '';
+                
+                // Add user message
+                addMessage(msg, 'user');
+                activeSparkText = '';
+                activeSparkMessage = addMessage('Thinking...', 'spark');
+
+                try {
+                    if (aiWs && aiWs.readyState === WebSocket.OPEN) {
+                        aiWs.send(JSON.stringify({ message: msg }));
+                    } else {
+                        const response = await fetch('/chat', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ message: msg })
+                        });
+                        const data = await response.json();
+                        activeSparkMessage.innerText = data.response;
+                        activeSparkMessage = null;
+                    }
+                } catch (err) {
+                    activeSparkMessage.innerText = 'Error communicating with Neural Engine.';
+                    activeSparkMessage = null;
+                }
+            }
+        });
+
+        function addMessage(text, side) {
+            const msgDiv = document.createElement('div');
+            msgDiv.className = `message ${side}`;
+            const textDiv = document.createElement('div');
+            textDiv.className = 'message-text';
+            textDiv.innerText = text;
+            msgDiv.appendChild(textDiv);
+            chatHistory.appendChild(msgDiv);
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+            return msgDiv;
+        }
+
+        function setMessageText(messageEl, text) {
+            const textNode = messageEl.querySelector('.message-text');
+            if (textNode) {
+                textNode.innerText = text;
+            } else {
+                messageEl.innerText = text;
+            }
+        }
+
+        // Start
+        connectWS();
+        connectAI();
+        
+        // Simulating metrics update every 10s if WS is slow
+        setInterval(() => {
+            if (ws && ws.readyState === WebSocket.OPEN) return;
+            // Fallback UI update
+            const mockCpu = Math.random() * 20 + 5;
+            const mockRam = 42.4;
+            cpuBar.style.width = `${mockCpu}%`;
+            cpuVal.innerText = `${mockCpu.toFixed(1)}%`;
+        }, 10000);
+    </script>
+</body>
+</html>
