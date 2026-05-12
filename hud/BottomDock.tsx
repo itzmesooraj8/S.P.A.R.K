@@ -51,6 +51,7 @@ export default function BottomDock({ onOpenModule, activeModule, uptime, process
     { id: 'tasks',      icon: <CheckSquare size={13} />, label: 'TASKS',      badge: 0,          color: '#00ff88' },
     { id: 'alertlog',   icon: <Bell size={13} />,      label: 'ALERTS',      badge: alertCount,  color: alertCount   > 0 ? '#ff9f0a' : '#aaaaaa' },
     { id: 'tools',      icon: <Wrench size={13} />,    label: 'TOOLS',       badge: pendingTools,color: pendingTools > 0 ? '#00f5ff' : '#aaaaaa' },
+    { id: 'autonomy',   icon: <Zap size={13} />,       label: 'REVIEW',      badge: 0,          color: '#bf5af2' },
     { id: 'actionfeed', icon: <Zap size={13} />,       label: 'ACTION FEED', badge: activePlans, color: activePlans  > 0 ? '#00f5ff' : '#aaaaaa' },
     { id: 'plugins',    icon: <Puzzle size={13} />,    label: 'PLUGINS',     badge: 0,          color: '#bf5af2' },
   ];

@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import ast
+import hashlib
+import json
 import logging
 import re
 import subprocess
 import sys
+from datetime import datetime
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -14,6 +17,8 @@ log = logging.getLogger("spark.tool_forge")
 
 FORGE_DIR = Path("spark_dev_memory/tool_forge")
 FORGE_DIR.mkdir(parents=True, exist_ok=True)
+TOOL_REVIEW_PATH = Path("spark_dev_memory/autonomy/pending_tools.json")
+TOOL_REVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_IMPORTS = {
     "json",
@@ -50,7 +55,9 @@ FORBIDDEN_ATTRS = {
 class ForgeResult:
     name: str
     path: str
-    approved: bool
+    validated: bool
+    review_id: str | None
+    status: str
     reason: str
 
 
@@ -84,17 +91,77 @@ def validate_tool_code(code: str) -> tuple[bool, str]:
     return True, "Approved"
 
 
+def _load_tool_reviews() -> list[dict[str, str]]:
+    if not TOOL_REVIEW_PATH.exists():
+        return []
+    try:
+        data = json.loads(TOOL_REVIEW_PATH.read_text(encoding="utf-8"))
+        return data if isinstance(data, list) else []
+    except Exception as exc:
+        log.warning("Tool review queue could not be read: %s", exc)
+        return []
+
+
+def _save_tool_reviews(reviews: list[dict[str, str]]) -> None:
+    TOOL_REVIEW_PATH.write_text(json.dumps(reviews, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def list_tool_reviews() -> list[dict[str, str]]:
+    return [review for review in _load_tool_reviews() if review.get("status") == "pending"]
+
+
+def approve_tool_review(review_id: str) -> dict[str, str]:
+    reviews = _load_tool_reviews()
+    for index, review in enumerate(reviews):
+        if str(review.get("id")) != review_id:
+            continue
+        if review.get("status") != "pending":
+            raise ValueError("Tool review is not pending")
+
+        code = str(review.get("code") or "")
+        name = str(review.get("name") or review.get("path") or "generated_tool").strip()
+        publish_generated_tool(name, code)
+        reviews[index] = {**review, "status": "approved", "reviewed_at": datetime.utcnow().isoformat()}
+        _save_tool_reviews(reviews)
+        return reviews[index]
+
+    raise KeyError(review_id)
+
+
+def reject_tool_review(review_id: str) -> dict[str, str]:
+    reviews = _load_tool_reviews()
+    for index, review in enumerate(reviews):
+        if str(review.get("id")) != review_id:
+            continue
+        reviews[index] = {**review, "status": "rejected", "reviewed_at": datetime.utcnow().isoformat()}
+        _save_tool_reviews(reviews)
+        return reviews[index]
+    raise KeyError(review_id)
+
+
 def forge_tool(name: str, code: str, description: str = "") -> ForgeResult:
     approved, reason = validate_tool_code(code)
     safe_name = re.sub(r"[^a-zA-Z0-9_\-]+", "_", name).strip("_") or "forged_tool"
     path = FORGE_DIR / f"{safe_name}.py"
+    review_id = hashlib.sha1(f"{safe_name}:{code}".encode("utf-8")).hexdigest()[:16]
     if approved:
         path.write_text(code, encoding="utf-8")
-        try:
-            publish_generated_tool(safe_name, code)
-        except Exception as exc:
-            log.warning("Failed to publish generated tool '%s': %s", safe_name, exc)
-    return ForgeResult(name=safe_name, path=str(path), approved=approved, reason=reason)
+        reviews = _load_tool_reviews()
+        proposal = {
+            "id": review_id,
+            "status": "pending",
+            "name": safe_name,
+            "path": str(path),
+            "description": description,
+            "code": code,
+            "created_at": datetime.utcnow().isoformat(),
+            "fingerprint": hashlib.sha1(code.encode("utf-8")).hexdigest(),
+        }
+        if not any(review.get("fingerprint") == proposal["fingerprint"] and review.get("status") == "pending" for review in reviews):
+            reviews.append(proposal)
+            _save_tool_reviews(reviews)
+        return ForgeResult(name=safe_name, path=str(path), validated=True, review_id=review_id, status="pending_review", reason="Pending approval")
+    return ForgeResult(name=safe_name, path=str(path), validated=False, review_id=None, status="rejected", reason=reason)
 
 
 def run_forged_tool(path: str, argument: str = "", timeout: int = 15) -> str:

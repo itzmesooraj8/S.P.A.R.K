@@ -3,6 +3,8 @@ from __future__ import annotations
 from fastapi import APIRouter
 
 from core.camera_vision import analyze_camera_frame, capture_camera_frame
+from core.prompt_adaptation import approve_prompt_review, list_prompt_reviews, reject_prompt_review, load_prompt_state
+from core.tool_forge import approve_tool_review, list_tool_reviews, reject_tool_review
 from core.runtime_architecture import build_runtime_architecture
 from core.orchestrator.runtime_state import get_runtime_snapshot
 from tools.iot import control_smart_plug
@@ -62,4 +64,33 @@ async def runtime_camera_scan():
 @router.post("/api/runtime/smart-home/plug/{action}")
 async def runtime_smart_plug(action: str):
     return {"result": control_smart_plug(action)}
+
+
+@router.get("/api/runtime/autonomy/reviews")
+async def runtime_autonomy_reviews():
+    return {
+        "prompt_state": load_prompt_state(),
+        "prompts": list_prompt_reviews(),
+        "tools": list_tool_reviews(),
+    }
+
+
+@router.post("/api/runtime/autonomy/prompts/{review_id}/approve")
+async def runtime_approve_prompt(review_id: str):
+    return {"status": "approved", "prompt_state": approve_prompt_review(review_id)}
+
+
+@router.post("/api/runtime/autonomy/prompts/{review_id}/reject")
+async def runtime_reject_prompt(review_id: str):
+    return {"status": "rejected", "review": reject_prompt_review(review_id)}
+
+
+@router.post("/api/runtime/autonomy/tools/{review_id}/approve")
+async def runtime_approve_tool(review_id: str):
+    return {"status": "approved", "tool_review": approve_tool_review(review_id)}
+
+
+@router.post("/api/runtime/autonomy/tools/{review_id}/reject")
+async def runtime_reject_tool(review_id: str):
+    return {"status": "rejected", "tool_review": reject_tool_review(review_id)}
 

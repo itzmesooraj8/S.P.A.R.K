@@ -12,6 +12,7 @@ import AlertLogPanel from './modules/AlertLogPanel';
 import ToolActivityPanel from './modules/ToolActivityPanel';
 import ActionFeedPanel from './modules/ActionFeedPanel';
 import PluginsModule from './modules/PluginsModule';
+import AutonomyApprovalModule from './modules/AutonomyApprovalModule';
 import BrowserModule from './modules/BrowserModule';
 import MusicModule from './modules/MusicModule';
 import SparkPanel from './modules/SparkPanel';
@@ -52,7 +53,7 @@ import SystemTelemetry from './SystemTelemetry';
 import { PortfolioTicker } from './PortfolioTicker';
 import EventFeed from './EventFeed';
 
-type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music' | 'tasks';
+type ModuleKey = 'spark' | 'sentinel' | 'telemetry' | 'mind' | 'satellite' | 'devgraph' | 'alertlog' | 'tools' | 'actionfeed' | 'plugins' | 'browser' | 'music' | 'tasks' | 'autonomy';
 
 const MODULE_TITLES: Record<ModuleKey, string> = {
   spark:      '⚡ SPARK AGENT',
@@ -68,6 +69,7 @@ const MODULE_TITLES: Record<ModuleKey, string> = {
   browser:    '🌐 BROWSER AGENT',
   music:      '🎵 MUSIC PLAYER',
   tasks:      '📋 TASKS',
+  autonomy:   '🧭 AUTONOMY REVIEW',
 };
 
 export default function HudLayout() {
@@ -405,6 +407,7 @@ export default function HudLayout() {
                   {activeModule === 'tools'      && <ToolActivityPanel />}
                   {activeModule === 'actionfeed' && <ActionFeedPanel />}
                   {activeModule === 'plugins'    && <PluginsModule />}
+                  {activeModule === 'autonomy'   && <AutonomyApprovalModule />}
                   {activeModule === 'browser'    && <BrowserModule />}
                   {activeModule === 'music'      && <MusicModule />}
                   {activeModule === 'tasks'      && <TaskPanel />}

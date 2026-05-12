@@ -1,0 +1,31 @@
+{
+  "loop_interval_seconds": 5,
+  "reflection_interval_seconds": 86400,
+  "memory": {
+    "turn_log_path": "spark_dev_memory/turns.jsonl",
+    "task_queue_path": "spark_dev_memory/task_queue.json",
+    "user_model_path": "spark_dev_memory/user_model.json",
+    "system_prompt_path": "spark_dev_memory/system_prompt.txt"
+  },
+  "llm": {
+    "backend": "auto",
+    "groq_model": "llama-3.3-70b-versatile",
+    "ollama_host": "http://localhost:11434",
+    "ollama_model": "gemma3:4b"
+  },
+  "voice": {
+    "stt_seconds": 5,
+    "tts_backend": "auto"
+  },
+  "tools": {
+    "generated_dir": "tools/generated",
+    "hot_reload": true
+  },
+  "user_model_defaults": {
+    "preferred_response_style": "dense, structured, no fluff",
+    "never_ask_about": ["basic Python syntax"],
+    "mood_signals": {
+      "low_energy": ["short replies", "one word acks"]
+    }
+  }
+}

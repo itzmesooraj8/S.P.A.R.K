@@ -9,6 +9,13 @@ from hashlib import sha1
 from pathlib import Path
 from typing import Any
 
+try:
+    from security.action_guard import guard_action
+except Exception:
+    # Fallback dummy guard if security package not available
+    def guard_action(tool_name, **kwargs):
+        return True, "allowed", None
+
 
 log = logging.getLogger("spark.generated_tools")
 
@@ -95,10 +102,21 @@ def run_generated_tool(tool_name: str, argument: Any) -> Any:
         runner = getattr(tool.module, "run", None)
         if not callable(runner):
             raise AttributeError(f"Generated tool '{tool_name}' is missing run()")
+        # Sanitize / normalize argument payload
         if isinstance(argument, (dict, list)):
             payload = json.dumps(argument, ensure_ascii=False)
         else:
-            payload = argument
+            payload = str(argument)
+
+        # Security check: ask guard if this tool may run with given payload
+        try:
+            allowed, msg, meta = guard_action(tool.name, argument=payload)
+        except Exception:
+            allowed, msg, meta = True, "guard_failed_open", None
+
+        if not allowed:
+            raise PermissionError(f"Execution of tool '{tool_name}' blocked by guard: {msg}")
+
         return runner(payload)
     raise KeyError(tool_name)
 
