@@ -7,6 +7,9 @@ Import build_system_prompt() and call it fresh on each OODA cycle so memory is a
 
 from datetime import datetime
 
+from core.generated_tools import load_generated_tool_specs
+from core.prompt_adaptation import build_prompt_addendum, load_prompt_state
+
 
 TOOL_REGISTRY = {
     "open_website": "Open a website or URL.",
@@ -33,13 +36,29 @@ def build_system_prompt(memory_context: str = "") -> str:
     """
     now = datetime.now().strftime("%A, %d %B %Y, %H:%M")
 
-    tools_block = "\n".join(
-        f"  - {name}: {desc}" for name, desc in TOOL_REGISTRY.items()
-    )
+    tool_registry = dict(TOOL_REGISTRY)
+    prompt_state = load_prompt_state()
+    tool_notes = prompt_state.get("tool_notes") if isinstance(prompt_state.get("tool_notes"), dict) else {}
+
+    for spec in load_generated_tool_specs():
+        function = spec.get("function", {}) if isinstance(spec, dict) else {}
+        name = str(function.get("name") or "").strip()
+        description = str(function.get("description") or "").strip()
+        if name and description:
+            tool_registry[name] = description
+
+    for name, note in tool_notes.items():
+        if name in tool_registry and note:
+            tool_registry[name] = f"{tool_registry[name]} {note}".strip()
+
+    tools_block = "\n".join(f"  - {name}: {desc}" for name, desc in tool_registry.items())
 
     memory_block = ""
     if memory_context and memory_context.strip():
         memory_block = f"\n## Memory\n{memory_context.strip()}\n"
+
+    prompt_addendum = build_prompt_addendum()
+    extra_block = f"\n{prompt_addendum}\n" if prompt_addendum else ""
 
     return f"""You are S.P.A.R.K., the local assistant for Sooraj.
 Stay concise, speak in a calm Jarvis-like tone, and address the user as sir.
@@ -51,4 +70,5 @@ Current time: {now}
 Available tools:
 {tools_block}
 {memory_block}
+{extra_block}
 When unsure, make the best reasonable interpretation and proceed."""

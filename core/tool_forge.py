@@ -8,6 +8,8 @@ import sys
 from dataclasses import dataclass
 from pathlib import Path
 
+from core.generated_tools import publish_generated_tool
+
 log = logging.getLogger("spark.tool_forge")
 
 FORGE_DIR = Path("spark_dev_memory/tool_forge")
@@ -27,6 +29,7 @@ ALLOWED_IMPORTS = {
     "functools",
     "string",
     "random",
+    "tools",
 }
 
 FORBIDDEN_NAMES = {"eval", "exec", "compile", "__import__", "input"}
@@ -87,6 +90,10 @@ def forge_tool(name: str, code: str, description: str = "") -> ForgeResult:
     path = FORGE_DIR / f"{safe_name}.py"
     if approved:
         path.write_text(code, encoding="utf-8")
+        try:
+            publish_generated_tool(safe_name, code)
+        except Exception as exc:
+            log.warning("Failed to publish generated tool '%s': %s", safe_name, exc)
     return ForgeResult(name=safe_name, path=str(path), approved=approved, reason=reason)
 
 

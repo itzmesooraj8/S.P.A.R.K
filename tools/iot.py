@@ -20,6 +20,8 @@ DEVICES = {
     "ac": "home/bedroom/ac",
 }
 
+_SONOFF_PLUG_TOPIC = os.getenv("SONOFF_PLUG_TOPIC", "").strip()
+
 
 def control_device(device: str, action: str) -> str:
     """Connect once, publish a device action, and disconnect."""
@@ -41,3 +43,20 @@ def control_device(device: str, action: str) -> str:
 def list_devices() -> list[str]:
     """Return the available smart home device names."""
     return list(DEVICES.keys())
+
+
+def control_smart_plug(action: str) -> str:
+    """Convenience helper for a single Sonoff-style plug on MQTT."""
+    if mqtt is None:
+        return "MQTT is unavailable on this system."
+    if not _SONOFF_PLUG_TOPIC:
+        return "Smart plug control is disabled. Set SONOFF_PLUG_TOPIC to enable it."
+
+    client = mqtt.Client()
+    try:
+        client.connect(MQTT_HOST, MQTT_PORT, 60)
+        client.publish(_SONOFF_PLUG_TOPIC, json.dumps({"action": action}))
+        client.disconnect()
+        return f"smart_plug → {action} ✓"
+    except Exception as exc:
+        return f"MQTT error: {exc}"

@@ -59,7 +59,7 @@ def _module(name: str, purpose: str, status: str, capabilities: list[str], signa
 def build_runtime_architecture() -> dict[str, Any]:
     ollama_target = _host_port(LLM_HOST)
     ollama_ready = bool(ollama_target and _can_connect(*ollama_target))
-    grok_key = bool(os.getenv("GROK_API_KEY"))
+    groq_key = bool(os.getenv("GROQ_API_KEY"))
     gemini_key = bool(os.getenv("GEMINI_API_KEY"))
 
     voice_ready = _has_module("audio.stt") and _has_module("audio.tts")
@@ -83,15 +83,15 @@ def build_runtime_architecture() -> dict[str, Any]:
         ),
         _module(
             "Brain",
-            "Hybrid orchestration layer for Grok primary, Ollama fallback, and task planning.",
-            _status(ollama_ready or grok_key or gemini_key, degraded=bool(ollama_target)),
+            "Hybrid orchestration layer for Groq primary, Ollama fallback, and task planning.",
+            _status(ollama_ready or groq_key or gemini_key, degraded=bool(ollama_target)),
             ["hybrid routing", "multi-agent planning", "local fallback"],
             {
                 "backend": LLM_BACKEND,
                 "primary_model": LLM_MODEL,
                 "local_host": LLM_HOST,
                 "local_reachable": ollama_ready,
-                "grok_api_key": grok_key,
+                "groq_api_key": groq_key,
                 "gemini_api_key": gemini_key,
             },
         ),
@@ -184,12 +184,12 @@ def build_runtime_architecture() -> dict[str, Any]:
         },
     }
 
-    stack_mode = "hybrid" if (grok_key and ollama_ready) else "local-first"
+    stack_mode = "hybrid" if (groq_key and ollama_ready) else "local-first"
 
     return {
         "version": "v2",
         "stack_mode": stack_mode,
-        "brain_primary": "grok" if grok_key else "ollama",
+        "brain_primary": "groq" if groq_key else "ollama",
         "modules": modules,
         "orchestration": orchestration,
     }

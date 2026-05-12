@@ -5,6 +5,30 @@ from tools.web_search import get_indian_market_summary
 
 logger = logging.getLogger("SPARK_MORNING")
 
+
+def _format_weather_summary(weather: dict) -> str | None:
+    if not weather:
+        return None
+    if "error" in weather:
+        return None
+
+    location = weather.get("location", "your area")
+    temperature = weather.get("temperature_c")
+    humidity = weather.get("humidity_%")
+    wind = weather.get("wind_kmh")
+
+    details = []
+    if temperature is not None:
+        details.append(f"{temperature}°C")
+    if humidity is not None:
+        details.append(f"humidity {humidity}%")
+    if wind is not None:
+        details.append(f"wind {wind} km/h")
+
+    if not details:
+        return f"Weather for {location} is available."
+    return f"Weather for {location}: " + ", ".join(details) + "."
+
 def generate_morning_briefing() -> str:
     """
     Generates a J.A.R.V.I.S.-style morning briefing.
@@ -22,10 +46,9 @@ def generate_morning_briefing() -> str:
     
     # 2. Weather
     weather = get_weather("Palakkad")
-    if weather and "unable" not in weather:
-        # Strip "sir" from weather to avoid repetition
-        weather = weather.replace(", sir", "")
-        briefing_parts.append(weather)
+    weather_summary = _format_weather_summary(weather)
+    if weather_summary:
+        briefing_parts.append(weather_summary)
         
     # 3. Markets
     markets = get_indian_market_summary()

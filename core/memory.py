@@ -30,29 +30,36 @@ class MemoryStore:
               category: MemoryCategory = MemoryCategory.CONVERSATION) -> None:
         if self.encoder is None:
             return
-        embedding = self.encoder.encode([text])[0].tolist()
-        self.collection.add(
-            documents=[text],
-            embeddings=[embedding],
-            metadatas=[{"category": category.value}],
-            ids=[str(uuid.uuid4())],
-        )
+        try:
+            embedding = self.encoder.encode([text])[0].tolist()
+            self.collection.add(
+                documents=[text],
+                embeddings=[embedding],
+                metadatas=[{"category": category.value}],
+                ids=[str(uuid.uuid4())],
+            )
+        except Exception as exc:
+            _logger.warning("Memory store skipped: %s", exc)
 
     def recall(self, query: str, top_k: int = 5,
                category: MemoryCategory = None) -> list[str]:
         if self.encoder is None:
             return []
-        if self.collection.count() == 0:
+        try:
+            if self.collection.count() == 0:
+                return []
+            embedding = self.encoder.encode([query])[0].tolist()
+            kwargs = dict(
+                query_embeddings=[embedding],
+                n_results=min(top_k, self.collection.count()),
+            )
+            if category:
+                kwargs["where"] = {"category": category.value}
+            results = self.collection.query(**kwargs)
+            return results["documents"][0] if results["documents"] else []
+        except Exception as exc:
+            _logger.warning("Memory recall skipped: %s", exc)
             return []
-        embedding = self.encoder.encode([query])[0].tolist()
-        kwargs = dict(
-            query_embeddings=[embedding],
-            n_results=min(top_k, self.collection.count()),
-        )
-        if category:
-            kwargs["where"] = {"category": category.value}
-        results = self.collection.query(**kwargs)
-        return results["documents"][0] if results["documents"] else []
 
     def extract_and_store_facts(self, user_input: str) -> None:
         """Auto-detect and store personal facts from user messages."""
@@ -63,7 +70,13 @@ class MemoryStore:
         ]
         lower = user_input.lower()
         if any(t in lower for t in fact_triggers):
-            self.store(user_input, MemoryCategory.FACT)
+            try:
+                self.store(user_input, MemoryCategory.FACT)
+            except Exception as exc:
+                _logger.warning("Fact extraction skipped: %s", exc)
 
     def count(self) -> int:
-        return self.collection.count()
+        try:
+            return self.collection.count()
+        except Exception:
+            return 0

@@ -33,7 +33,6 @@ pillow
 pytesseract
 sounddevice
 scipy
-openwakeword
 
 # ── Phase 03: Proactive Agency Engine ────────────────────────
 APScheduler>=3.10.0          # scheduler.py — background reminder daemon

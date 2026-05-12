@@ -1,4 +1,8 @@
-# audio/stt.py
+from __future__ import annotations
+
+from tools.voice import listen_and_transcribe
+
+
 class SparkEars:
-    def listen(self):
-        return "TIMEOUT"
+    def listen(self, duration: int = 5):
+        return listen_and_transcribe(duration)

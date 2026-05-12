@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 from collections.abc import Awaitable, Callable
+import httpx
 import json
 import logging
 import os
@@ -16,6 +17,9 @@ from typing import Any
 
 from dotenv import load_dotenv
 from groq import Groq
+from core.generated_tools import load_generated_tool_specs, run_generated_tool
+from config import LLM_HOST, LLM_MODEL
+from core.persona import build_system_prompt
 
 from core.memory import MemoryStore, MemoryCategory
 from core.mcp_manager import MCPManager
@@ -75,7 +79,8 @@ except ImportError as e:
 
 load_dotenv()
 
-client = Groq(api_key=os.getenv("GROQ_API_KEY")) if os.getenv("GROQ_API_KEY") else None
+_groq_api_key = os.getenv("GROQ_API_KEY", "").strip()
+client = Groq(api_key=_groq_api_key) if _groq_api_key else None
 memory = MemoryStore()
 mcp_manager = MCPManager()
 
@@ -385,6 +390,29 @@ def _stringify_result(result: Any) -> str:
         return str(result)
 
 
+def _offline_reply(user_input: str) -> str:
+    normalized = user_input.strip().lower()
+    greetings = {"hi", "hello", "hey", "yo", "good morning", "good afternoon", "good evening"}
+    if normalized in greetings:
+        return "Hello. Groq is unavailable, but I am still online locally."
+    return "I am having trouble reaching the language model right now, but I am still running locally."
+
+
+async def _local_chat_completion(messages: list[dict[str, Any]]) -> str:
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as http_client:
+            response = await http_client.post(
+                f"{LLM_HOST}/api/chat",
+                json={"model": LLM_MODEL, "messages": messages, "stream": False},
+            )
+            response.raise_for_status()
+            message = response.json().get("message", {})
+            return str(message.get("content", "")).strip()
+    except Exception as exc:
+        logger.warning("Local LLM fallback failed: %s", exc)
+        return ""
+
+
 def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True, tools: list[dict[str, Any]] | None = None):
     kwargs: dict[str, Any] = {
         "model": os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
@@ -403,7 +431,7 @@ async def _get_dynamic_tools() -> list[dict[str, Any]]:
     except Exception as exc:
         logger.info("MCP tool refresh skipped: %s", exc)
         mcp_tools = []
-    return TOOLS + mcp_tools
+    return TOOLS + load_generated_tool_specs() + mcp_tools
 
 
 async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
@@ -476,22 +504,31 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return asyncio.create_task(scene_arriving(tool_args.get("eta_minutes", 10))) or "Arrival scene triggered."
     if tool_name == "scene_good_night":
         return asyncio.create_task(scene_good_night()) or "Good night scene triggered."
+    try:
+        return run_generated_tool(tool_name, tool_args)
+    except KeyError:
+        pass
     if await mcp_manager.has_tool(tool_name):
         return await mcp_manager.call_tool(tool_name, tool_args)
     raise KeyError(f"Unknown tool: {tool_name}")
 
 
 async def handle(user_input: str, session_history: list[dict[str, Any]], stream_sink=None, cancel_event=None) -> dict[str, Any]:
-    memory.extract_and_store_facts(user_input)
-    
-    facts = memory.recall(user_input, top_k=3, category=MemoryCategory.FACT)
-    recent = memory.recall(user_input, top_k=3, category=MemoryCategory.CONVERSATION)
+    try:
+        memory.extract_and_store_facts(user_input)
+        facts = memory.recall(user_input, top_k=3, category=MemoryCategory.FACT)
+        recent = memory.recall(user_input, top_k=3, category=MemoryCategory.CONVERSATION)
+    except Exception as exc:
+        logger.warning("Memory context unavailable; continuing without it: %s", exc)
+        facts = []
+        recent = []
+
     memories = facts + recent
     
     memory_ctx = ("\n[MEMORY]\n" + "\n".join(f"- {m}" for m in memories)) if memories else ""
 
     messages = [
-        {"role": "system", "content": SYSTEM_PROMPT + memory_ctx},
+        {"role": "system", "content": build_system_prompt(memory_ctx, prompt_addendum=SYSTEM_PROMPT)},
         *session_history[-10:],
         {"role": "user", "content": user_input},
     ]
@@ -500,7 +537,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         stream_sink("status", {"state": "thinking"})
 
     if client is None:
-        reply = "Groq is not configured. Set GROQ_API_KEY to enable Spark Brain."
+        reply = await _local_chat_completion(messages) or _offline_reply(user_input)
         memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
         return {"reply": reply, "tool_used": None, "tool_result": None}
 
@@ -508,11 +545,16 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         tool_specs = await _get_dynamic_tools()
         response = _chat_completion(messages, allow_tools=True, tools=tool_specs)
     except Exception as exc:
-        message = str(exc)
-        if "tool_use_failed" in message or "Failed to call a function" in message:
+        logger.warning("Tool-enabled chat failed; retrying without tools: %s", exc)
+        try:
             response = _chat_completion(messages, allow_tools=False)
-        else:
-            raise
+        except Exception as retry_exc:
+            logger.error("Plain Groq retry failed: %s", retry_exc, exc_info=True)
+            reply = await _local_chat_completion(messages) or _offline_reply(user_input)
+            memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+            if stream_sink:
+                stream_sink("response_done", {"content": reply})
+            return {"reply": reply, "tool_used": None, "tool_result": None}
 
     msg = response.choices[0].message
     tool_used = None
@@ -537,12 +579,17 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         messages.append({"role": "assistant", "content": None, "tool_calls": msg.tool_calls})
         messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": _stringify_result(tool_result)})
 
-        final = client.chat.completions.create(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-            messages=messages,
-            max_tokens=1024,
-        )
-        reply = (final.choices[0].message.content or "").strip()
+        try:
+            final = client.chat.completions.create(
+                model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                messages=messages,
+                max_tokens=1024,
+            )
+            reply = (final.choices[0].message.content or "").strip()
+        except Exception as exc:
+            logger.warning("Final tool-followup completion failed; using plain assistant response: %s", exc)
+            fallback = _chat_completion(messages, allow_tools=False)
+            reply = (fallback.choices[0].message.content or "").strip()
     else:
         reply = (msg.content or "").strip()
 

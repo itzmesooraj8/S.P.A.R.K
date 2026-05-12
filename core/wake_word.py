@@ -13,6 +13,13 @@ try:
 except Exception:  # pragma: no cover - optional dependency at runtime
     keyboard = None
 
+try:
+    from openwakeword.model import Model as OpenWakeWordModel
+    OPENWAKEWORD_AVAILABLE = True
+except Exception:  # pragma: no cover - optional dependency at runtime
+    OpenWakeWordModel = None
+    OPENWAKEWORD_AVAILABLE = False
+
 FORMAT = None
 CHANNELS = 1
 RATE = 16000
@@ -29,12 +36,13 @@ def _load_wake_model():
     global oww_model, FORMAT
     if oww_model is not None:
         return oww_model
+    if not OPENWAKEWORD_AVAILABLE:
+        raise ImportError("openwakeword is not installed")
     import numpy as np  # noqa: F401
     import pyaudio
-    from openwakeword.model import Model
 
     FORMAT = pyaudio.paInt16
-    oww_model = Model(wakeword_models=["hey_jarvis"])
+    oww_model = OpenWakeWordModel(wakeword_models=["hey_jarvis"])
     return oww_model
 
 
@@ -87,6 +95,10 @@ def start_wake_engine(on_wake_callback=None, use_hotword: bool = True):
             on_wake_callback()
         except Exception as exc:
             logger.exception("Wake callback failed: %s", exc)
+
+    if not OPENWAKEWORD_AVAILABLE:
+        logger.info("openwakeword not installed; wake word disabled.")
+        use_hotword = False
 
     if use_hotword:
         try:

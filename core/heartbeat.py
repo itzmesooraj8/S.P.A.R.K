@@ -4,6 +4,8 @@ import logging
 
 from tools.sysmon import get_system_health
 from core.scheduler import list_reminders
+from core.automation import run_automation_cycle
+from core.prompt_adaptation import run_prompt_evolution_cycle
 from core.main import broadcast_hud_event
 
 logger = logging.getLogger("SPARK_HEARTBEAT")
@@ -30,6 +32,16 @@ def _heartbeat_loop():
                         "data": f"Pending tasks: {len(reminders)}"
                     }
                 )
+
+            try:
+                run_automation_cycle()
+            except Exception as automation_exc:
+                logger.warning("Automation cycle failed: %s", automation_exc)
+
+            try:
+                run_prompt_evolution_cycle()
+            except Exception as prompt_exc:
+                logger.warning("Prompt evolution cycle failed: %s", prompt_exc)
 
             health_status = get_system_health()
             if "heavy load" in health_status.lower() or "unable" in health_status.lower():

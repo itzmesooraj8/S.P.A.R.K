@@ -32,6 +32,9 @@ from api.routes.runtime import router as runtime_router
 from api.routes.security import router as security_router
 import core.main as spark_main
 from core.main import run_agent_turn
+from core.scheduler import init_scheduler
+from core.heartbeat import start_heartbeat
+from core.takeover import start_takeover_mode
 from core.spark_brain import handle as spark_brain_handle
 from core.spark_brain import memory as spark_memory
 from core.memory import MemoryCategory
@@ -81,6 +84,21 @@ async def startup_tasks():
         await loop.run_in_executor(None, load_whisper)
     except Exception as exc:
         logger.warning(f"Whisper preload failed: {exc}")
+
+    try:
+        init_scheduler()
+    except Exception as exc:
+        logger.warning(f"Scheduler startup failed: {exc}")
+
+    try:
+        start_heartbeat()
+    except Exception as exc:
+        logger.warning(f"Heartbeat startup failed: {exc}")
+
+    try:
+        start_takeover_mode()
+    except Exception as exc:
+        logger.warning(f"Takeover startup failed: {exc}")
 
     _wake_lock = threading.Lock()
 
@@ -174,10 +192,15 @@ class ChatRequest(BaseModel):
 
 @app.post("/chat")
 async def chat_endpoint(request: ChatRequest):
-    # Execute one agent turn (memory -> LLM -> tool -> response)
-    # We run it in a thread since it might be blocking/long-running
-    response = await asyncio.to_thread(run_agent_turn, request.message, False, False)
-    return {"response": response}
+    logger.info("chat_endpoint: direct brain path entered")
+    # Call the async Groq brain directly for HTTP chat so the endpoint does not
+    # depend on the heavier sync voice/runtime wrapper.
+    try:
+        result = await spark_brain_handle(request.message, [])
+        return {"response": str(result.get("reply", "")).strip()}
+    except Exception as exc:
+        logger.error(f"Chat endpoint failed: {exc}", exc_info=True)
+        return {"response": "I’m having trouble reaching the language model right now. Please try again in a moment."}
 
 
 @app.post("/listen")

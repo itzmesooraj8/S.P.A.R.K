@@ -6,17 +6,26 @@ When a job fires, it pushes a WS event to the HUD AND speaks proactively.
 """
  
 import logging
+import hashlib
+import re
 import threading
 import requests
 from datetime import datetime, timedelta
 from apscheduler.schedulers.background import BackgroundScheduler
 from apscheduler.triggers.date import DateTrigger
+from apscheduler.triggers.cron import CronTrigger
  
 logger = logging.getLogger(__name__)
  
 # Global scheduler instance (singleton)
 _scheduler: BackgroundScheduler | None = None
 _voice_ref = None  # Injected from main.py
+
+
+def _build_job_id(prefix: str, message: str, trigger_key: str) -> str:
+    slug = re.sub(r"[^a-z0-9]+", "_", message.lower()).strip("_")[:24] or "reminder"
+    digest = hashlib.sha1(f"{prefix}:{message}:{trigger_key}".encode("utf-8")).hexdigest()[:10]
+    return f"{prefix}_{slug}_{digest}"
  
  
 def init_scheduler(voice=None):
@@ -121,6 +130,35 @@ def set_reminder(message: str, delay_seconds: int) -> str:
  
     logger.info(f"[SCHEDULER] Reminder registered: '{message}' in {delay_seconds}s (job_id={job_id})")
     return f"Reminder set. I will alert you in {time_str}: '{message}'."
+
+
+def set_recurring_reminder(message: str, hour: int = 8, minute: int = 0, day_of_week: str | None = None) -> str:
+    """Register a recurring reminder that fires on a cron schedule."""
+    global _scheduler
+    if not _scheduler or not _scheduler.running:
+        return "Error: Scheduler is not running. Cannot set recurring reminder."
+
+    if hour < 0 or hour > 23 or minute < 0 or minute > 59:
+        return "Error: hour must be 0-23 and minute must be 0-59."
+
+    trigger_kwargs = {"hour": hour, "minute": minute}
+    if day_of_week:
+        trigger_kwargs["day_of_week"] = day_of_week
+
+    trigger_label = f"{hour:02d}:{minute:02d}" + (f" {day_of_week}" if day_of_week else " daily")
+    job_id = _build_job_id("recurring", message, trigger_label)
+
+    _scheduler.add_job(
+        func=_fire_reminder,
+        trigger=CronTrigger(timezone="UTC", **trigger_kwargs),
+        args=[message, job_id],
+        id=job_id,
+        replace_existing=True,
+    )
+
+    scope = f" on {day_of_week}" if day_of_week else " daily"
+    logger.info(f"[SCHEDULER] Recurring reminder registered: '{message}' at {hour:02d}:{minute:02d}{scope} (job_id={job_id})")
+    return f"Recurring reminder set for {hour:02d}:{minute:02d}{scope}: '{message}'."
  
  
 def list_reminders() -> list[dict]:

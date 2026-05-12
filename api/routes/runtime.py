@@ -2,8 +2,10 @@ from __future__ import annotations
 
 from fastapi import APIRouter
 
+from core.camera_vision import analyze_camera_frame, capture_camera_frame
 from core.runtime_architecture import build_runtime_architecture
 from core.orchestrator.runtime_state import get_runtime_snapshot
+from tools.iot import control_smart_plug
 
 
 router = APIRouter()
@@ -47,4 +49,17 @@ async def runtime_dashboard():
         "snapshot": snapshot,
         "architecture": build_runtime_architecture(),
     }
+
+
+@router.get("/api/runtime/camera/scan")
+async def runtime_camera_scan():
+    frame_path = capture_camera_frame()
+    if frame_path.endswith(".jpg"):
+        return {"frame": frame_path, "analysis": analyze_camera_frame(frame_path)}
+    return {"frame": frame_path, "analysis": frame_path}
+
+
+@router.post("/api/runtime/smart-home/plug/{action}")
+async def runtime_smart_plug(action: str):
+    return {"result": control_smart_plug(action)}
 
