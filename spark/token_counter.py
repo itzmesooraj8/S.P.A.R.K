@@ -85,6 +85,13 @@ class TokenCounter:
         """Get remaining token budget for today."""
         return max(0, self.daily_limit - self.get_daily_usage())
 
+    def get_remaining_today(self) -> int:
+        """Get remaining token budget for today (alias for get_remaining_budget).
+        
+        Preferred method name for session-start checks to ensure clear intent.
+        """
+        return self.get_remaining_budget()
+
     def should_skip_groq(self) -> bool:
         """Check if daily token limit reached; if so, skip Groq and use Ollama only."""
         daily_usage = self.get_daily_usage()

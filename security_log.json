@@ -110,5 +110,93 @@
     "process": "cmd.exe",
     "cmdline": "c:\\windows\\system32\\cmd.exe /c c:\\program files\\nodejs\\npx.cmd -y @modelcontextprotocol/server-puppeteer",
     "severity": "high"
+  },
+  {
+    "type": "suspicious_process",
+    "timestamp": "2026-05-12T19:16:24.314582",
+    "pid": 22736,
+    "process": "cmd.exe",
+    "cmdline": "c:\\windows\\system32\\cmd.exe",
+    "severity": "high"
+  },
+  {
+    "type": "suspicious_process",
+    "timestamp": "2026-05-12T19:16:39.904958",
+    "pid": 22736,
+    "process": "cmd.exe",
+    "cmdline": "c:\\windows\\system32\\cmd.exe",
+    "severity": "high"
+  },
+  {
+    "type": "suspicious_process",
+    "timestamp": "2026-05-12T19:17:24.431887",
+    "pid": 22736,
+    "process": "cmd.exe",
+    "cmdline": "c:\\windows\\system32\\cmd.exe",
+    "severity": "high"
+  },
+  {
+    "type": "suspicious_process",
+    "timestamp": "2026-05-12T19:17:39.994571",
+    "pid": 22736,
+    "process": "cmd.exe",
+    "cmdline": "c:\\windows\\system32\\cmd.exe",
+    "severity": "high"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-12T21:22:47.848993",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\token_counter.py",
+    "old_hash": "e4c8fe78e846c6e672ba9d1122b9045afd25dda8268cb4dc26ca9fb15391cb28",
+    "new_hash": "ac61d0fc6794c71d20ea93122e934070d58db25db9e64c39cbd03a02f4ec0a28",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-12T21:23:47.959872",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\server.py",
+    "old_hash": "661c635a402dc1bf82e7149f22488a80ac21293a9c58549894f739403c9c4387",
+    "new_hash": "0a5bb04f8a044f95cd10895132b2492333f704e5b4e7bd0463b2de315fb04f1f",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-12T21:26:48.321034",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\security_daemon.py",
+    "old_hash": "dc7356ced45dac49a194fcf9c110d053a8062a27fb5ce09d97eb68fca6820867",
+    "new_hash": "19ff1511b9d3c8ecd767ab11da41e737b96d314f8b14e7c1d777491997448558",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-12T23:14:58.817329",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
+    "old_hash": "59be932850ba01f6e52bf27d93bb19672135db9c1cae74be3a418f1db75b726d",
+    "new_hash": "43b7fcc6d7a5ba10a7e67711e6230c2ec64cbe32e0e9bd722e47c752e54043c9",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-13T00:27:33.596741",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\memory.py",
+    "old_hash": "3ec8c6a1216494ba4785a1a1e4aab5c6980f0ac37f2d75352534345cdc146ea8",
+    "new_hash": "793dc43a49fc77db62e987cde6cef978f639304dcc00729da44f42f299dac930",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-13T00:28:03.667685",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "c848b3cc0188e7d22cfa4cf791e9250ca007032cfa9efc88267747f46d4e0846",
+    "new_hash": "1b386a8f63cea6ef81678bdb2c183584100281c09bf678720fc714055d8f12f7",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-13T00:28:03.679313",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
+    "old_hash": "7b4d933dcf2d656dbf6f859676f0646eaf1e14d3a5b819df7339a6258cdf7135",
+    "new_hash": "a02bfa1af3df1c66e830a8af70d06d4cec4c07e6c37e973a797974766502b688",
+    "severity": "critical"
   }
 ]

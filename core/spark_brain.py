@@ -9,6 +9,7 @@ import json
 import logging
 import os
 import psutil
+import requests
 import re
 import subprocess
 import sys
@@ -20,6 +21,7 @@ from typing import Any
 from dotenv import load_dotenv
 from groq import Groq
 from core.generated_tools import load_generated_tool_specs, run_generated_tool
+from core.orchestrator.action_decomposer import decompose_explicit_actions
 from config import LLM_HOST, LLM_MODEL
 from core.persona import build_system_prompt
 from core.tools import SparkTools
@@ -460,7 +462,14 @@ def _extract_tool_request(content: str, allowed_tools: set[str]) -> tuple[str, d
     try:
         payload = json.loads(text)
     except Exception:
-        return None
+        start = text.find("{")
+        end = text.rfind("}")
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            payload = json.loads(text[start : end + 1])
+        except Exception:
+            return None
 
     if not isinstance(payload, dict):
         return None
@@ -576,12 +585,124 @@ def _offline_reply(user_input: str) -> str:
     return "I am having trouble reaching the language model right now, but I am still running locally."
 
 
-def _local_cli_completion(prompt: str, messages: list[dict[str, Any]] | None = None) -> str:
-    """Run local Ollama model via CLI, including system prompt context if available.
+def _ollama_model_candidates(primary_model: str) -> list[str]:
+    """Return local Ollama model candidates, preferring the configured primary model first."""
+    candidates: list[str] = []
+    seen: set[str] = set()
+
+    def _add(model_name: str) -> None:
+        normalized = model_name.strip()
+        if normalized and normalized not in seen:
+            seen.add(normalized)
+            candidates.append(normalized)
+
+    _add(primary_model)
+
+    try:
+        response = requests.get(f"{LLM_HOST}/api/tags", timeout=3)
+        response.raise_for_status()
+        data = response.json()
+        models = data.get("models", []) if isinstance(data, dict) else []
+        if isinstance(models, list):
+            sorted_models = sorted(
+                [model for model in models if isinstance(model, dict)],
+                key=lambda model: float(model.get("size", 0) or 0),
+            )
+            for model in sorted_models:
+                _add(str(model.get("name") or model.get("model") or ""))
+    except Exception:
+        pass
+
+    return candidates
+
+
+def _ollama_prompt_from_messages(messages: list[dict[str, Any]]) -> str:
+    parts: list[str] = []
+    for message in messages:
+        if not isinstance(message, dict):
+            continue
+        role = str(message.get("role", "user") or "user").strip().lower()
+        content = str(message.get("content", "") or "").strip()
+        if not content:
+            continue
+        if role == "system":
+            parts.append(f"[SYSTEM]\n{content}")
+        elif role == "assistant":
+            parts.append(f"[ASSISTANT]\n{content}")
+        else:
+            parts.append(f"[USER]\n{content}")
+    return "\n\n".join(parts)
+
+
+def _local_http_completion(messages: list[dict[str, Any]]) -> str:
+    """Call Ollama via persistent HTTP API for faster, local-only responses.
+    
+    This bypasses subprocess spawning and uses the persistent Ollama HTTP server.
+    Perfect for fallback when Groq is in cooldown or unavailable.
     
     Args:
-        prompt: The user prompt/query
-        messages: Optional full message list with system prompt (for tool-forcing)
+        messages: Full message list including system prompt
+        
+    Returns:
+        Response text from local Ollama model
+    """
+    import requests
+    
+    timeout = float(os.getenv("SPARK_OLLAMA_HTTP_TIMEOUT_SECONDS", "18"))
+    primary_timeout = float(os.getenv("SPARK_OLLAMA_PRIMARY_TIMEOUT_SECONDS", "8"))
+    model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
+    prompt = _ollama_prompt_from_messages(messages)
+    
+    try:
+        _ensure_local_ollama()
+    except Exception as exc:
+        logger.debug(f"Ollama startup probe failed: {exc}")
+
+    for candidate in _ollama_model_candidates(model):
+        candidate_timeout = primary_timeout if candidate == model else min(timeout, 25.0)
+
+        for endpoint, body in (
+            ("chat", {"model": candidate, "messages": messages, "stream": False}),
+            ("generate", {"model": candidate, "prompt": prompt, "stream": False}),
+        ):
+            try:
+                response = requests.post(f"{LLM_HOST}/api/{endpoint}", json=body, timeout=candidate_timeout)
+                response.raise_for_status()
+
+                data = response.json()
+                if isinstance(data, dict):
+                    if "message" in data:
+                        return str(data["message"].get("content", "")).strip()
+                    if "response" in data:
+                        return str(data["response"]).strip()
+                return str(data).strip() if data else ""
+            except requests.exceptions.Timeout:
+                logger.warning(f"Ollama HTTP timeout after {candidate_timeout}s for model {candidate} via /api/{endpoint}")
+                break
+            except requests.exceptions.HTTPError as exc:
+                status = getattr(exc.response, "status_code", None)
+                body_text = ""
+                try:
+                    body_text = str(exc.response.text)
+                except Exception:
+                    pass
+                if status == 400 and endpoint == "chat":
+                    logger.debug(f"Ollama chat unsupported for {candidate}; trying generate: {body_text}")
+                    continue
+                logger.debug(f"Ollama HTTP error for model {candidate} via /api/{endpoint}: {exc}")
+                break
+            except Exception as exc:
+                logger.debug(f"Ollama HTTP error for model {candidate} via /api/{endpoint}: {exc}")
+                break
+
+    return ""
+
+
+def _local_cli_completion(prompt: str, messages: list[dict[str, Any]] | None = None) -> str:
+    """Run local Ollama model via CLI as last resort fallback.
+    
+    Only used if HTTP fails. This spawns a fresh process, so it's slower but more reliable
+    as a final fallback when Ollama server is unresponsive.
     """
     try:
         # Build context prompt that includes system instructions if messages provided
@@ -596,8 +717,9 @@ def _local_cli_completion(prompt: str, messages: list[dict[str, Any]] | None = N
             full_prompt = prompt
         
         timeout = float(os.getenv("SPARK_OLLAMA_CLI_TIMEOUT_SECONDS", "60"))
+        model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
         result = subprocess.run(
-            ["ollama", "run", LLM_MODEL, full_prompt],
+            ["ollama", "run", model, full_prompt],
             capture_output=True,
             text=True,
             encoding="utf-8",
@@ -649,53 +771,42 @@ def _ensure_local_ollama(force_start: bool = False) -> None:
 
 
 async def _local_chat_completion(messages: list[dict[str, Any]]) -> str:
-    """Local model completion with CLI fallback.
+    """Local model completion with smart fallback strategy.
     
-    When Groq is in cooldown, skip HTTP and go straight to CLI to save time.
-    This ensures tool-forcing system prompt is passed to the local model.
+    When Groq is in cooldown, prefer HTTP for speed, then fall back to CLI as last resort.
+    This ensures we stay responsive while maximizing reliability.
     """
     try:
-        # If Groq is in cooldown, skip HTTP and go directly to CLI
+        # If Groq is in cooldown, prefer HTTP for speed
         if time.time() < _groq_cooldown_until:
-            logger.debug("Groq in cooldown; skipping HTTP and using CLI directly")
-            prompt = "\n".join(str(m.get("content", "") or "") for m in messages if m.get("content"))
-            return _local_cli_completion(prompt, messages=messages)
+            logger.debug("Groq in cooldown; using local HTTP API")
+            result = _local_http_completion(messages)
+            if result:
+                return result
+            # Fall through to CLI if HTTP fails
+            logger.debug("Local HTTP failed; retrying with CLI")
         
-        # Otherwise try HTTP with timeout
-        _ensure_local_ollama()
-        async with httpx.AsyncClient(timeout=30.0) as http_client:
-            response = await http_client.post(
-                f"{LLM_HOST}/api/chat",
-                json={"model": LLM_MODEL, "messages": messages, "stream": False},
-            )
-            if response.status_code == 404:
-                _ensure_local_ollama(force_start=True)
-                response = await http_client.post(
-                    f"{LLM_HOST}/api/chat",
-                    json={"model": LLM_MODEL, "messages": messages, "stream": False},
-                )
-            if response.status_code == 404:
-                prompt = "\n".join(str(m.get("content", "") or "") for m in messages if m.get("content"))
-                response = await http_client.post(
-                    f"{LLM_HOST}/api/generate",
-                    json={"model": LLM_MODEL, "prompt": prompt, "stream": False},
-                )
-            response.raise_for_status()
-            payload = response.json()
-            if isinstance(payload, dict) and "response" in payload:
-                return str(payload.get("response", "") or "").strip()
-            message = payload.get("message", {}) if isinstance(payload, dict) else {}
-            return str(message.get("content", "")).strip()
+        # Try HTTP first for speed
+        result = _local_http_completion(messages)
+        if result:
+            return result
+        
+        # Fall back to CLI as last resort
+        logger.debug("Local HTTP failed; falling back to CLI")
+        prompt = "\n".join(str(m.get("content", "") or "") for m in messages if m.get("content"))
+        return _local_cli_completion(prompt, messages=messages)
     except Exception as exc:
-        logger.warning("Local LLM HTTP fallback failed: %s", exc)
+        logger.warning("Local completion failed: %s", exc)
         prompt = "\n".join(str(m.get("content", "") or "") for m in messages if m.get("content"))
         return _local_cli_completion(prompt, messages=messages)
 
 
 def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True, tools: list[dict[str, Any]] | None = None):
-    # Check if daily Groq token limit reached; skip Groq if so
-    if token_counter.should_skip_groq():
-        raise RuntimeError("Daily Groq token limit reached; switching to Ollama-only mode")
+    # Double-check token budget before making ANY Groq call
+    remaining_tokens = token_counter.get_remaining_today()
+    if remaining_tokens < 5000:
+        logger.warning(f"[token_guard] Blocking Groq call due to low budget: {remaining_tokens} tokens")
+        raise RuntimeError(f"Daily Groq token budget too low ({remaining_tokens} < 5000); switching to Ollama-only mode")
     
     if time.time() < _groq_cooldown_until:
         raise RuntimeError("Groq is cooling down after rate limiting")
@@ -825,7 +936,115 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
     raise KeyError(f"Unknown tool: {tool_name}")
 
 
+async def _try_multi_action_routing(user_input: str) -> dict[str, Any] | None:
+    """Detect and execute multi-action requests (e.g., "open app AND search query").
+    
+    Returns None if not a multi-action request or all actions fail.
+    Otherwise returns execution result with summarized reply.
+    
+    This preprocessor runs BEFORE sending to Groq/LLM to enable fast local-only execution
+    of sequential tool calls when user specifies explicit actions.
+    """
+    actions = decompose_explicit_actions(user_input)
+    if len(actions) < 2:
+        return None
+
+    logger.info("[multi_action_routing] Executing %s sequential actions: %s", len(actions), [a["tool"] for a in actions])
+
+    results: list[tuple[str, dict[str, Any], Any]] = []
+    for action in actions:
+        tool_name = str(action.get("tool", ""))
+        tool_args = action.get("args", {}) if isinstance(action.get("args", {}), dict) else {}
+        try:
+            result = await _call_tool(tool_name, tool_args)
+            results.append((tool_name, tool_args, result))
+            logger.debug("[multi_action_routing] %s completed: %s", tool_name, str(result)[:100])
+        except Exception as exc:
+            logger.warning("[multi_action_routing] %s failed: %s", tool_name, exc)
+            results.append((tool_name, tool_args, f"Failed: {exc}"))
+    
+    # Summarize results
+    summary_lines = []
+    for tool_name, tool_args, result in results:
+        result_str = str(result)[:80] if result else "completed"
+        summary_lines.append(f"• {tool_name}: {result_str}")
+    
+    reply = f"Completed {len(actions)} actions:\n" + "\n".join(summary_lines)
+    
+    # Store in memory
+    memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+    
+    return {
+        "reply": reply,
+        "tool_used": f"{len(actions)}_actions",
+        "tool_result": [
+            {"tool": tool_name, "args": tool_args, "result": result}
+            for tool_name, tool_args, result in results
+        ],
+    }
+
+
+async def _try_local_direct_tool_routing(user_input: str) -> dict[str, Any] | None:
+    """Handle obvious single-action requests locally without waiting on Groq."""
+    text = (user_input or "").strip()
+    if not text:
+        return None
+
+    lower = text.lower()
+
+    if re.search(r"\b(weather|forecast|temperature|rain|humidity)\b", lower):
+        match = re.search(r"\b(?:in|for|at)\s+(.+)$", text, flags=re.IGNORECASE)
+        location = (match.group(1) if match and match.group(1) else text)
+        location = re.split(r"\b(?:and then|then|and|also|plus)\b|,", location, maxsplit=1, flags=re.IGNORECASE)[0]
+        location = re.sub(r"\b(?:weather|forecast|temperature|what is|what's|is it|like|today|now|currently|the)\b", "", location, flags=re.IGNORECASE)
+        location = re.sub(r"^\s*(?:in|for|at)\s+", "", location, flags=re.IGNORECASE).strip(" .") or "Palakkad"
+        result = await _call_tool("get_weather", {"location": location})
+        reply = f"Weather for {location}: {result}"
+        memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        return {"reply": reply, "tool_used": "get_weather", "tool_result": result}
+
+    if re.search(r"\b(?:open|launch|start|run)\b", lower):
+        if re.search(r"\b(map|maps|google maps)\b", lower):
+            match = re.search(r"(?:map|maps)(?:\s+and\s+open\s+the)?\s+(.+?)(?:\s+location)?$", text, flags=re.IGNORECASE)
+            location = (match.group(1) if match else text).strip()
+            for token in ["open", "google", "map", "maps", "and", "the"]:
+                location = re.sub(rf"\b{token}\b", " ", location, flags=re.IGNORECASE)
+            location = " ".join(location.split()).strip() or "current location"
+            map_url = f"https://www.google.com/maps/search/{quote_plus(location)}"
+            result = await _call_tool("open_url", {"url": map_url, "query": location})
+            reply = f"Opened Google Maps for {location}, sir."
+            memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+            return {"reply": reply, "tool_used": "open_url", "tool_result": result}
+
+        target = re.sub(r"^\s*(?:open|launch|start|run)\s+(?:the\s+|my\s+|app\s+|application\s+|program\s+)?", "", text, flags=re.IGNORECASE)
+        target = re.split(r"\b(?:and then|then|and|also|plus)\b|,", target, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .")
+        if target:
+            result = await _call_tool("open_app", {"app": target})
+            reply = str(result)
+            memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+            return {"reply": reply, "tool_used": "open_app", "tool_result": result}
+
+    if re.search(r"\b(?:search|look up|lookup|find|research)\b", lower):
+        query = re.sub(r"^\s*(?:search|look up|lookup|find|research)\s+", "", text, flags=re.IGNORECASE)
+        query = re.split(r"\b(?:and then|then|and|also|plus)\b|,", query, maxsplit=1, flags=re.IGNORECASE)[0].strip(" .")
+        if query:
+            result = await _call_tool("web_search", {"query": query})
+            reply = f"Search results for {query}: {result}"
+            memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+            return {"reply": reply, "tool_used": "web_search", "tool_result": result}
+
+    return None
+
+
 async def handle(user_input: str, session_history: list[dict[str, Any]], stream_sink=None, cancel_event=None) -> dict[str, Any]:
+    # Check token budget at session start - block Groq early if budget is low
+    remaining_tokens = token_counter.get_remaining_today()
+    if remaining_tokens < 5000:
+        logger.warning(f"[token_guard] Groq budget low ({remaining_tokens} tokens) — routing to local")
+        # Force local-only mode by pretending Groq is in cooldown
+        global _groq_cooldown_until
+        _groq_cooldown_until = time.time() + 86400  # Block Groq for rest of day
+    
     try:
         memory.extract_and_store_facts(user_input)
         facts = memory.recall(user_input, top_k=3, category=MemoryCategory.FACT)
@@ -920,6 +1139,26 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
                 except Exception as exc:
                     logger.warning("Deterministic search intent failed: %s", exc)
 
+    # Try multi-action routing for requests like "open app AND search query"
+    # This provides fast local-only execution for composite requests
+    try:
+        multi_action_result = await _try_multi_action_routing(user_input)
+        if multi_action_result:
+            if stream_sink:
+                stream_sink("response_done", {"content": multi_action_result["reply"]})
+            return multi_action_result
+    except Exception as exc:
+        logger.debug(f"Multi-action routing failed (continuing with normal flow): {exc}")
+
+    try:
+        local_tool_result = await _try_local_direct_tool_routing(user_input)
+        if local_tool_result:
+            if stream_sink:
+                stream_sink("response_done", {"content": local_tool_result["reply"]})
+            return local_tool_result
+    except Exception as exc:
+        logger.debug(f"Local direct tool routing failed: {exc}")
+
     if client is None:
         reply = await _local_chat_completion(messages) or _offline_reply(user_input)
         memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
@@ -999,21 +1238,28 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     if msg.tool_calls:
         messages.append({"role": "assistant", "content": None, "tool_calls": msg.tool_calls})
         messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": _stringify_result(tool_result)})
-    else:
-        messages.append({"role": "assistant", "content": msg.content or ""})
-        messages.append({"role": "tool", "content": _stringify_result(tool_result), "name": tool_used})
 
-    try:
-        final = client.chat.completions.create(
-            model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-            messages=messages,
-            max_tokens=1024,
-        )
-        reply = (final.choices[0].message.content or "").strip()
-    except Exception as exc:
-        logger.warning("Final tool-followup completion failed; using plain assistant response: %s", exc)
-        fallback = _chat_completion(messages, allow_tools=False)
-        reply = (fallback.choices[0].message.content or "").strip()
+        try:
+            final = client.chat.completions.create(
+                model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
+                messages=messages,
+                max_tokens=1024,
+            )
+            reply = (final.choices[0].message.content or "").strip()
+        except Exception as exc:
+            logger.warning("Final tool-followup completion failed; using plain assistant response: %s", exc)
+            fallback = _chat_completion(messages, allow_tools=False)
+            reply = (fallback.choices[0].message.content or "").strip()
+    else:
+        reply = (msg.content or "").strip()
+        tool_text = _stringify_result(tool_result)
+        if tool_text:
+            reply = f"{reply}\n{tool_text}".strip() if reply else tool_text
+
+    memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+
+    if stream_sink:
+        stream_sink("response_done", {"content": reply})
 
     if not reply:
         reply = "I do not have a response right now."

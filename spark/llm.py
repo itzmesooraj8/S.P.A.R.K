@@ -9,9 +9,13 @@ import re
 import socket
 import subprocess
 import time
+from datetime import datetime
 from typing import Any
 
 import httpx
+import requests
+
+from core.orchestrator.action_decomposer import decompose_explicit_actions
 
 
 log = logging.getLogger("spark.llm")
@@ -199,14 +203,50 @@ class SparkLLM:
     def _candidate_ollama_models(self) -> list[str]:
         configured = self._ollama_model()
         env_model = str(os.getenv("OLLAMA_MODEL", "") or "").strip()
-        candidates = [configured, env_model, "gemma4"]
+        candidates = [configured, env_model]
         seen: set[str] = set()
         result: list[str] = []
         for model in candidates:
             if model and model not in seen:
                 seen.add(model)
                 result.append(model)
+
+        try:
+            response = requests.get(f"{self._ollama_host()}/api/tags", timeout=3)
+            response.raise_for_status()
+            data = response.json()
+            models = data.get("models", []) if isinstance(data, dict) else []
+            if isinstance(models, list):
+                sorted_models = sorted(
+                    [model for model in models if isinstance(model, dict)],
+                    key=lambda model: float(model.get("size", 0) or 0),
+                )
+                for model in sorted_models:
+                    model_name = str(model.get("name") or model.get("model") or "").strip()
+                    if model_name and model_name not in seen:
+                        seen.add(model_name)
+                        result.append(model_name)
+        except Exception:
+            pass
+
         return result
+
+    def _ollama_prompt_from_messages(self, messages: list[dict[str, str]]) -> str:
+        parts: list[str] = []
+        for message in messages:
+            if not isinstance(message, dict):
+                continue
+            role = str(message.get("role", "user") or "user").strip().lower()
+            content = str(message.get("content", "") or "").strip()
+            if not content:
+                continue
+            if role == "system":
+                parts.append(f"[SYSTEM]\n{content}")
+            elif role == "assistant":
+                parts.append(f"[ASSISTANT]\n{content}")
+            else:
+                parts.append(f"[USER]\n{content}")
+        return "\n\n".join(parts)
 
     def _build_messages(self, prompt: str, force_json: bool = False) -> list[dict[str, str]]:
         system_prompt = self.memory.load_system_prompt().strip()
@@ -219,15 +259,18 @@ class SparkLLM:
 
     def _complete(self, prompt: str, force_json: bool = False) -> str:
         """Fallback completion without tools."""
+        normalized = (prompt or "").strip().lower()
+        if normalized in {"hi", "hello", "hey", "hii", "yo", "good morning", "good afternoon", "good evening"}:
+            return "Hello! How can I help you today? 😊"
+
         messages = self._build_messages(prompt, force_json=force_json)
         try:
+            # Try HTTP API first only when Ollama is actually reachable.
             self._ensure_ollama_available()
-            return self._run_async(self._chat_ollama(messages))
+            if self._is_ollama_reachable():
+                return self._chat_ollama_http(messages)
         except Exception as exc:
-            log.debug(f"Local Ollama completion failed: {exc}")
-            cli_reply = self._chat_ollama_cli(prompt)
-            if cli_reply:
-                return cli_reply
+            log.debug(f"Ollama HTTP failed: {exc}")
 
         if self._backend() in {"groq", "cloud"}:
             try:
@@ -240,27 +283,182 @@ class SparkLLM:
             except Exception as exc:
                 log.warning(f"Fallback completion failed: {exc}")
 
+        local_fallback = self._local_action_fallback(prompt)
+        if local_fallback:
+            return local_fallback
+
         return "I am having trouble reaching the language model right now, but I am still running locally."
 
-    def _chat_ollama_cli(self, prompt: str) -> str:
-        timeout = float(self._llm_config().get("ollama_cli_timeout_seconds", 45) or 45)
-        for model in self._candidate_ollama_models():
-            try:
-                result = subprocess.run(
-                    ["ollama", "run", model, prompt],
-                    capture_output=True,
-                    text=True,
-                    encoding="utf-8",
-                    errors="ignore",
-                    timeout=timeout,
-                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
-                )
-                text = (result.stdout or "").strip()
-                if result.returncode == 0 and text:
-                    return text
-            except Exception:
+    def _local_action_fallback(self, prompt: str) -> str:
+        """Best-effort local execution for common requests when both model backends are down."""
+        text = (prompt or "").strip()
+        if not text:
+            return ""
+        results: list[str] = []
+
+        actions = decompose_explicit_actions(text)
+        if not actions and any(word in text.lower() for word in ["time", "date", "clock"]):
+            actions = [{"tool": "get_time", "args": {}}]
+
+        for action in actions:
+            tool_name = str(action.get("tool", ""))
+            args = action.get("args", {}) if isinstance(action.get("args", {}), dict) else {}
+
+            if tool_name == "get_weather":
+                location = str(args.get("location") or "Palakkad")
+                try:
+                    from tools.weather import get_weather
+
+                    weather = get_weather(location)
+                    results.append(self._format_local_result(f"Weather for {location}", weather))
+                except Exception as exc:
+                    results.append(f"Weather lookup failed for {location}: {exc}")
                 continue
-        return ""
+
+            if tool_name == "open_app":
+                target = str(args.get("app") or "").strip()
+                if target:
+                    try:
+                        from tools.browser import open_app
+
+                        results.append(open_app(target))
+                    except Exception as exc:
+                        results.append(f"Open request failed for {target}: {exc}")
+                continue
+
+            if tool_name == "open_url":
+                url = str(args.get("url") or "")
+                query = str(args.get("query") or "")
+                try:
+                    from tools.browser import open_url
+
+                    results.append(open_url(url, query))
+                except Exception as exc:
+                    results.append(f"Open request failed: {exc}")
+                continue
+
+            if tool_name == "web_search":
+                query = str(args.get("query") or "")
+                if query:
+                    try:
+                        from tools.search import web_search
+
+                        results.append(web_search(query))
+                    except Exception as exc:
+                        results.append(f"Search failed for {query}: {exc}")
+                continue
+
+            if tool_name == "get_time":
+                results.append(datetime.now().strftime("The current time is %I:%M %p on %A, %B %d, %Y."))
+
+        return "\n".join(result for result in results if str(result).strip())
+
+    def _extract_open_target(self, text: str) -> str:
+        match = re.search(r"\b(?:open|launch|start|run)\b\s+(?:the\s+|my\s+|app\s+|application\s+|program\s+)?(.+)$", text, flags=re.IGNORECASE)
+        target = match.group(1) if match else text
+        target = re.split(r"\b(?:and then|then|and|also|plus)\b|,", target, maxsplit=1, flags=re.IGNORECASE)[0]
+        return re.sub(r"\b(?:please|now|for me|for us|on my pc|on my computer)\b", "", target, flags=re.IGNORECASE).strip(" .")
+
+    def _extract_weather_location(self, text: str) -> str:
+        lowered = text.lower()
+        match = re.search(r"\b(?:in|for|at)\s+(.+)$", lowered, flags=re.IGNORECASE)
+        candidate = match.group(1) if match and match.group(1) else lowered
+        candidate = re.split(r"\b(?:and then|then|and|also|plus)\b|,", candidate, maxsplit=1, flags=re.IGNORECASE)[0]
+        candidate = re.sub(r"\b(?:weather|forecast|temperature|what is|what's|is it|like|today|now|currently|the)\b", "", candidate, flags=re.IGNORECASE)
+        candidate = re.sub(r"^\s*(?:in|for|at)\s+", "", candidate, flags=re.IGNORECASE)
+        candidate = candidate.replace("india", "India")
+        cleaned = candidate.strip(" .")
+        return cleaned or "Palakkad"
+
+    def _extract_search_query(self, text: str) -> str:
+        match = re.search(r"\b(?:search|look up|lookup|find|research)\b\s*(.*)$", text, flags=re.IGNORECASE)
+        query = match.group(1) if match else text
+        query = re.split(r"\b(?:and then|then|and|also|plus)\b|,", query, maxsplit=1, flags=re.IGNORECASE)[0]
+        return re.sub(r"\b(?:please|for me|for us|now)\b", "", query, flags=re.IGNORECASE).strip(" .")
+
+    def _format_local_result(self, label: str, value: Any) -> str:
+        if isinstance(value, dict):
+            if value.get("error"):
+                return f"{label}: {value['error']}"
+            parts = [f"{key}={val}" for key, val in value.items()]
+            return f"{label}: " + ", ".join(parts)
+        return f"{label}: {value}"
+
+    def _chat_ollama_http(self, messages: list[dict[str, str]]) -> str:
+        """Call Ollama via persistent HTTP API (no subprocess spawning).
+        
+        Args:
+            messages: List of message dicts with 'role' and 'content' keys
+            
+        Returns:
+            Response text from Ollama
+            
+        Raises:
+            Exception if all models fail or Ollama is unreachable
+        """
+        timeout = float(self._llm_config().get("ollama_http_timeout_seconds", 18) or 18)
+        primary_timeout = float(os.getenv("SPARK_OLLAMA_PRIMARY_TIMEOUT_SECONDS", "8"))
+        prompt = self._ollama_prompt_from_messages(messages)
+        
+        for model in self._candidate_ollama_models():
+            candidate_timeout = primary_timeout if model == self._ollama_model() else min(timeout, 25.0)
+            chat_unsupported = False
+
+            try:
+                response = requests.post(
+                    f"{self._ollama_host()}/api/chat",
+                    json={"model": model, "messages": messages, "stream": False},
+                    timeout=candidate_timeout,
+                )
+                response.raise_for_status()
+
+                data = response.json()
+                if isinstance(data, dict):
+                    if "message" in data:
+                        return str(data["message"].get("content", "")).strip()
+                    if "response" in data:
+                        return str(data["response"]).strip()
+
+                return str(data).strip() if data else ""
+            except requests.exceptions.Timeout:
+                log.warning(f"Ollama HTTP timeout for model {model} after {candidate_timeout}s")
+                continue
+            except requests.exceptions.HTTPError as exc:
+                status = getattr(exc.response, "status_code", None)
+                if status == 400:
+                    chat_unsupported = True
+                else:
+                    log.debug(f"Ollama HTTP error for model {model}: {exc}")
+                    continue
+            except Exception as exc:
+                log.debug(f"Ollama HTTP error for model {model}: {exc}")
+                continue
+
+            if chat_unsupported:
+                try:
+                    response = requests.post(
+                        f"{self._ollama_host()}/api/generate",
+                        json={"model": model, "prompt": prompt, "stream": False},
+                        timeout=candidate_timeout,
+                    )
+                    response.raise_for_status()
+
+                    data = response.json()
+                    if isinstance(data, dict):
+                        if "response" in data:
+                            return str(data["response"]).strip()
+                        if "message" in data:
+                            return str(data["message"].get("content", "")).strip()
+
+                    return str(data).strip() if data else ""
+                except requests.exceptions.Timeout:
+                    log.warning(f"Ollama generate timeout for model {model} after {candidate_timeout}s")
+                    continue
+                except Exception as exc:
+                    log.debug(f"Ollama generate error for model {model}: {exc}")
+                    continue
+        
+        raise RuntimeError(f"All Ollama models failed. Candidates: {self._candidate_ollama_models()}")
 
     async def _chat_ollama(self, messages: list[dict[str, str]]) -> str:
         async with httpx.AsyncClient(timeout=120.0) as client:

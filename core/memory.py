@@ -1,6 +1,6 @@
 from enum import Enum
+from functools import lru_cache
 import uuid, chromadb
-from sentence_transformers import SentenceTransformer
 
 class MemoryCategory(str, Enum):
     FACT = "fact"          # "My name is Sooraj", "I live in Kozhikode"
@@ -11,27 +11,38 @@ class MemoryCategory(str, Enum):
 import logging
 _logger = logging.getLogger("SPARK_MEMORY")
 
-_logger.info("Loading SentenceTransformer encoder (once)...")
-try:
-    from sentence_transformers import SentenceTransformer as _ST
-    _ENCODER = _ST("all-MiniLM-L6-v2")
-    _logger.info("SentenceTransformer encoder ready.")
-except Exception as _e:
-    _logger.error(f"SentenceTransformer failed to load: {_e}")
-    _ENCODER = None
+
+@lru_cache(maxsize=1)
+def _load_encoder():
+    try:
+        from sentence_transformers import SentenceTransformer as _ST
+
+        _logger.info("Loading SentenceTransformer encoder (lazy)...")
+        encoder = _ST("all-MiniLM-L6-v2")
+        _logger.info("SentenceTransformer encoder ready.")
+        return encoder
+    except Exception as _e:
+        _logger.error(f"SentenceTransformer failed to load: {_e}")
+        return None
 
 class MemoryStore:
     def __init__(self):
         self.client = chromadb.PersistentClient(path=".spark_memory")
         self.collection = self.client.get_or_create_collection("spark_v2")
-        self.encoder = _ENCODER
+        self.encoder = None
+
+    def _get_encoder(self):
+        if self.encoder is None:
+            self.encoder = _load_encoder()
+        return self.encoder
 
     def store(self, text: str,
               category: MemoryCategory = MemoryCategory.CONVERSATION) -> None:
-        if self.encoder is None:
+        encoder = self._get_encoder()
+        if encoder is None:
             return
         try:
-            embedding = self.encoder.encode([text])[0].tolist()
+            embedding = encoder.encode([text])[0].tolist()
             self.collection.add(
                 documents=[text],
                 embeddings=[embedding],
@@ -43,12 +54,13 @@ class MemoryStore:
 
     def recall(self, query: str, top_k: int = 5,
                category: MemoryCategory = None) -> list[str]:
-        if self.encoder is None:
+        encoder = self._get_encoder()
+        if encoder is None:
             return []
         try:
             if self.collection.count() == 0:
                 return []
-            embedding = self.encoder.encode([query])[0].tolist()
+            embedding = encoder.encode([query])[0].tolist()
             kwargs = dict(
                 query_embeddings=[embedding],
                 n_results=min(top_k, self.collection.count()),

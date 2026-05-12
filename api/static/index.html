@@ -627,6 +627,103 @@
       .feed-item { max-width: 100%; }
       .chat-hero h1 { max-width: 18ch; }
     }
+
+    /* Signal Override Terminal */
+    .signal-override-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(0, 0, 0, 0.92);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      z-index: 99999;
+      animation: fadeUp 0.4s ease;
+      backdrop-filter: blur(8px);
+    }
+
+    .signal-override-terminal {
+      width: 90%;
+      max-width: 800px;
+      background: linear-gradient(135deg, rgba(10, 20, 31, 0.96), rgba(13, 27, 41, 0.88));
+      border: 2px solid var(--accent);
+      border-radius: 8px;
+      padding: 24px;
+      box-shadow: 0 0 60px rgba(94, 200, 255, 0.4), inset 0 0 30px rgba(94, 200, 255, 0.08);
+      font-family: 'IBM Plex Mono', monospace;
+      color: var(--accent);
+      animation: fadeUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .override-header {
+      font-size: 18px;
+      font-weight: 700;
+      letter-spacing: 3px;
+      text-transform: uppercase;
+      margin-bottom: 16px;
+      padding-bottom: 12px;
+      border-bottom: 1px solid rgba(94, 200, 255, 0.3);
+      text-shadow: 0 0 20px rgba(94, 200, 255, 0.6);
+    }
+
+    .override-content {
+      display: flex;
+      flex-direction: column;
+      gap: 16px;
+    }
+
+    .override-section {
+      border: 1px solid rgba(94, 200, 255, 0.2);
+      padding: 12px;
+      border-radius: 4px;
+      background: rgba(94, 200, 255, 0.05);
+    }
+
+    .override-title {
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 2px;
+      color: var(--accent-strong);
+      margin-bottom: 4px;
+    }
+
+    .override-subtitle {
+      font-size: 12px;
+      color: rgba(138, 209, 255, 0.6);
+      letter-spacing: 1px;
+    }
+
+    .connections-list {
+      background: rgba(0, 0, 0, 0.3);
+      border: 1px solid rgba(94, 200, 255, 0.2);
+      border-radius: 4px;
+      padding: 12px;
+      max-height: 300px;
+      overflow-y: auto;
+      font-size: 12px;
+      line-height: 1.8;
+    }
+
+    .conn-row {
+      padding: 6px 0;
+      border-bottom: 1px dotted rgba(94, 200, 255, 0.15);
+      font-family: 'IBM Plex Mono', monospace;
+      color: #5ee7b7;
+      word-break: break-all;
+    }
+
+    .conn-row:last-child {
+      border-bottom: none;
+    }
+
+    .override-footer {
+      display: flex;
+      justify-content: space-between;
+      font-size: 11px;
+      letter-spacing: 1px;
+      padding-top: 12px;
+      border-top: 1px solid rgba(94, 200, 255, 0.2);
+      color: rgba(138, 209, 255, 0.7);
+    }
   </style>
 </head>
 <body>
@@ -991,6 +1088,79 @@
     async function init() {
       seedInitialState(); startClock(); bindUI(); runBootSequence(); connectSystemSocket(); connectAISocket(); await fetchMemoryCount(); window.setTimeout(() => { setTranscript('Boot complete. Ask SPARK a question or send a command.', false); addSystemMessage('S.P.A.R.K chat interface online.', 'info'); }, 2200); startTypingBanner();
     }
+
+    // Signal Override Terminal Handler
+    function handleSignalOverride(payload) {
+      const terminal = document.getElementById('signal-override-terminal');
+      if (!terminal) return;
+      
+      // Fetch active TCP connections
+      fetch('/api/runtime/orchestrator')
+        .then(r => r.json())
+        .then(data => {
+          const connections = data.active_connections || [];
+          const connHtml = connections.map(c => 
+            `<div class="conn-row">TCP | ${(c.target || 'local').substring(0, 50)} | ${c.type || 'UNKNOWN'} | ESTABLISHED</div>`
+          ).join('');
+          
+          terminal.innerHTML = `
+            <div class="override-header">SIGNAL OVERRIDE TERMINAL</div>
+            <div class="override-content">
+              <div class="override-section">
+                <div class="override-title">COMMANDEERING SYSTEM</div>
+                <div class="override-subtitle">Active Connections: ${connections.length}</div>
+              </div>
+              <div class="connections-list">
+                ${connHtml || '<div class="conn-row">No connections</div>'}
+              </div>
+              <div class="override-footer">
+                <span>Signal strength: 100%</span>
+                <span>Latency: ${Math.random() * 10 | 0}ms</span>
+              </div>
+            </div>
+          `;
+          
+          // Auto-hide after 8 seconds
+          window.setTimeout(() => {
+            document.getElementById('signal-override-overlay')?.remove();
+          }, 8000);
+        });
+      
+      // Show the terminal
+      terminal.style.display = 'block';
+    }
+
+    // Modify connectSystemSocket to handle signal_override
+    const originalConnectSystemSocket = connectSystemSocket;
+    connectSystemSocket = function() {
+      setLinkState('sys', 'CONNECTING'); 
+      const socket = new WebSocket(wsUrl('/ws')); 
+      state.sysWs = socket;
+      socket.onopen = () => { setLinkState('sys', 'ONLINE'); };
+      socket.onmessage = (event) => { 
+        try { 
+          const payload = JSON.parse(event.data); 
+          if (payload.type === 'signal_override') {
+            // Show Signal Override Terminal
+            if (!document.getElementById('signal-override-overlay')) {
+              const overlay = document.createElement('div');
+              overlay.id = 'signal-override-overlay';
+              overlay.className = 'signal-override-overlay';
+              overlay.innerHTML = `<div id="signal-override-terminal" class="signal-override-terminal"></div>`;
+              document.body.appendChild(overlay);
+            }
+            handleSignalOverride(payload);
+          } else if (payload.type === 'sys_metrics' || payload.cpu !== undefined || payload.ram !== undefined) { 
+            updateMetrics(payload.payload || payload); 
+            setLinkState('sys', 'ONLINE'); 
+          } 
+        } catch (err) { 
+          console.error('system ws parse error', err); 
+        } 
+      };
+      socket.onclose = () => { setLinkState('sys', 'RECONNECTING'); window.setTimeout(connectSystemSocket, 1800); };
+      socket.onerror = () => { setLinkState('sys', 'ERROR'); };
+    };
 
     init();
   </script>

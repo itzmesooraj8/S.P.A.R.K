@@ -36,13 +36,16 @@ class SecurityDaemon:
         self.threat_log_file = Path(self.config.get("security.log_file", "security_log.json"))
         self.threat_log_file.parent.mkdir(parents=True, exist_ok=True)
         
-        # Config thresholds
-        self.suspicious_processes = self.config.get("security.suspicious_processes", [
-            "powershell.exe",
-            "cmd.exe",
-            "wscript.exe",
-            "cscript.exe",
-        ])
+        # Default suspicious list: ONLY explicitly malicious processes
+        # Standard Windows system processes are NOT included by default
+        self.default_suspicious_processes = [
+            "wscript.exe",  # VBScript
+            "cscript.exe",  # JScript
+        ]
+        
+        # Config thresholds - check for user-configured blocked processes
+        self.suspicious_processes = self._get_suspicious_processes()
+        
         self.file_watch_dirs = self.config.get("security.file_watch_dirs", [
             "core/",
             "spark/",
@@ -58,15 +61,26 @@ class SecurityDaemon:
         self.threat_throttle = {}  # Throttle repeated alerts (cache threat signatures + timestamps)
         self.daemon_thread = None
         self.running = False
+    
+    def _get_suspicious_processes(self) -> list[str]:
+        """Get suspicious process list from user config or default.
+        
+        User can override with SPARK_BLOCKED_PROCESSES env var (comma-separated).
+        This keeps the system processes (cmd.exe, powershell.exe, python.exe, etc.)
+        off the default blocked list unless explicitly configured.
+        """
+        user_blocked = os.getenv("SPARK_BLOCKED_PROCESSES", "").strip()
+        if user_blocked:
+            blocked = [p.strip() for p in user_blocked.split(",") if p.strip()]
+            logger.info(f"Using user-configured blocked processes: {blocked}")
+            return blocked
+        return self.default_suspicious_processes
 
     def _load_config(self) -> dict[str, Any]:
         """Load config from environment variables."""
         return {
             "security.enabled": os.getenv("SPARK_SECURITY_ENABLED", "true").lower() == "true",
             "security.log_file": os.getenv("SPARK_SECURITY_LOG_FILE", "security_log.json"),
-            "security.suspicious_processes": (
-                os.getenv("SPARK_SUSPICIOUS_PROCESSES", "").split(",") if os.getenv("SPARK_SUSPICIOUS_PROCESSES") else []
-            ),
             "security.file_watch_dirs": (
                 os.getenv("SPARK_FILE_WATCH_DIRS", "core/,spark/,api/").split(",") if os.getenv("SPARK_FILE_WATCH_DIRS") else []
             ),
@@ -328,34 +342,102 @@ class SecurityDaemon:
         return sha256_hash.hexdigest()
 
     def _is_legitimate_process(self, proc_info: dict, cmdline_str: str) -> bool:
-        """Determine if process is legitimate (whitelist check)."""
+        """Determine if process is legitimate (whitelist check).
+        
+        Whitelists development tools, system utilities, and known third-party security/service software.
+        Prevents false positives on legitimate processes like VS Code terminals, AMD services, and 360 Security.
+        """
         # Whitelist legitimate processes and system utilities
         whitelist_patterns = [
+            # SPARK development
             "spark_cli",
             "spark_brain",
+            
+            # Python & Development
+            "python.exe",
             "python.exe",
             "ollama",
             "pytest",
             "venv",
             "conda",
             "pip",
-            "amd",  # AMD system services
-            "nvidia",  # NVIDIA services
-            "svchost",  # Windows service host
-            "services.exe",  # Windows services
-            "explorer.exe",  # Windows explorer
-            "dwm.exe",  # Desktop window manager
-            "winlogon.exe",  # Windows logon
-            "lsass.exe",  # Local security authority
-            "vshost",  # Visual Studio host
-            "code",  # VS Code
-            "conhost.exe",  # Console host
-            "conhealth",  # Console health service
-            "360",  # 360 total security
-            "searchindexer",  # Windows search
-            "sppsvc",  # Software protection service
-            "cryptsvc",  # Cryptography services
-            "trust installer",  # Windows trust installer
+            "node.exe",
+            "npm",
+            "git",
+            
+            # VS Code (terminal, LSP, extensions)
+            "code",
+            "code.exe",
+            "code-server",
+            "electron",
+            "vscode",
+            "extensionhost",
+            "debug.exe",
+            ".vscode",
+            
+            # AMD CNxt Services & System
+            "amd",
+            "amdrsserv",  # AMD Remote Services daemon
+            "cncmd",      # AMD CNxt Command tool
+            "cnext",      # AMD CNxt service
+            "amdaccelerator",
+            
+            # Windows System Processes (legitimately required)
+            "svchost",
+            "services.exe",
+            "explorer.exe",
+            "dwm.exe",
+            "conhost.exe",
+            "conhealth",
+            "lsass.exe",
+            "winlogon.exe",
+            "spoolsv.exe",
+            "searchindexer",
+            "sppsvc",
+            "cryptsvc",
+            "trust installer",
+            "rundll32.exe",
+            "system",
+            "smss.exe",
+            "csrss.exe",
+            "wininit.exe",
+            "taskhostw.exe",
+            "dllhost.exe",
+            "svchost.exe",
+            "WmiPrvSE.exe",
+            
+            # 360 Total Security & Antivirus
+            "360",
+            "360safe",
+            "360tray",
+            "360sd",
+            "360defender",
+            "deepscan",  # 360 deep scan engine
+            "safemon",   # 360 safety monitor
+            
+            # Third-party Security & Utilities
+            "avast",
+            "kaspersky",
+            "mcafee",
+            "norton",
+            "bitdefender",
+            "sophos",
+            "trend micro",
+            "bullguard",
+            "avg",
+            
+            # System Utilities & Services
+            "backgroundtaskhost",
+            "fontdrvhost",
+            "useraccountcontrolhost",
+            "setupapi",
+            "installer",
+            "windows defender",
+            "msdefender",
+            "wmiprvse",
+            "devenv.exe",  # Visual Studio
+            "cl.exe",      # C++ compiler
+            "msbuild",
         ]
         
         for pattern in whitelist_patterns:

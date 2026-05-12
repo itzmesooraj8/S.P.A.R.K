@@ -8,6 +8,7 @@ import logging
 import time
 from collections import defaultdict
 from pydantic import BaseModel
+import subprocess
 
 logger = logging.getLogger(__name__)
 import sys
@@ -120,7 +121,21 @@ async def startup_tasks():
     except Exception as exc:
         logger.warning(f"Wake engine startup failed: {exc}")
 
-# Mount static files for the HUD
+    # Start Cloudflare tunnel if enabled for remote Signal Override
+    enable_tunnel = os.getenv("SPARK_ENABLE_TUNNEL", "0").strip().lower() in {"1", "true", "yes", "on"}
+    if enable_tunnel:
+        try:
+            tunnel_proc = subprocess.Popen(
+                ["cloudflared", "tunnel", "--url", "http://localhost:8000"],
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+            )
+            time.sleep(2)  # Give tunnel time to start
+            logger.info("[SPARK] Cloudflare tunnel starting for remote Signal Override")
+        except Exception as exc:
+            logger.warning(f"Cloudflare tunnel startup failed: {exc}")
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
 
@@ -133,7 +148,42 @@ async def get_index():
         return HTMLResponse(index_file.read())
 
 
-@app.post("/api/auth/login")
+@app.get("/override", response_class=HTMLResponse)
+async def get_override():
+    """Serve the mobile Signal Override UI (no auth required for discovery)."""
+    override_path = os.path.join(STATIC_DIR, "override.html")
+    if not os.path.exists(override_path):
+        return HTMLResponse("<h1>Signal Override not configured</h1>", status_code=404)
+    with open(override_path, "r", encoding="utf-8") as override_file:
+        return HTMLResponse(override_file.read())
+
+
+@app.post("/api/override/cast")
+async def cast_signal_override(request: Request, x_spark_token: str = Header(None)):
+    """Remote Signal Override: cast to any display running SPARK HUD.
+    
+    Requires X-SPARK-TOKEN header matching SPARK_TOKEN.
+    Broadcasts signal_override event to all connected WebSocket clients.
+    """
+    if x_spark_token != SPARK_TOKEN:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    
+    try:
+        body = await request.json()
+        target_url = body.get("target_url", "localhost:8000")
+        payload = body.get("payload", {})
+    except Exception:
+        return {"error": "Invalid payload"}, 400
+    
+    # Broadcast Signal Override event to all connected HUD clients
+    await manager.broadcast({
+        "type": "signal_override",
+        "target_url": target_url,
+        "payload": payload,
+        "timestamp": time.time(),
+    })
+    
+    return {"status": "signal cast", "clients_notified": len(manager.active_connections)}
 async def auth_login():
     token = uuid.uuid4().hex
     return {
