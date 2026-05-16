@@ -20,6 +20,7 @@ uvicorn[standard]
 websockets
 requests
 httpx
+python-multipart
 
 # ── Tools ────────────────────────────────────────────────────
 psutil>=5.9.0
@@ -33,6 +34,9 @@ pillow
 pytesseract
 sounddevice
 scipy
+pyautogui
+pygetwindow
+silero-vad
 
 # ── Phase 03: Proactive Agency Engine ────────────────────────
 APScheduler>=3.10.0          # scheduler.py — background reminder daemon

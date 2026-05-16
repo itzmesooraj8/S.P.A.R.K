@@ -37,12 +37,13 @@ from core.scheduler import init_scheduler, set_reminder, shutdown_scheduler
 from core.background import start_watcher, stop_watcher
 from core.wake_word import start_wake_engine, stop_wake_engine
 from core.memory_loop import retrieve as retrieve_turns, write_turn
+from core.perception import start_ambient_perception
 from config import LLM_HOST, LLM_MODEL
 from security.action_guard import guard_action
 from security.audit import record_audit
 from security.content_sanitizer import sanitize_for_llm, sanitize_memory_context
 from security.intent_validator import validate_intent_text
-from core.spark_brain import handle as spark_brain_handle
+from core.brain_entry import ask_spark_brain_sync
 
 def broadcast_hud_event(event_type: str, payload: dict):
     """Sends async events to the FastAPI server for HUD broadcasting"""
@@ -123,6 +124,11 @@ def ensure_runtime_components() -> None:
 
     if portfolio is None:
         portfolio = PortfolioTracker(memory)
+
+    try:
+        start_ambient_perception()
+    except Exception as exc:
+        logger.debug("Ambient perception startup skipped: %s", exc)
 
 # ─────────────────────────────────────────────────────────────────────────────
 # TOOL EXECUTION
@@ -444,13 +450,11 @@ def run_agent_turn(
             pass
 
     try:
-        result = asyncio.run(
-            spark_brain_handle(
-                user_input,
-                conversation_history,
-                stream_sink=stream_sink,
-                cancel_event=cancel_event,
-            )
+        result = ask_spark_brain_sync(
+            user_input,
+            session_history=conversation_history,
+            stream_sink=stream_sink,
+            cancel_event=cancel_event,
         )
         reply = str(result.get("reply", "")).strip()
         tool_used = result.get("tool_used")

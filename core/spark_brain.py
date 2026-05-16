@@ -15,13 +15,14 @@ import subprocess
 import sys
 import tempfile
 import time
+from datetime import datetime
 from urllib.parse import quote_plus
 from typing import Any
 
 from dotenv import load_dotenv
 from groq import Groq
 from core.generated_tools import load_generated_tool_specs, run_generated_tool
-from core.orchestrator.action_decomposer import decompose_explicit_actions
+from core.intent_router import parse_intents
 from config import LLM_HOST, LLM_MODEL
 from core.persona import build_system_prompt
 from core.tools import SparkTools
@@ -30,6 +31,7 @@ from spark.token_counter import TokenCounter
 from core.memory import MemoryStore, MemoryCategory
 from core.mcp_manager import MCPManager
 from core.planner import spark_plan_and_execute
+from core.local_brain_chain import local_chain_complete, chain_status
 
 logger = logging.getLogger(__name__)
 spark_tools = SparkTools()
@@ -454,6 +456,112 @@ def _stringify_result(result: Any) -> str:
         return str(result)
 
 
+def _summarize_result(result: Any, max_len: int = 160) -> str:
+    """Return a concise human-friendly summary for tool results."""
+    try:
+        # Lists of dicts (e.g., web_search results)
+        if isinstance(result, list) and result and isinstance(result[0], dict):
+            parts = []
+            for item in result[:3]:
+                title = item.get("title") or item.get("name") or item.get("headline") or item.get("summary")
+                url = item.get("link") or item.get("url") or item.get("uri")
+                if title and url:
+                    parts.append(f"{title} ({url})")
+                elif title:
+                    parts.append(str(title))
+                elif url:
+                    parts.append(str(url))
+            summary = "; ".join(parts) if parts else _stringify_result(result[:2])
+            return (summary[:max_len] + "...") if len(summary) > max_len else summary
+
+        # Dicts: pretty json
+        if isinstance(result, dict):
+            keys = ", ".join(str(k) for k in list(result.keys())[:6])
+            short = f"{{{keys}}}"
+            return short if len(short) <= max_len else short[:max_len] + "..."
+
+        # Strings and others
+        s = _stringify_result(result)
+        return (s[:max_len] + "...") if len(s) > max_len else s
+    except Exception:
+        return str(result)[:max_len]
+
+
+def _format_weather_reply(weather_data: Any, location: str) -> str:
+    if not isinstance(weather_data, dict):
+        return _stringify_result(weather_data)
+
+    error = str(weather_data.get("error") or "").strip()
+    if error:
+        return f"I couldn't get weather for {location}, sir. {error}"
+
+    temperature = weather_data.get("temperature_c")
+    humidity = weather_data.get("humidity_%")
+    wind = weather_data.get("wind_kmh")
+
+    temperature_text = f"{temperature}°C" if temperature is not None else "unknown"
+    humidity_text = f"{humidity}%" if humidity is not None else "unknown"
+    wind_text = f"{wind} km/h" if wind is not None else "unknown"
+
+    condition = str(
+        weather_data.get("condition")
+        or weather_data.get("summary")
+        or weather_data.get("description")
+        or ""
+    ).strip()
+
+    parts = [
+        f"Currently in {location}: {temperature_text}",
+        f"humidity at {humidity_text}",
+        f"wind at {wind_text}",
+    ]
+    if condition:
+        parts.insert(1, condition)
+
+    return ", ".join(parts) + ", sir."
+
+
+def _is_greeting_input(text: str) -> bool:
+    normalized = re.sub(r"[\s.!?,]+", " ", (text or "").strip().lower()).strip()
+    return normalized in {
+        "hi",
+        "hii",
+        "hiii",
+        "hello",
+        "hey",
+        "yo",
+        "sup",
+        "good morning",
+        "good afternoon",
+        "good evening",
+    }
+
+
+def _intent_to_tool_call(intent: Any) -> tuple[str, dict[str, Any]] | None:
+    action = str(getattr(intent, "action", "") or "").strip()
+    target = str(getattr(intent, "target", "") or "").strip()
+    params = getattr(intent, "params", {})
+    params = params if isinstance(params, dict) else {}
+
+    if action in {"", "respond"}:
+        return None
+    if action == "open_app":
+        return "open_app", {"app": target}
+    if action == "open_url_in_browser":
+        url = target if re.match(r"^https?://", target, flags=re.IGNORECASE) else ""
+        query = "" if url else target
+        return "open_url", {"url": url, "query": query}
+    if action == "web_search":
+        return "web_search", {"query": target}
+    if action == "get_weather":
+        return "get_weather", {"location": target}
+    if action == "get_time":
+        return "get_time", {}
+    if action == "open_url":
+        return "open_url", {"url": target, "query": params.get("query", "") or target}
+    return None
+
+
 def _extract_tool_request(content: str, allowed_tools: set[str]) -> tuple[str, dict[str, Any]] | None:
     text = (content or "").strip()
     if not text:
@@ -648,8 +756,8 @@ def _local_http_completion(messages: list[dict[str, Any]]) -> str:
     """
     import requests
     
-    timeout = float(os.getenv("SPARK_OLLAMA_HTTP_TIMEOUT_SECONDS", "18"))
-    primary_timeout = float(os.getenv("SPARK_OLLAMA_PRIMARY_TIMEOUT_SECONDS", "8"))
+    timeout = float(os.getenv("SPARK_OLLAMA_HTTP_TIMEOUT_SECONDS", "10"))
+    primary_timeout = float(os.getenv("SPARK_OLLAMA_PRIMARY_TIMEOUT_SECONDS", "5"))
     model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
     prompt = _ollama_prompt_from_messages(messages)
     
@@ -716,7 +824,7 @@ def _local_cli_completion(prompt: str, messages: list[dict[str, Any]] | None = N
         else:
             full_prompt = prompt
         
-        timeout = float(os.getenv("SPARK_OLLAMA_CLI_TIMEOUT_SECONDS", "60"))
+        timeout = float(os.getenv("SPARK_OLLAMA_CLI_TIMEOUT_SECONDS", "10"))
         model = os.getenv("OLLAMA_MODEL", LLM_MODEL)
         result = subprocess.run(
             ["ollama", "run", model, full_prompt],
@@ -771,34 +879,39 @@ def _ensure_local_ollama(force_start: bool = False) -> None:
 
 
 async def _local_chat_completion(messages: list[dict[str, Any]]) -> str:
-    """Local model completion with smart fallback strategy.
-    
-    When Groq is in cooldown, prefer HTTP for speed, then fall back to CLI as last resort.
-    This ensures we stay responsive while maximizing reliability.
     """
-    try:
-        # If Groq is in cooldown, prefer HTTP for speed
-        if time.time() < _groq_cooldown_until:
-            logger.debug("Groq in cooldown; using local HTTP API")
-            result = _local_http_completion(messages)
-            if result:
-                return result
-            # Fall through to CLI if HTTP fails
-            logger.debug("Local HTTP failed; retrying with CLI")
-        
-        # Try HTTP first for speed
-        result = _local_http_completion(messages)
-        if result:
-            return result
-        
-        # Fall back to CLI as last resort
-        logger.debug("Local HTTP failed; falling back to CLI")
-        prompt = "\n".join(str(m.get("content", "") or "") for m in messages if m.get("content"))
-        return _local_cli_completion(prompt, messages=messages)
-    except Exception as exc:
-        logger.warning("Local completion failed: %s", exc)
-        prompt = "\n".join(str(m.get("content", "") or "") for m in messages if m.get("content"))
-        return _local_cli_completion(prompt, messages=messages)
+    Run the 3-model local brain chain: gemma4 → qwen2.5 → qwen2.5:0.5b
+
+    This is the single entry point for ALL local model calls in spark_brain.py.
+    It replaces both _local_http_completion and _local_cli_completion.
+
+    Called when:
+      - Groq client is None (no API key)
+      - Groq is in rate-limit cooldown
+      - Daily token budget is exhausted
+      - Groq call throws any exception
+    """
+    import asyncio
+
+    loop = asyncio.get_running_loop()
+    result = await loop.run_in_executor(
+        None,
+        lambda: local_chain_complete(messages, auto_start=True, auto_pull=False),
+    )
+
+    if result.success:
+        logger.info(
+            "[LocalChain] Responded via %s (tried: %s)",
+            result.model_used,
+            ", ".join(result.attempts),
+        )
+    else:
+        logger.warning(
+            "[LocalChain] All models failed (tried: %s) — returning offline reply",
+            ", ".join(result.attempts),
+        )
+
+    return result.text
 
 
 def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True, tools: list[dict[str, Any]] | None = None):
@@ -912,7 +1025,8 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
     if tool_name == "get_news":
         return get_news(tool_args["topic"])
     if tool_name == "get_weather":
-        return get_weather(tool_args["location"])
+        location = str(tool_args["location"]).strip()
+        return _format_weather_reply(get_weather(location), location)
     if tool_name == "get_network_connections":
         return get_network_connections()
     if tool_name == "read_screen":
@@ -936,7 +1050,7 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
     raise KeyError(f"Unknown tool: {tool_name}")
 
 
-async def _try_multi_action_routing(user_input: str) -> dict[str, Any] | None:
+async def _try_multi_action_routing(user_input: str, parsed_intents: list[Any] | None = None) -> dict[str, Any] | None:
     """Detect and execute multi-action requests (e.g., "open app AND search query").
     
     Returns None if not a multi-action request or all actions fail.
@@ -945,16 +1059,24 @@ async def _try_multi_action_routing(user_input: str) -> dict[str, Any] | None:
     This preprocessor runs BEFORE sending to Groq/LLM to enable fast local-only execution
     of sequential tool calls when user specifies explicit actions.
     """
-    actions = decompose_explicit_actions(user_input)
-    if len(actions) < 2:
+    actions = parsed_intents if parsed_intents is not None else parse_intents(user_input)
+    actionable = [action for action in actions if str(getattr(action, "action", "") or "").strip() not in {"", "respond"}]
+    if len(actionable) < 2:
         return None
 
-    logger.info("[multi_action_routing] Executing %s sequential actions: %s", len(actions), [a["tool"] for a in actions])
+    logger.info(
+        "[multi_action_routing] Executing %s sequential actions: %s",
+        len(actionable),
+        [str(getattr(action, "action", "") or "").strip() for action in actionable],
+    )
 
     results: list[tuple[str, dict[str, Any], Any]] = []
-    for action in actions:
-        tool_name = str(action.get("tool", ""))
-        tool_args = action.get("args", {}) if isinstance(action.get("args", {}), dict) else {}
+    for action in actionable:
+        tool_mapping = _intent_to_tool_call(action)
+        if tool_mapping is None:
+            continue
+
+        tool_name, tool_args = tool_mapping
         try:
             result = await _call_tool(tool_name, tool_args)
             results.append((tool_name, tool_args, result))
@@ -966,17 +1088,17 @@ async def _try_multi_action_routing(user_input: str) -> dict[str, Any] | None:
     # Summarize results
     summary_lines = []
     for tool_name, tool_args, result in results:
-        result_str = str(result)[:80] if result else "completed"
+        result_str = _summarize_result(result, max_len=120) if result else "completed"
         summary_lines.append(f"• {tool_name}: {result_str}")
     
-    reply = f"Completed {len(actions)} actions:\n" + "\n".join(summary_lines)
+    reply = f"Completed {len(results)} actions:\n" + "\n".join(summary_lines)
     
     # Store in memory
     memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
     
     return {
         "reply": reply,
-        "tool_used": f"{len(actions)}_actions",
+        "tool_used": f"{len(results)}_actions",
         "tool_result": [
             {"tool": tool_name, "args": tool_args, "result": result}
             for tool_name, tool_args, result in results
@@ -1041,9 +1163,10 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     remaining_tokens = token_counter.get_remaining_today()
     if remaining_tokens < 5000:
         logger.warning(f"[token_guard] Groq budget low ({remaining_tokens} tokens) — routing to local")
-        # Force local-only mode by pretending Groq is in cooldown
+        # Keep Groq on a shorter cooldown so the app can retry later in the day.
         global _groq_cooldown_until
-        _groq_cooldown_until = time.time() + 86400  # Block Groq for rest of day
+        cooldown_seconds = int(os.getenv("SPARK_GROQ_LOW_BUDGET_COOLDOWN_SECONDS", "7200"))
+        _groq_cooldown_until = max(_groq_cooldown_until, time.time() + cooldown_seconds)
     
     try:
         memory.extract_and_store_facts(user_input)
@@ -1080,7 +1203,25 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         stream_sink("status", {"state": "thinking"})
 
     lower_input = user_input.strip().lower()
-    if "map" in lower_input and ("open" in lower_input or "google" in lower_input):
+    parsed_intents = parse_intents(user_input)
+    actionable_intents = [intent for intent in parsed_intents if str(getattr(intent, "action", "") or "").strip() not in {"", "respond"}]
+    compound_request = len(actionable_intents) > 1
+
+    if _is_greeting_input(user_input):
+        greeting_hour = datetime.now().hour
+        if greeting_hour < 12:
+            greeting_prefix = "Good morning"
+        elif greeting_hour < 17:
+            greeting_prefix = "Good afternoon"
+        else:
+            greeting_prefix = "Good evening"
+        reply = f"{greeting_prefix}, sir. How may I assist you today?"
+        memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        if stream_sink:
+            stream_sink("response_done", {"content": reply})
+        return {"reply": reply, "tool_used": None, "tool_result": None}
+
+    if not compound_request and "map" in lower_input and ("open" in lower_input or "google" in lower_input):
         match = re.search(r"(?:map|maps)(?:\s+and\s+open\s+the)?\s+(.+?)(?:\s+location)?$", user_input, flags=re.IGNORECASE)
         location = (match.group(1) if match else user_input).strip()
         for token in ["open", "google", "map", "maps", "and", "the"]:
@@ -1096,7 +1237,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             logger.warning("Deterministic maps intent failed: %s", exc)
 
     # Deterministic time query handler — always call get_system_stats for time/date queries
-    if re.search(r"\b(time|date|what time|current time|what's the time|what is the time)\b", lower_input):
+    if not compound_request and re.search(r"\b(time|date|what time|current time|what's the time|what is the time)\b", lower_input):
         try:
             tool_out = await _call_tool("get_time", {})
             reply = f"{tool_out}, sir."
@@ -1107,7 +1248,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
 
     # Deterministic search/open URL handler — for "open github", "search X", etc.
     search_match = re.search(r"\b(?:open|search|go to|visit)\s+(\S+.*?)$", lower_input)
-    if search_match:
+    if not compound_request and search_match:
         query = search_match.group(1).strip()
         if query and not re.search(r"\b(app|open app)\b", query):
             # Map common searches to URLs
@@ -1142,7 +1283,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     # Try multi-action routing for requests like "open app AND search query"
     # This provides fast local-only execution for composite requests
     try:
-        multi_action_result = await _try_multi_action_routing(user_input)
+        multi_action_result = await _try_multi_action_routing(user_input, parsed_intents=parsed_intents)
         if multi_action_result:
             if stream_sink:
                 stream_sink("response_done", {"content": multi_action_result["reply"]})
@@ -1150,14 +1291,15 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     except Exception as exc:
         logger.debug(f"Multi-action routing failed (continuing with normal flow): {exc}")
 
-    try:
-        local_tool_result = await _try_local_direct_tool_routing(user_input)
-        if local_tool_result:
-            if stream_sink:
-                stream_sink("response_done", {"content": local_tool_result["reply"]})
-            return local_tool_result
-    except Exception as exc:
-        logger.debug(f"Local direct tool routing failed: {exc}")
+    if not compound_request:
+        try:
+            local_tool_result = await _try_local_direct_tool_routing(user_input)
+            if local_tool_result:
+                if stream_sink:
+                    stream_sink("response_done", {"content": local_tool_result["reply"]})
+                return local_tool_result
+        except Exception as exc:
+            logger.debug(f"Local direct tool routing failed: {exc}")
 
     if client is None:
         reply = await _local_chat_completion(messages) or _offline_reply(user_input)

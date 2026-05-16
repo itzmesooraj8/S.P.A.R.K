@@ -123,6 +123,7 @@ def approve_tool_review(review_id: str) -> dict[str, str]:
         publish_generated_tool(name, code)
         reviews[index] = {**review, "status": "approved", "reviewed_at": datetime.utcnow().isoformat()}
         _save_tool_reviews(reviews)
+        log.info(f"Tool approved: {name} (review: {review_id[:8]}...)")
         return reviews[index]
 
     raise KeyError(review_id)
@@ -135,8 +136,71 @@ def reject_tool_review(review_id: str) -> dict[str, str]:
             continue
         reviews[index] = {**review, "status": "rejected", "reviewed_at": datetime.utcnow().isoformat()}
         _save_tool_reviews(reviews)
+        log.info(f"Tool rejected: {review_id[:8]}...")
         return reviews[index]
     raise KeyError(review_id)
+
+
+def _auto_approve_high_confidence_tools() -> None:
+    """
+    Auto-approve pending tools if:
+    1. Code validation passes (validate_tool_code returns True)
+    2. Behavioral signal count >= 3 (indicating recurring use pattern)
+    This enables SPARK to deploy new tools without manual approval.
+    """
+    try:
+        from core.memory_loop import read_turns
+        
+        reviews = _load_tool_reviews()
+        if not reviews:
+            return
+        
+        # Count behavioral signals from recent turns
+        turns = read_turns()
+        signal_keywords = {"tool", "forge", "create", "generate", "function", "script"}
+        signal_count = sum(
+            1 for turn in turns[-30:]
+            if turn.get("role") == "user" and any(keyword in turn.get("content", "").lower() for keyword in signal_keywords)
+        )
+        
+        for review in reviews:
+            if review.get("status") != "pending":
+                continue
+            
+            review_id = review.get("id")
+            code = str(review.get("code") or "")
+            name = str(review.get("name") or "generated_tool")
+            
+            # Check if code validates
+            validated, reason = validate_tool_code(code)
+            if not validated:
+                continue
+            
+            # Auto-approve if we have >= 3 behavioral signals
+            if signal_count >= 3:
+                try:
+                    approve_tool_review(review_id)
+                    log.info(f"[AUTO-APPROVED] Tool '{name}' deployed (signals: {signal_count})")
+                    
+                    # Flag in HUD
+                    try:
+                        from core.main import broadcast_hud_event
+                        broadcast_hud_event(
+                            "agent_log",
+                            {
+                                "type": "info",
+                                "agent": "TOOL_FORGE",
+                                "action": "Auto-Deployment",
+                                "data": f"Tool '{name}' auto-approved and deployed (confidence: high)",
+                            }
+                        )
+                    except:
+                        pass
+                except Exception as e:
+                    log.debug(f"Could not auto-approve tool {review_id[:8]}...: {e}")
+    except Exception as e:
+        log.debug(f"Auto-approval check failed: {e}")
+
 
 
 def forge_tool(name: str, code: str, description: str = "") -> ForgeResult:
@@ -160,6 +224,10 @@ def forge_tool(name: str, code: str, description: str = "") -> ForgeResult:
         if not any(review.get("fingerprint") == proposal["fingerprint"] and review.get("status") == "pending" for review in reviews):
             reviews.append(proposal)
             _save_tool_reviews(reviews)
+        
+        # Check for auto-approval opportunities
+        _auto_approve_high_confidence_tools()
+        
         return ForgeResult(name=safe_name, path=str(path), validated=True, review_id=review_id, status="pending_review", reason="Pending approval")
     return ForgeResult(name=safe_name, path=str(path), validated=False, review_id=None, status="rejected", reason=reason)
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import subprocess
 import json
 import logging
 import sys
+import threading
 from pathlib import Path
 from types import ModuleType
 from typing import Any
@@ -60,6 +62,27 @@ class SparkCLI:
         self.config = load_config()
         self.core = SparkCore(self.config)
         self.session_count = 0
+        self._start_ollama_keepalive()
+        try:
+            import threading
+            from core.local_brain_chain import warmup_chain
+            threading.Thread(target=warmup_chain, daemon=True, name="spark-warmup").start()
+        except Exception:
+            pass
+
+    def _start_ollama_keepalive(self) -> None:
+        def _ensure_ollama() -> None:
+            try:
+                subprocess.Popen(
+                    ["ollama", "serve"],
+                    stdout=subprocess.DEVNULL,
+                    stderr=subprocess.DEVNULL,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except Exception:
+                pass
+
+        threading.Thread(target=_ensure_ollama, daemon=True).start()
 
     def get_memory_context(self, query: str) -> str:
         """Get context from previous interactions (lightweight, non-blocking)."""
@@ -86,7 +109,7 @@ class SparkCLI:
         
         Flow:
         1. Get memory context (non-blocking)
-        2. Execute through LLM (with fallback chain: Ollama → Groq → offline)
+        2. Execute through unified core brain entry (core/spark_brain.handle)
         3. Log outcome (feeds Engine 2: self-improvement)
         """
         try:
@@ -97,7 +120,7 @@ class SparkCLI:
                 "include_tools": True,
             }
             
-            # Execute through LLM (proven to work, has proper fallbacks)
+            # Execute through unified brain entry path
             result = self.core.llm.execute(task)
             
             # Extract reply

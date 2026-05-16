@@ -5,6 +5,9 @@ from __future__ import annotations
 import subprocess
 import sys
 import webbrowser
+import time
+import psutil
+import shutil
 
 
 def open_url(url: str = "", query: str = "") -> str:
@@ -28,12 +31,22 @@ def open_app(app_name: str) -> str:
 
     app = app_name.strip().lower()
 
-    # Windows: use the Start menu search via explorer shell
+    # Windows: use the Start menu search via explorer shell and verify a process started
     if sys.platform == "win32":
+        before = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"]) if p.info.get("name")}
+
         # Method 1: Try direct executable name
         if shutil.which(app):
-            subprocess.Popen([app])
-            return f"Opened {app_name}."
+            try:
+                subprocess.Popen([app])
+            except Exception:
+                pass
+            time.sleep(0.6)
+            after = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"]) if p.info.get("name")}
+            new = sorted(name for name in after - before if name)
+            if new:
+                return f"SUCCESS: Launched. New process: {new[0]}"
+            return f"LAUNCH_FAILED: Tried to run {app_name} but no new process detected."
 
         # Method 2: Try common Windows app names
         win_aliases = {
@@ -54,11 +67,19 @@ def open_app(app_name: str) -> str:
         }
         if app in win_aliases:
             target = win_aliases[app]
-            if target.endswith(".exe"):
-                subprocess.Popen([target])
-            else:
-                subprocess.Popen(["explorer.exe", target])
-            return f"Opened {app_name}."
+            try:
+                if target.endswith(".exe"):
+                    subprocess.Popen([target])
+                else:
+                    subprocess.Popen(["explorer.exe", target])
+            except Exception:
+                pass
+            time.sleep(0.6)
+            after = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"]) if p.info.get("name")}
+            new = sorted(name for name in after - before if name)
+            if new:
+                return f"SUCCESS: Launched. New process: {new[0]}"
+            return f"LAUNCH_FAILED: Tried to open {app_name} but no new process detected."
 
         # Method 3: Try as a URI scheme (works for Spotify, Telegram, etc.)
         uri_schemes = {
@@ -72,21 +93,37 @@ def open_app(app_name: str) -> str:
             "vlc": "vlc:",
         }
         if app in uri_schemes:
-            subprocess.Popen(["explorer.exe", uri_schemes[app]])
-            return f"Opened {app_name}."
+            try:
+                subprocess.Popen(["explorer.exe", uri_schemes[app]])
+            except Exception:
+                pass
+            time.sleep(0.6)
+            after = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"]) if p.info.get("name")}
+            new = sorted(name for name in after - before if name)
+            if new:
+                return f"SUCCESS: Launched. New process: {new[0]}"
+            return f"LAUNCH_FAILED: Tried URI scheme for {app_name} but no new process detected."
 
-        # Method 4: Search Windows Start menu via PowerShell
+        # Method 4: Search Windows Start menu via PowerShell (best-effort)
         try:
             ps_cmd = (
                 f"$app = Get-StartApps | Where-Object {{$_.Name -like '*{app_name}*'}} | "
                 f"Select-Object -First 1; "
                 f"if ($app) {{ Start-Process shell:appsFolder\\$($app.AppID) }}"
             )
-            subprocess.Popen(
-                ["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd],
-                creationflags=subprocess.CREATE_NO_WINDOW
-            )
-            return f"Searching for {app_name} in Start menu..."
+            try:
+                subprocess.Popen(
+                    ["powershell", "-WindowStyle", "Hidden", "-Command", ps_cmd],
+                    creationflags=subprocess.CREATE_NO_WINDOW,
+                )
+            except Exception:
+                pass
+            time.sleep(0.8)
+            after = {p.info.get("name", "").lower() for p in psutil.process_iter(["name"]) if p.info.get("name")}
+            new = sorted(name for name in after - before if name)
+            if new:
+                return f"SUCCESS: Launched. New process: {new[0]}"
+            return f"LAUNCH_FAILED: Searched Start menu for {app_name} but no new process detected."
         except Exception as e:
             return f"Could not open {app_name}: {e}"
 

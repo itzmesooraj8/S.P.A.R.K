@@ -5,10 +5,11 @@ import json
 import logging
 import os
 import re
+import threading
 from dataclasses import asdict, dataclass, field
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Awaitable, Callable
 
 import httpx
 
@@ -24,6 +25,24 @@ ARTIFACT_DIR = Path("spark_dev_memory/agentic_brain")
 ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
 PLANNING_MODEL = os.getenv("SPARK_PLANNING_MODEL", os.getenv("LLM_MODEL", "llama3.1:8b"))
 
+# LLM routing thresholds and patterns
+FACTUAL_KEYWORDS = {
+    "what", "when", "where", "who", "how much", "define", "explain", "tell me",
+    "weather", "time", "date", "current", "latest", "today", "now",
+}
+
+MULTI_STEP_KEYWORDS = {
+    "research", "compare", "recommend", "best", "upgrade", "choose", "buy", "purchase",
+    "benchmark", "evaluate", "analyze", "diagnose", "plan", "design", "build", "create",
+    "strategy", "approach", "steps", "process", "workflow",
+}
+
+PRIVATE_KEYWORDS = {
+    "file", "folder", "directory", "local", "home", "desktop", "document", "code",
+    "project", "repository", "system", "computer", "machine", "device", "private",
+    "personal", "calendar", "email", "my ", "mine",
+}
+
 AVAILABLE_TOOLS: dict[str, str] = {
     "web_search": "Search the internet for current information",
     "system_check": "Check local system hardware, RAM, CPU, storage",
@@ -36,17 +55,60 @@ AVAILABLE_TOOLS: dict[str, str] = {
 EventSink = Callable[[str, dict[str, Any]], None]
 
 
-def is_agentic_goal(goal: str) -> bool:
+class QueryClassification:
+    """Result of query complexity classification."""
+    def __init__(self, query_type: str, complexity: float, recommended_backend: str):
+        self.query_type = query_type  # FACTUAL, MULTI_STEP, LOCAL_PRIVATE
+        self.complexity = complexity  # 0.0 - 1.0
+        self.recommended_backend = recommended_backend  # groq, agentic, ollama
+
+
+def classify_query(goal: str) -> QueryClassification:
+    """
+    Fast classifier for LLM routing.
+    Determines query type and recommends optimal backend.
+    
+    Returns:
+    - FACTUAL (low complexity): Route to Groq llama-3.3-70b for fast factual answers
+    - MULTI_STEP (high complexity): Route to agentic brain with planning
+    - LOCAL_PRIVATE: Route to Ollama for privacy (local/system queries)
+    """
     text = goal.lower().strip()
     if not text:
-        return False
+        return QueryClassification("FACTUAL", 0.1, "groq")
+    
+    # Check for private/local queries first (highest priority)
+    private_score = sum(1 for keyword in PRIVATE_KEYWORDS if keyword in text)
+    if private_score >= 2:
+        return QueryClassification("LOCAL_PRIVATE", 0.3, "ollama")
+    
+    # Check for multi-step complex queries
+    multi_score = sum(1 for keyword in MULTI_STEP_KEYWORDS if keyword in text)
+    if multi_score >= 2:
+        return QueryClassification("MULTI_STEP", 0.8, "agentic")
+    
+    # Check question length (longer = more complex)
+    word_count = len(text.split())
+    if word_count > 25:
+        return QueryClassification("MULTI_STEP", 0.7, "agentic")
+    
+    # Check for factual indicators
+    factual_score = sum(1 for keyword in FACTUAL_KEYWORDS if keyword in text)
+    if factual_score >= 1:
+        return QueryClassification("FACTUAL", 0.2, "groq")
+    
+    # Default: treat as factual but slightly uncertain
+    return QueryClassification("FACTUAL", 0.5, "groq")
 
-    return bool(
-        re.search(
-            r"\b(research|compare|recommend|best|upgrade|choose|buy|purchase|benchmark|evaluate|analyze|diagnose|plan)\b",
-            text,
-        )
-    )
+
+def is_agentic_goal(goal: str) -> bool:
+    """
+    DEPRECATED: Use classify_query() instead.
+    Legacy function for backward compatibility.
+    Returns True if goal should be routed to agentic brain.
+    """
+    classification = classify_query(goal)
+    return classification.recommended_backend in ("agentic", "ollama")
 
 
 def _slugify(value: str) -> str:
@@ -57,6 +119,31 @@ def _slugify(value: str) -> str:
 def _truncate(text: str, limit: int = 240) -> str:
     stripped = text.strip()
     return stripped if len(stripped) <= limit else stripped[: limit - 3].rstrip() + "..."
+
+
+def _run_coroutine_sync(coro: Awaitable[Any]) -> Any:
+    try:
+        asyncio.get_running_loop()
+    except RuntimeError:
+        return asyncio.run(coro)
+
+    result: dict[str, Any] = {}
+    error: list[BaseException] = []
+
+    def _runner() -> None:
+        try:
+            result["value"] = asyncio.run(coro)
+        except BaseException as exc:
+            error.append(exc)
+
+    worker = threading.Thread(target=_runner, daemon=True)
+    worker.start()
+    worker.join()
+
+    if error:
+        raise error[0]
+
+    return result.get("value")
 
 
 @dataclass
@@ -148,7 +235,7 @@ Max 4 tools. Only include tools that are actually needed."""
 
     def plan(self, goal: str, context_snapshot: dict[str, Any] | None = None) -> BrainRun:
         run = BrainRun(goal=goal, context_snapshot=context_snapshot or {})
-        planned_steps = asyncio.run(self.plan_steps(goal))
+        planned_steps = _run_coroutine_sync(self.plan_steps(goal))
         run.steps = [
             BrainStep(
                 index=index + 1,
@@ -412,7 +499,7 @@ Max 4 tools. Only include tools that are actually needed."""
                     )
 
                 elif step.tool == "ollama_chat":
-                    result = await self._synthesize_with_ollama(run, findings)
+                    result = _run_coroutine_sync(self._synthesize_with_ollama(run, findings))
                     try:
                         parsed = json.loads(result)
                         run.final_answer = parsed if isinstance(parsed, dict) else {"summary": result}

@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import concurrent.futures
 import json
 import logging
 import os
@@ -16,6 +15,8 @@ import httpx
 import requests
 
 from core.orchestrator.action_decomposer import decompose_explicit_actions
+from core.brain_entry import ask_spark_brain_sync
+from core.local_brain_chain import local_chain_complete, chain_status
 
 
 log = logging.getLogger("spark.llm")
@@ -30,42 +31,41 @@ class SparkLLM:
         self._ollama_probe_interval = 5.0
 
     def execute(self, task: dict[str, Any] | str) -> dict[str, Any]:
-        """Execute task with full tool support and security checks."""
+        """Execute interactive task through the unified spark brain entry path."""
         if isinstance(task, str):
             task = {"prompt": task}
         
         prompt = task.get("prompt", "").strip()
-        include_tools = task.get("include_tools", True)
+        stream_sink = task.get("stream_sink")
+        cancel_event = task.get("cancel_event")
+        session_history = task.get("session_history") if isinstance(task.get("session_history"), list) else []
         
         if not prompt:
             return {"reply": "", "tool_used": None, "tool_result": None}
 
-        if not include_tools or not self._should_use_tools(prompt):
-            reply = self._complete(prompt)
-            return {"reply": reply, "tool_used": None, "tool_result": None}
-        
-        # Get context from memory for better responses
-        context = self._build_context(prompt)
-        enhanced_prompt = self._enhance_prompt(prompt, context)
-        
-        # Try to execute through spark_brain (which handles tool calling)
         try:
-            result = self._execute_with_tools(prompt, include_tools=include_tools)
-            # If tool-calling produced an error-like reply, retry without tools
-            try:
-                reply_text = str(result.get("reply", "") or "").lower()
-                if ("tool" in reply_text and ("failed" in reply_text or "error" in reply_text)) and include_tools:
-                    log.info("Tool call failed, retrying without tools")
-                    fallback = {"reply": self._complete(enhanced_prompt), "tool_used": None, "tool_result": None}
-                    return fallback
-            except Exception:
-                pass
-            return result
+            timeout = int(self._llm_config().get("call_timeout_seconds", 60) or 60)
+            result = ask_spark_brain_sync(
+                prompt,
+                session_history=session_history,
+                stream_sink=stream_sink,
+                cancel_event=cancel_event,
+                timeout=timeout,
+            )
+            if isinstance(result, dict):
+                return {
+                    "reply": str(result.get("reply", "") or "").strip(),
+                    "tool_used": result.get("tool_used"),
+                    "tool_result": result.get("tool_result"),
+                }
+            return {"reply": str(result or "").strip(), "tool_used": None, "tool_result": None}
         except Exception as exc:
-            log.warning(f"Tool execution failed, falling back to simple chat: {exc}")
-            # Fall back to simple completion
-            reply = self._complete(enhanced_prompt)
-            return {"reply": reply, "tool_used": None, "tool_result": None}
+            log.warning("Unified spark brain execution failed: %s", exc)
+            return {
+                "reply": "I am having trouble reaching the core brain right now. Please try again in a moment.",
+                "tool_used": None,
+                "tool_result": None,
+            }
 
     def _build_context(self, prompt: str) -> dict[str, Any]:
         """Build context from memory for better understanding."""
@@ -101,42 +101,6 @@ class SparkLLM:
             return prompt
         context_text = "\n".join([f"• {s}" for s in context["recent_summaries"]])
         return f"Recent interactions:\n{context_text}\n\nCurrent query: {prompt}"
-
-    def _execute_with_tools(self, prompt: str, include_tools: bool = True) -> dict[str, Any]:
-        """Execute through spark_brain which handles Groq tool calling.
-
-        Runs the blocking `spark_brain.handle` in a worker thread with a timeout to
-        avoid hanging the CLI. Timeout is longer (60s) to allow local CLI completion.
-        """
-        try:
-            # Import handler lazily to avoid heavy imports at module load
-            from core.spark_brain import handle as spark_brain_handle
-
-            # Use longer timeout (60s) to allow local CLI to complete
-            timeout = int(self._llm_config().get("call_timeout_seconds", 60) or 60)
-            with concurrent.futures.ThreadPoolExecutor(max_workers=1) as ex:
-                fut = ex.submit(asyncio.run, spark_brain_handle(prompt, []))
-                try:
-                    result = fut.result(timeout=timeout)
-                except concurrent.futures.TimeoutError:
-                    fut.cancel()
-                    log.warning("spark_brain timed out after %s seconds", timeout)
-                    raise TimeoutError(f"LLM/tool call timed out after {timeout}s")
-
-            if isinstance(result, dict):
-                return {
-                    "reply": str(result.get("reply", "") or "").strip(),
-                    "tool_used": result.get("tool_used"),
-                    "tool_result": result.get("tool_result"),
-                }
-
-            return {"reply": str(result or "").strip(), "tool_used": None, "tool_result": None}
-
-        except Exception as exc:
-            log.warning("spark_brain execution failed: %s", exc)
-            # Fallback to simple completion
-            reply = self._complete(prompt)
-            return {"reply": reply, "tool_used": None, "tool_result": None}
 
     def reflect(self, result: dict[str, Any], recent_history: list[dict[str, Any]] | None = None) -> list[dict[str, Any]]:
         recent_text = json.dumps(self._compact_history(recent_history or [], limit=6), ensure_ascii=False)
@@ -258,36 +222,46 @@ class SparkLLM:
         ]
 
     def _complete(self, prompt: str, force_json: bool = False) -> str:
-        """Fallback completion without tools."""
+        """
+        Fallback completion without Groq tool-calling.
+        Uses the 3-model local chain: gemma4 → qwen2.5 → qwen2.5:0.5b
+        """
+        # Fast path: deterministic greeting reply (no model needed)
         normalized = (prompt or "").strip().lower()
-        if normalized in {"hi", "hello", "hey", "hii", "yo", "good morning", "good afternoon", "good evening"}:
-            return "Hello! How can I help you today? 😊"
+        greetings = {"hi", "hello", "hey", "hii", "yo", "good morning", "good afternoon", "good evening"}
+        if normalized in greetings:
+            return "Hello! How can I assist you today?"
 
         messages = self._build_messages(prompt, force_json=force_json)
+
+        # Try local chain first (handles Ollama start, model selection, fallback)
         try:
-            # Try HTTP API first only when Ollama is actually reachable.
-            self._ensure_ollama_available()
-            if self._is_ollama_reachable():
-                return self._chat_ollama_http(messages)
+            result = local_chain_complete(messages, auto_start=True, auto_pull=False)
+            if result.success:
+                return result.text
+            # All local models failed — try the tool-based Groq path as last resort
+            log.warning("Local chain exhausted — trying spark_brain as last resort")
         except Exception as exc:
-            log.debug(f"Ollama HTTP failed: {exc}")
+            log.debug("Local chain import/call error: %s", exc)
 
-        if self._backend() in {"groq", "cloud"}:
-            try:
-                from core.spark_brain import handle as spark_brain_handle
+        # Last resort: spark_brain (may itself fall back)
+        try:
+            response = self._run_async(ask_spark_brain_sync(prompt, []))
+            if isinstance(response, dict):
+                return str(response.get("reply", "") or "").strip()
+            return str(response).strip()
+        except Exception as exc:
+            log.warning("spark_brain last-resort also failed: %s", exc)
 
-                response = self._run_async(spark_brain_handle(prompt, []))
-                if isinstance(response, dict):
-                    return str(response.get("reply", "") or "").strip()
-                return str(response).strip()
-            except Exception as exc:
-                log.warning(f"Fallback completion failed: {exc}")
+        # Truly offline — try deterministic local tool execution
+        local_result = self._local_action_fallback(prompt)
+        if local_result:
+            return local_result
 
-        local_fallback = self._local_action_fallback(prompt)
-        if local_fallback:
-            return local_fallback
-
-        return "I am having trouble reaching the language model right now, but I am still running locally."
+        return (
+            "I am running fully offline, sir. Groq and all local Ollama models "
+            "are unavailable. Tool commands like 'open X' still work."
+        )
 
     def _local_action_fallback(self, prompt: str) -> str:
         """Best-effort local execution for common requests when both model backends are down."""
@@ -385,80 +359,14 @@ class SparkLLM:
         return f"{label}: {value}"
 
     def _chat_ollama_http(self, messages: list[dict[str, str]]) -> str:
-        """Call Ollama via persistent HTTP API (no subprocess spawning).
-        
-        Args:
-            messages: List of message dicts with 'role' and 'content' keys
-            
-        Returns:
-            Response text from Ollama
-            
-        Raises:
-            Exception if all models fail or Ollama is unreachable
-        """
-        timeout = float(self._llm_config().get("ollama_http_timeout_seconds", 18) or 18)
-        primary_timeout = float(os.getenv("SPARK_OLLAMA_PRIMARY_TIMEOUT_SECONDS", "8"))
-        prompt = self._ollama_prompt_from_messages(messages)
-        
-        for model in self._candidate_ollama_models():
-            candidate_timeout = primary_timeout if model == self._ollama_model() else min(timeout, 25.0)
-            chat_unsupported = False
-
-            try:
-                response = requests.post(
-                    f"{self._ollama_host()}/api/chat",
-                    json={"model": model, "messages": messages, "stream": False},
-                    timeout=candidate_timeout,
-                )
-                response.raise_for_status()
-
-                data = response.json()
-                if isinstance(data, dict):
-                    if "message" in data:
-                        return str(data["message"].get("content", "")).strip()
-                    if "response" in data:
-                        return str(data["response"]).strip()
-
-                return str(data).strip() if data else ""
-            except requests.exceptions.Timeout:
-                log.warning(f"Ollama HTTP timeout for model {model} after {candidate_timeout}s")
-                continue
-            except requests.exceptions.HTTPError as exc:
-                status = getattr(exc.response, "status_code", None)
-                if status == 400:
-                    chat_unsupported = True
-                else:
-                    log.debug(f"Ollama HTTP error for model {model}: {exc}")
-                    continue
-            except Exception as exc:
-                log.debug(f"Ollama HTTP error for model {model}: {exc}")
-                continue
-
-            if chat_unsupported:
-                try:
-                    response = requests.post(
-                        f"{self._ollama_host()}/api/generate",
-                        json={"model": model, "prompt": prompt, "stream": False},
-                        timeout=candidate_timeout,
-                    )
-                    response.raise_for_status()
-
-                    data = response.json()
-                    if isinstance(data, dict):
-                        if "response" in data:
-                            return str(data["response"]).strip()
-                        if "message" in data:
-                            return str(data["message"].get("content", "")).strip()
-
-                    return str(data).strip() if data else ""
-                except requests.exceptions.Timeout:
-                    log.warning(f"Ollama generate timeout for model {model} after {candidate_timeout}s")
-                    continue
-                except Exception as exc:
-                    log.debug(f"Ollama generate error for model {model}: {exc}")
-                    continue
-        
-        raise RuntimeError(f"All Ollama models failed. Candidates: {self._candidate_ollama_models()}")
+        """Use the unified local brain chain HTTP/CLI fallback instead of fragile single-model logic."""
+        try:
+            from core.local_brain_chain import local_chain_complete
+            result = local_chain_complete(messages, auto_start=True, auto_pull=False)
+            return result.text if result and result.text else ""
+        except Exception as exc:
+            log.debug(f"Local chain HTTP wrapper failed: {exc}")
+            raise
 
     async def _chat_ollama(self, messages: list[dict[str, str]]) -> str:
         async with httpx.AsyncClient(timeout=120.0) as client:

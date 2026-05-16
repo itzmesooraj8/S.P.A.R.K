@@ -1,8 +1,9 @@
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, UploadFile, File
 from fastapi import Depends, Header, HTTPException
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 import asyncio
 import logging
 import time
@@ -15,6 +16,8 @@ import sys
 import os
 import uuid
 import threading
+import secrets
+import tempfile
 from typing import Any
 import requests
 
@@ -36,19 +39,26 @@ from core.main import run_agent_turn
 from core.scheduler import init_scheduler
 from core.heartbeat import start_heartbeat
 from core.takeover import start_takeover_mode
-from core.spark_brain import handle as spark_brain_handle
+from core.brain_entry import ask_spark_brain
 from core.spark_brain import memory as spark_memory
 from core.memory import MemoryCategory
 from core.wake_word import start_wake_engine
+from core.perception import start_ambient_perception
 
 import logging
 
 logger = logging.getLogger(__name__)
 
 app = FastAPI(title="S.P.A.R.K. Bridge API")
+
+_cors_origins_raw = os.getenv("SPARK_CORS_ORIGINS", "*")
+_cors_origins = [origin.strip() for origin in _cors_origins_raw.split(",") if origin.strip()]
+if not _cors_origins:
+    _cors_origins = ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    allow_origins=_cors_origins,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -60,13 +70,48 @@ app.include_router(task_router)
 app.include_router(runtime_router)
 app.include_router(security_router)
 
-SPARK_TOKEN = os.getenv("SPARK_TOKEN", "change-this-token")
+_SPARK_ACCESS_TOKEN = os.getenv("SPARK_ACCESS_TOKEN") or os.getenv("SPARK_TOKEN", "change-this-token")
 request_counts: defaultdict[str, list[float]] = defaultdict(list)
+bearer_scheme = HTTPBearer(auto_error=False)
 
 
-async def verify_token(x_spark_token: str = Header(None)):
-    if x_spark_token != SPARK_TOKEN:
-        raise HTTPException(status_code=401, detail="Unauthorized")
+def _configure_logging() -> None:
+    if logger.handlers:
+        return
+    log_path = os.path.join(BASE_DIR, "spark.log")
+    logging.basicConfig(
+        level=logging.INFO,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        handlers=[
+            logging.StreamHandler(sys.stdout),
+            logging.FileHandler(log_path, encoding="utf-8"),
+        ],
+    )
+
+
+_configure_logging()
+
+
+@app.exception_handler(HTTPException)
+async def http_exception_handler(_request: Request, exc: HTTPException):
+    if exc.status_code == 401:
+        return JSONResponse(status_code=401, content={"error": "unauthorized"})
+    return JSONResponse(status_code=exc.status_code, content={"error": str(exc.detail) if exc.detail else "error"})
+
+
+def _token_matches(candidate: str) -> bool:
+    if not candidate or not _SPARK_ACCESS_TOKEN:
+        return False
+    return secrets.compare_digest(candidate, _SPARK_ACCESS_TOKEN)
+
+
+async def verify_token(credentials: HTTPAuthorizationCredentials | None = Depends(bearer_scheme)):
+    if not credentials or credentials.scheme.lower() != "bearer" or not _token_matches(credentials.credentials):
+        raise HTTPException(status_code=401, detail="unauthorized")
+
+
+def _unauthorized_response() -> JSONResponse:
+    return JSONResponse(status_code=401, content={"error": "unauthorized"})
 
 
 async def rate_limit(request: Request):
@@ -92,9 +137,22 @@ async def startup_tasks():
         logger.warning(f"Scheduler startup failed: {exc}")
 
     try:
+        start_ambient_perception()
+    except Exception as exc:
+        logger.warning(f"Ambient perception startup failed: {exc}")
+
+    try:
         start_heartbeat()
     except Exception as exc:
         logger.warning(f"Heartbeat startup failed: {exc}")
+
+    try:
+        import threading
+        from core.local_brain_chain import warmup_chain
+        threading.Thread(target=warmup_chain, daemon=True, name="spark-brain-warmup").start()
+        logger.info("Local brain chain warm-up started in background.")
+    except Exception as exc:
+        logger.warning(f"Local brain warmup failed to start: {exc}")
 
     try:
         start_takeover_mode()
@@ -107,11 +165,15 @@ async def startup_tasks():
         if not _wake_lock.acquire(blocking=False):
             return  # already processing, skip
         try:
-            resp = requests.post("http://localhost:8000/listen", timeout=30)
+            resp = requests.post(
+                "http://localhost:8000/listen",
+                headers={"Authorization": f"Bearer {_SPARK_ACCESS_TOKEN}"},
+                timeout=30,
+            )
             reply = resp.json().get("reply", "")
-            print(f"[SPARK] {reply}")
+            logger.info("Wake handler reply: %s", reply)
         except Exception as exc:
-            print(f"[SPARK] Wake handler error: {exc}")
+            logger.error("Wake handler error: %s", exc, exc_info=True)
         finally:
             _wake_lock.release()
 
@@ -139,6 +201,14 @@ async def startup_tasks():
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
 
+
+HUD_MOBILE_PATH = os.path.join(BASE_DIR, "hud", "mobile.html")
+
+
+@app.get("/ping")
+async def ping():
+    return {"status": "online", "version": "SPARK-1.0"}
+
 # Note: mount should be last to avoid catching API routes
 app.mount("/static", StaticFiles(directory=STATIC_DIR), name="static")
 
@@ -156,6 +226,22 @@ async def get_override():
         return HTMLResponse("<h1>Signal Override not configured</h1>", status_code=404)
     with open(override_path, "r", encoding="utf-8") as override_file:
         return HTMLResponse(override_file.read())
+
+
+@app.get("/mobile", response_class=HTMLResponse)
+async def get_mobile_public():
+    if not os.path.exists(HUD_MOBILE_PATH):
+        return HTMLResponse("<h1>SPARK mobile HUD not found</h1>", status_code=404)
+    with open(HUD_MOBILE_PATH, "r", encoding="utf-8") as mobile_file:
+        return HTMLResponse(mobile_file.read())
+
+
+@app.get("/hud", response_class=HTMLResponse, dependencies=[Depends(verify_token)])
+async def get_hud_mobile():
+    if not os.path.exists(HUD_MOBILE_PATH):
+        return HTMLResponse("<h1>SPARK mobile HUD not found</h1>", status_code=404)
+    with open(HUD_MOBILE_PATH, "r", encoding="utf-8") as mobile_file:
+        return HTMLResponse(mobile_file.read())
 
 
 @app.post("/api/override/cast")
@@ -240,30 +326,86 @@ async def get_memory_stats():
 class ChatRequest(BaseModel):
     message: str
 
-@app.post("/chat")
+@app.post("/chat", dependencies=[Depends(verify_token), Depends(rate_limit)])
 async def chat_endpoint(request: ChatRequest):
     logger.info("chat_endpoint: direct brain path entered")
-    # Call the async Groq brain directly for HTTP chat so the endpoint does not
-    # depend on the heavier sync voice/runtime wrapper.
     try:
-        result = await spark_brain_handle(request.message, [])
+        result = await ask_spark_brain(request.message, session_history=[])
         return {"response": str(result.get("reply", "")).strip()}
     except Exception as exc:
         logger.error(f"Chat endpoint failed: {exc}", exc_info=True)
-        return {"response": "I’m having trouble reaching the language model right now. Please try again in a moment."}
+        return JSONResponse(status_code=500, content={"error": "chat_failed", "response": "I’m having trouble reaching the language model right now. Please try again in a moment."})
 
 
-@app.post("/listen")
+@app.post("/listen", dependencies=[Depends(verify_token), Depends(rate_limit)])
 async def listen_endpoint():
     """Record 5s of audio, transcribe, run through SPARK."""
     loop = asyncio.get_running_loop()
     text = await loop.run_in_executor(None, listen_and_transcribe, 5)
     if not text:
         return {"error": "No speech detected"}
-    result = await spark_brain_handle(text, [])
+    result = await ask_spark_brain(text, session_history=[])
     await speak(result["reply"])
     result["transcript"] = text
     return result
+
+
+@app.post("/voice-chat", dependencies=[Depends(verify_token), Depends(rate_limit)])
+async def voice_chat_endpoint(audio: UploadFile = File(...)):
+    """Accept browser-recorded audio, transcribe with Whisper, and route through SPARK."""
+    temp_audio_path = ""
+    temp_response_path = ""
+    try:
+        suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+        with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
+            temp_audio_path = tmp.name
+            tmp.write(await audio.read())
+
+        loop = asyncio.get_running_loop()
+
+        def _transcribe() -> str:
+            from tools.voice import load_whisper
+
+            model = load_whisper()
+            result = model.transcribe(temp_audio_path, fp16=False)
+            return str(result.get("text", "")).strip()
+
+        text = await loop.run_in_executor(None, _transcribe)
+        if not text:
+            return JSONResponse(status_code=400, content={"error": "no_speech_detected"})
+
+        result = await ask_spark_brain(text, session_history=[])
+        reply_text = str(result.get("reply", "")).strip()
+
+        audio_url = ""
+        try:
+            from edge_tts import Communicate
+
+            audio_dir = os.path.join(STATIC_DIR, "audio")
+            os.makedirs(audio_dir, exist_ok=True)
+            file_name = f"voice-{uuid.uuid4().hex}.mp3"
+            temp_response_path = os.path.join(audio_dir, file_name)
+            communicate = Communicate(reply_text or "", voice="en-US-AriaNeural")
+            await communicate.save(temp_response_path)
+            audio_url = f"/static/audio/{file_name}"
+        except Exception as tts_exc:
+            logger.info("TTS generation skipped or failed: %s", tts_exc)
+
+        return {
+            "text": text,
+            "response": reply_text,
+            "audio_url": audio_url,
+        }
+    except Exception as exc:
+        logger.error("voice_chat endpoint failed: %s", exc, exc_info=True)
+        return JSONResponse(status_code=500, content={"error": "voice_chat_failed", "message": str(exc)})
+    finally:
+        for path in (temp_audio_path, temp_response_path):
+            if path and os.path.exists(path) and not path.endswith(".mp3"):
+                try:
+                    os.remove(path)
+                except OSError:
+                    pass
 
 class ConnectionManager:
     def __init__(self):

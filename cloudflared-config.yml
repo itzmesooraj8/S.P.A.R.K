@@ -1,0 +1,12 @@
+tunnel: spark-home
+credentials-file: C:\Users\itzme\.cloudflared\spark-home.json
+protocol: http2
+
+ingress:
+  - hostname: spark.yourdomain.example
+    service: http://localhost:8000
+    originRequest:
+      noTLSVerify: true
+  - service: http_status:404
+
+loglevel: info

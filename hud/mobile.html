@@ -1,0 +1,832 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+  <meta name="theme-color" content="#07111a" />
+  <meta name="color-scheme" content="dark" />
+  <title>SPARK Mobile HUD</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    :root {
+      --bg: #071018;
+      --bg-2: #0a1420;
+      --panel: rgba(9, 18, 28, 0.88);
+      --panel-2: rgba(12, 24, 36, 0.92);
+      --line: rgba(140, 178, 206, 0.16);
+      --line-strong: rgba(108, 210, 255, 0.28);
+      --text: #e7f0f6;
+      --muted: rgba(231, 240, 246, 0.66);
+      --accent: #66d7ff;
+      --accent-2: #58f2c4;
+      --warn: #ffca7a;
+      --bad: #ff7e9e;
+      --good: #53efb1;
+      --shadow: 0 24px 64px rgba(0,0,0,0.35);
+      --radius: 22px;
+      --radius-lg: 28px;
+      --mono: 'IBM Plex Mono', monospace;
+      --title: 'Space Grotesk', sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+    html, body { margin: 0; width: 100%; min-height: 100%; background:
+        radial-gradient(circle at 15% 15%, rgba(102, 215, 255, 0.12), transparent 22%),
+        radial-gradient(circle at 80% 12%, rgba(88, 242, 196, 0.08), transparent 20%),
+        linear-gradient(180deg, #071018 0%, #09141c 60%, #050a0f 100%);
+      color: var(--text); font-family: var(--mono); }
+
+    body::before {
+      content: '';
+      position: fixed; inset: 0;
+      background-image: linear-gradient(rgba(255,255,255,0.018) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.018) 1px, transparent 1px);
+      background-size: 42px 42px;
+      opacity: 0.22; pointer-events: none;
+    }
+
+    .app {
+      min-height: 100vh;
+      display: grid;
+      grid-template-rows: auto auto 1fr auto;
+      gap: 12px;
+      padding: 14px;
+      padding-bottom: calc(14px + env(safe-area-inset-bottom));
+      max-width: 1180px;
+      margin: 0 auto;
+    }
+
+    .card {
+      background: linear-gradient(180deg, rgba(12, 24, 36, 0.92), rgba(7, 14, 22, 0.94));
+      border: 1px solid var(--line);
+      border-radius: var(--radius-lg);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(18px) saturate(120%);
+    }
+
+    .topbar {
+      padding: 16px 18px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 12px;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      min-width: 0;
+    }
+
+    .brand-mark {
+      width: 18px;
+      height: 18px;
+      border-radius: 6px;
+      transform: rotate(45deg);
+      background: linear-gradient(135deg, rgba(102, 215, 255, 0.95), rgba(88, 242, 196, 0.3));
+      box-shadow: 0 0 18px rgba(102, 215, 255, 0.22);
+      flex: 0 0 auto;
+    }
+
+    .brand-copy { min-width: 0; }
+    .brand-copy h1 {
+      margin: 0;
+      font-family: var(--title);
+      letter-spacing: 0.24em;
+      text-transform: uppercase;
+      font-size: clamp(22px, 5vw, 30px);
+      color: var(--text);
+    }
+    .brand-copy h1 span { color: var(--accent); }
+    .brand-copy p {
+      margin: 4px 0 0;
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+    }
+
+    .status {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 12px;
+      border-radius: 999px;
+      border: 1px solid rgba(140, 178, 206, 0.14);
+      background: rgba(4, 10, 15, 0.6);
+      color: var(--muted);
+      font-size: 11px;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      white-space: nowrap;
+      min-width: 0;
+    }
+    .status-dot {
+      width: 8px; height: 8px; border-radius: 999px;
+      background: var(--bad);
+      box-shadow: 0 0 12px currentColor;
+      flex: 0 0 auto;
+    }
+    .status[data-state="online"] { color: var(--good); }
+    .status[data-state="online"] .status-dot { background: var(--good); }
+    .status[data-state="thinking"] { color: var(--warn); }
+    .status[data-state="thinking"] .status-dot { background: var(--warn); }
+    .status[data-state="offline"] { color: var(--bad); }
+    .status[data-state="offline"] .status-dot { background: var(--bad); }
+
+    .metrics {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 12px;
+    }
+
+    .metric {
+      padding: 14px;
+      border-radius: var(--radius);
+      border: 1px solid var(--line);
+      background: rgba(8, 16, 25, 0.72);
+    }
+
+    .metric .k {
+      font-size: 10px;
+      letter-spacing: 0.22em;
+      text-transform: uppercase;
+      color: var(--muted);
+      margin-bottom: 10px;
+    }
+    .metric .v {
+      font-family: var(--title);
+      font-size: 22px;
+      color: var(--accent);
+      letter-spacing: 0.06em;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+    .metric .s {
+      margin-top: 6px;
+      color: var(--muted);
+      font-size: 11px;
+      line-height: 1.45;
+    }
+
+    .main {
+      display: grid;
+      grid-template-columns: minmax(0, 1.25fr) minmax(300px, 0.75fr);
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .panel {
+      padding: 16px;
+      border-radius: var(--radius-lg);
+      min-height: 0;
+    }
+
+    .conversation {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: 12px;
+      min-height: 0;
+    }
+
+    .composer-wrap {
+      display: grid;
+      gap: 10px;
+      grid-template-columns: 1fr auto;
+      align-items: end;
+    }
+
+    .input {
+      width: 100%;
+      min-height: 52px;
+      resize: none;
+      border-radius: 18px;
+      border: 1px solid var(--line);
+      outline: none;
+      background: rgba(4, 10, 15, 0.72);
+      color: var(--text);
+      padding: 14px 16px;
+      font: inherit;
+      line-height: 1.5;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
+    }
+    .input:focus { border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(102, 215, 255, 0.08); }
+
+    .send-btn, .ptt-btn, .ghost-btn, .save-btn {
+      border: 0;
+      border-radius: 18px;
+      font-family: var(--title);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      font-weight: 700;
+      cursor: pointer;
+      transition: transform 150ms ease, box-shadow 150ms ease, opacity 150ms ease, background 150ms ease;
+      user-select: none;
+      touch-action: manipulation;
+    }
+    .send-btn:active, .ptt-btn:active, .ghost-btn:active, .save-btn:active { transform: translateY(1px); }
+
+    .send-btn {
+      min-height: 52px;
+      padding: 0 16px;
+      background: linear-gradient(135deg, rgba(102, 215, 255, 0.92), rgba(88, 242, 196, 0.82));
+      color: #031018;
+      box-shadow: 0 12px 28px rgba(102, 215, 255, 0.16);
+    }
+
+    .toolbar {
+      display: flex;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .ghost-btn {
+      min-height: 42px;
+      padding: 0 14px;
+      border: 1px solid var(--line);
+      background: rgba(4, 10, 15, 0.62);
+      color: var(--text);
+    }
+
+    .ptt {
+      display: grid;
+      gap: 12px;
+      align-items: center;
+      justify-items: center;
+      padding: 18px;
+    }
+    .ptt-btn {
+      width: min(100%, 360px);
+      aspect-ratio: 1;
+      border-radius: 30px;
+      background: radial-gradient(circle at 30% 30%, rgba(102, 215, 255, 0.95), rgba(8, 19, 29, 0.92) 58%);
+      color: white;
+      box-shadow: 0 18px 56px rgba(0,0,0,0.38), 0 0 0 1px rgba(255,255,255,0.06), 0 0 36px rgba(102, 215, 255, 0.14);
+      display: grid;
+      place-items: center;
+      text-align: center;
+      padding: 24px;
+      position: relative;
+      overflow: hidden;
+    }
+    .ptt-btn::before {
+      content: '';
+      position: absolute;
+      inset: 12px;
+      border-radius: 24px;
+      border: 1px solid rgba(255,255,255,0.15);
+    }
+    .ptt-btn .big { font-size: clamp(15px, 4vw, 18px); line-height: 1.2; }
+    .ptt-btn .small { margin-top: 8px; font-size: 11px; letter-spacing: 0.16em; opacity: 0.8; text-transform: uppercase; }
+    .ptt-btn.listening {
+      background: radial-gradient(circle at 30% 30%, rgba(88, 242, 196, 0.95), rgba(8, 19, 29, 0.92) 58%);
+      box-shadow: 0 18px 56px rgba(0,0,0,0.4), 0 0 0 1px rgba(255,255,255,0.08), 0 0 46px rgba(88, 242, 196, 0.18);
+    }
+
+    .transcript, .turns, .settings-note, .helper {
+      color: var(--muted);
+      font-size: 12px;
+      line-height: 1.6;
+    }
+    .transcript { min-height: 28px; }
+    .turns {
+      display: grid;
+      gap: 8px;
+      max-height: 340px;
+      overflow: auto;
+      padding-right: 4px;
+    }
+    .turn {
+      padding: 12px 14px;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(5, 11, 17, 0.6);
+    }
+    .turn .role {
+      display: flex; justify-content: space-between; gap: 10px; align-items: baseline;
+      margin-bottom: 6px; font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase;
+    }
+    .turn .role strong { color: var(--accent); }
+    .turn.user .role strong { color: var(--accent-2); }
+    .turn .text { color: var(--text); font-size: 13px; line-height: 1.55; white-space: pre-wrap; word-break: break-word; }
+
+    .settings {
+      display: none;
+      position: fixed;
+      inset: 0;
+      padding: 16px;
+      background: rgba(0, 0, 0, 0.68);
+      backdrop-filter: blur(12px);
+      z-index: 20;
+    }
+    .settings.show { display: grid; place-items: center; }
+    .settings-card {
+      width: min(100%, 560px);
+      padding: 18px;
+      border-radius: 28px;
+      border: 1px solid var(--line-strong);
+      background: linear-gradient(180deg, rgba(12, 24, 36, 0.96), rgba(7, 14, 22, 0.98));
+      box-shadow: var(--shadow);
+    }
+    .settings-card h2 {
+      margin: 0 0 8px;
+      font-family: var(--title);
+      letter-spacing: 0.14em;
+      text-transform: uppercase;
+      color: var(--accent);
+    }
+    .settings-card p { margin: 0 0 16px; color: var(--muted); line-height: 1.55; }
+    .field { display: grid; gap: 8px; margin-bottom: 12px; }
+    .field label { font-size: 11px; letter-spacing: 0.18em; text-transform: uppercase; color: var(--muted); }
+    .field input {
+      width: 100%;
+      border-radius: 16px;
+      border: 1px solid var(--line);
+      background: rgba(4, 10, 15, 0.72);
+      color: var(--text);
+      padding: 14px 15px;
+      font: inherit;
+    }
+    .field input:focus { outline: none; border-color: var(--line-strong); box-shadow: 0 0 0 3px rgba(102, 215, 255, 0.08); }
+    .save-btn {
+      width: 100%;
+      min-height: 50px;
+      margin-top: 4px;
+      background: linear-gradient(135deg, rgba(102, 215, 255, 0.96), rgba(88, 242, 196, 0.92));
+      color: #061018;
+    }
+
+    .small-muted { font-size: 11px; color: var(--muted); }
+    .error { color: var(--bad); }
+    .ok { color: var(--good); }
+
+    @media (max-width: 920px) {
+      .main { grid-template-columns: 1fr; }
+      .metrics { grid-template-columns: 1fr; }
+    }
+    @media (max-width: 640px) {
+      .app { padding: 10px; gap: 10px; }
+      .topbar { flex-wrap: wrap; }
+      .composer-wrap { grid-template-columns: 1fr; }
+      .send-btn { width: 100%; }
+      .ptt-btn { width: min(100%, 320px); }
+    }
+  </style>
+</head>
+<body>
+  <div class="app">
+    <header class="card topbar">
+      <div class="brand">
+        <div class="brand-mark" aria-hidden="true"></div>
+        <div class="brand-copy">
+          <h1>SPARK <span>Mobile</span></h1>
+          <p>Remote access console</p>
+        </div>
+      </div>
+      <div class="status" id="connectionStatus" data-state="offline" title="Connection state">
+        <span class="status-dot"></span>
+        <span id="statusText">offline</span>
+      </div>
+    </header>
+
+    <section class="metrics">
+      <div class="metric card">
+        <div class="k">Server</div>
+        <div class="v" id="serverLabel">Not set</div>
+        <div class="s" id="serverHint">Enter the tunnel URL and token in settings.</div>
+      </div>
+      <div class="metric card">
+        <div class="k">Mode</div>
+        <div class="v" id="modeLabel">Text + Voice</div>
+        <div class="s">Speech recognition uses Web Speech when available, with browser audio fallback for compatibility.</div>
+      </div>
+      <div class="metric card">
+        <div class="k">Turns</div>
+        <div class="v" id="turnCount">0</div>
+        <div class="s">Rolling last 5 conversation turns.</div>
+      </div>
+    </section>
+
+    <main class="main">
+      <section class="panel card conversation">
+        <div>
+          <div class="section-heading" style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;">
+            <div style="font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)">Conversation</div>
+            <button class="ghost-btn" id="openSettingsBtn" type="button">Settings</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="composer-wrap">
+            <textarea id="textInput" class="input" placeholder="Type a message to SPARK..." rows="2"></textarea>
+            <button id="sendBtn" class="send-btn" type="button">Send</button>
+          </div>
+          <div class="toolbar" style="margin-top:10px;">
+            <button id="pttBtn" class="ptt-btn" type="button" aria-label="Hold to speak">
+              <div>
+                <div class="big">Hold to Speak</div>
+                <div class="small">Press and hold, then release</div>
+              </div>
+            </button>
+            <button id="retryPingBtn" class="ghost-btn" type="button">Reconnect</button>
+          </div>
+        </div>
+
+        <div>
+          <div class="transcript" id="transcriptLine">Ready.</div>
+          <div class="small-muted" style="margin-top:6px;">Voice output will be spoken automatically in the browser when responses arrive.</div>
+        </div>
+      </section>
+
+      <aside class="panel card">
+        <div style="display:flex;justify-content:space-between;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:10px;">
+          <div style="font-size:11px;letter-spacing:0.22em;text-transform:uppercase;color:var(--muted)">Recent turns</div>
+          <div class="small-muted" id="lastSync">Not synced</div>
+        </div>
+        <div class="turns" id="turnList"></div>
+      </aside>
+    </main>
+
+    <footer class="card panel" style="padding:14px 16px;display:grid;gap:10px;">
+      <div class="small-muted" id="footerHint">Open this page from the tunnel URL or local file. Save your server URL and Bearer token once and SPARK will remember them.</div>
+      <div class="small-muted">Tip: on iPhone Safari, if SpeechRecognition is unavailable, the press-and-hold button falls back to browser audio upload through /voice-chat.</div>
+    </footer>
+  </div>
+
+  <div class="settings" id="settingsOverlay">
+    <div class="settings-card">
+      <h2>Connection Settings</h2>
+      <p>Enter the public tunnel URL for your Windows laptop and your Bearer token. SPARK stores both in this browser only.</p>
+      <form id="settingsForm">
+        <div class="field">
+          <label for="serverUrl">Server URL</label>
+          <input id="serverUrl" type="url" placeholder="https://spark.yourdomain.com" autocomplete="url" required />
+        </div>
+        <div class="field">
+          <label for="accessToken">Bearer Token</label>
+          <input id="accessToken" type="password" placeholder="64-character token" autocomplete="off" required />
+        </div>
+        <button type="submit" class="save-btn">Save and Connect</button>
+        <div class="settings-note" style="margin-top:10px;">This UI uses /chat for text and /voice-chat for fallback audio upload. Browser TTS is handled locally.</div>
+      </form>
+    </div>
+  </div>
+
+  <script>
+    const STORAGE_URL = 'sparkRemoteServerUrl';
+    const STORAGE_TOKEN = 'sparkAccessToken';
+    const MAX_TURNS = 5;
+
+    const connectionStatus = document.getElementById('connectionStatus');
+    const statusText = document.getElementById('statusText');
+    const serverLabel = document.getElementById('serverLabel');
+    const serverHint = document.getElementById('serverHint');
+    const transcriptLine = document.getElementById('transcriptLine');
+    const turnList = document.getElementById('turnList');
+    const turnCount = document.getElementById('turnCount');
+    const lastSync = document.getElementById('lastSync');
+    const textInput = document.getElementById('textInput');
+    const sendBtn = document.getElementById('sendBtn');
+    const pttBtn = document.getElementById('pttBtn');
+    const retryPingBtn = document.getElementById('retryPingBtn');
+    const settingsOverlay = document.getElementById('settingsOverlay');
+    const settingsForm = document.getElementById('settingsForm');
+    const serverUrlInput = document.getElementById('serverUrl');
+    const accessTokenInput = document.getElementById('accessToken');
+    const openSettingsBtn = document.getElementById('openSettingsBtn');
+
+    let currentServerUrl = localStorage.getItem(STORAGE_URL) || '';
+    let currentToken = localStorage.getItem(STORAGE_TOKEN) || '';
+    let turns = [];
+    let recognition = null;
+    let mediaRecorder = null;
+    let mediaChunks = [];
+    let audioStream = null;
+    let listening = false;
+
+    function normalizeBaseUrl(value) {
+      return String(value || '').trim().replace(/\/$/, '');
+    }
+
+    function setStatus(state, text) {
+      connectionStatus.dataset.state = state;
+      statusText.textContent = text;
+    }
+
+    function updateServerLabels() {
+      if (currentServerUrl) {
+        serverLabel.textContent = currentServerUrl.replace(/^https?:\/\//, '');
+        serverHint.textContent = 'Authenticated requests will use the saved token.';
+      } else {
+        serverLabel.textContent = 'Not set';
+        serverHint.textContent = 'Enter the tunnel URL and token in settings.';
+      }
+    }
+
+    function pushTurn(role, text) {
+      turns.push({ role, text, ts: Date.now() });
+      if (turns.length > MAX_TURNS) {
+        turns = turns.slice(-MAX_TURNS);
+      }
+      renderTurns();
+    }
+
+    function renderTurns() {
+      turnList.innerHTML = '';
+      turnCount.textContent = String(turns.length);
+      turns.slice().reverse().forEach((turn) => {
+        const item = document.createElement('div');
+        item.className = 'turn ' + turn.role;
+        const role = document.createElement('div');
+        role.className = 'role';
+        role.innerHTML = `<strong>${turn.role === 'user' ? 'You' : 'SPARK'}</strong><span>${new Date(turn.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>`;
+        const text = document.createElement('div');
+        text.className = 'text';
+        text.textContent = turn.text;
+        item.appendChild(role);
+        item.appendChild(text);
+        turnList.appendChild(item);
+      });
+    }
+
+    function speak(text) {
+      if (!('speechSynthesis' in window)) return;
+      if (!text || !text.trim()) return;
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 1.0;
+      utterance.pitch = 1.0;
+      utterance.volume = 1.0;
+      window.speechSynthesis.speak(utterance);
+    }
+
+    function getHeaders() {
+      const headers = { 'Content-Type': 'application/json' };
+      if (currentToken) headers['Authorization'] = 'Bearer ' + currentToken;
+      return headers;
+    }
+
+    async function pingServer() {
+      if (!currentServerUrl) {
+        setStatus('offline', 'offline');
+        return false;
+      }
+      try {
+        const response = await fetch(currentServerUrl + '/ping', { method: 'GET', cache: 'no-store' });
+        const payload = await response.json();
+        if (response.ok && payload.status === 'online') {
+          setStatus('online', 'connected');
+          lastSync.textContent = 'Ping ' + new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+          return true;
+        }
+        throw new Error('Ping failed');
+      } catch (error) {
+        setStatus('offline', 'offline');
+        lastSync.textContent = 'Offline';
+        return false;
+      }
+    }
+
+    async function sendMessage(message) {
+      const text = String(message || '').trim();
+      if (!text) return;
+      if (!currentServerUrl || !currentToken) {
+        openSettings();
+        return;
+      }
+
+      pushTurn('user', text);
+      transcriptLine.textContent = 'Sending to SPARK...';
+      setStatus('thinking', 'thinking');
+      try {
+        const response = await fetch(currentServerUrl + '/chat', {
+          method: 'POST',
+          headers: getHeaders(),
+          body: JSON.stringify({ message: text }),
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          const errorMessage = data && (data.error || data.message) ? (data.error || data.message) : 'Request failed';
+          throw new Error(errorMessage);
+        }
+        const reply = String(data.response || '').trim() || 'No response.';
+        pushTurn('assistant', reply);
+        transcriptLine.textContent = reply;
+        setStatus('online', 'connected');
+        speak(reply);
+      } catch (error) {
+        const messageText = 'SPARK offline: ' + (error && error.message ? error.message : 'network error');
+        transcriptLine.textContent = messageText;
+        setStatus('offline', 'offline');
+        pushTurn('assistant', messageText);
+      }
+    }
+
+    function openSettings() {
+      serverUrlInput.value = currentServerUrl;
+      accessTokenInput.value = currentToken;
+      settingsOverlay.classList.add('show');
+    }
+
+    function closeSettings() {
+      settingsOverlay.classList.remove('show');
+    }
+
+    async function useWebSpeechRecognition() {
+      const Recognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+      if (!Recognition) return null;
+      const rec = new Recognition();
+      rec.lang = 'en-US';
+      rec.interimResults = false;
+      rec.continuous = false;
+      rec.maxAlternatives = 1;
+      return rec;
+    }
+
+    async function startVoiceCapture() {
+      if (!currentServerUrl || !currentToken) {
+        openSettings();
+        return;
+      }
+      if (listening) return;
+      listening = true;
+      pttBtn.classList.add('listening');
+      transcriptLine.textContent = 'Listening...';
+      setStatus('thinking', 'listening');
+
+      const recognitionInstance = await useWebSpeechRecognition();
+      if (recognitionInstance) {
+        recognition = recognitionInstance;
+        recognition.onresult = (event) => {
+          const last = event.results[event.results.length - 1];
+          if (last && last[0] && last[0].transcript) {
+            transcriptLine.textContent = last[0].transcript;
+          }
+        };
+        recognition.onend = async () => {
+          if (!listening) return;
+          const transcript = transcriptLine.textContent && transcriptLine.textContent !== 'Listening...' ? transcriptLine.textContent : '';
+          listening = false;
+          pttBtn.classList.remove('listening');
+          setStatus('online', 'connected');
+          if (transcript) {
+            await sendMessage(transcript);
+          } else {
+            transcriptLine.textContent = 'No speech detected.';
+          }
+        };
+        recognition.onerror = async () => {
+          listening = false;
+          pttBtn.classList.remove('listening');
+          await startAudioFallbackCapture();
+        };
+        try {
+          recognition.start();
+          return;
+        } catch (error) {
+          recognition = null;
+        }
+      }
+
+      await startAudioFallbackCapture();
+    }
+
+    async function stopVoiceCapture() {
+      if (!listening) return;
+      if (recognition) {
+        try { recognition.stop(); } catch (error) {}
+        recognition = null;
+        return;
+      }
+      if (mediaRecorder && mediaRecorder.state !== 'inactive') {
+        mediaRecorder.stop();
+      }
+      if (audioStream) {
+        audioStream.getTracks().forEach(track => track.stop());
+        audioStream = null;
+      }
+      listening = false;
+      pttBtn.classList.remove('listening');
+      setStatus('online', 'connected');
+    }
+
+    async function startAudioFallbackCapture() {
+      if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia || typeof MediaRecorder === 'undefined') {
+        listening = false;
+        pttBtn.classList.remove('listening');
+        transcriptLine.textContent = 'Voice capture unavailable. Use typing instead.';
+        setStatus('offline', 'offline');
+        return;
+      }
+      try {
+        audioStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+        mediaChunks = [];
+        mediaRecorder = new MediaRecorder(audioStream, { mimeType: MediaRecorder.isTypeSupported('audio/webm') ? 'audio/webm' : '' });
+        mediaRecorder.ondataavailable = (event) => {
+          if (event.data && event.data.size > 0) mediaChunks.push(event.data);
+        };
+        mediaRecorder.onstop = async () => {
+          try {
+            const blob = new Blob(mediaChunks, { type: mediaChunks[0] ? mediaChunks[0].type : 'audio/webm' });
+            await uploadVoiceBlob(blob);
+          } finally {
+            if (audioStream) {
+              audioStream.getTracks().forEach(track => track.stop());
+              audioStream = null;
+            }
+            mediaRecorder = null;
+            mediaChunks = [];
+            listening = false;
+            pttBtn.classList.remove('listening');
+            setStatus('online', 'connected');
+          }
+        };
+        mediaRecorder.start();
+      } catch (error) {
+        transcriptLine.textContent = 'Microphone permission denied or unavailable.';
+        setStatus('offline', 'offline');
+        listening = false;
+        pttBtn.classList.remove('listening');
+      }
+    }
+
+    async function uploadVoiceBlob(blob) {
+      if (!blob || !blob.size) return;
+      transcriptLine.textContent = 'Uploading audio to SPARK...';
+      const formData = new FormData();
+      formData.append('audio', blob, 'spark.webm');
+      try {
+        const response = await fetch(currentServerUrl + '/voice-chat', {
+          method: 'POST',
+          headers: currentToken ? { 'Authorization': 'Bearer ' + currentToken } : {},
+          body: formData,
+        });
+        const data = await response.json();
+        if (!response.ok) {
+          throw new Error(data.error || data.message || 'Voice request failed');
+        }
+        const transcript = String(data.text || '').trim();
+        const reply = String(data.response || '').trim();
+        if (transcript) pushTurn('user', transcript);
+        if (reply) {
+          pushTurn('assistant', reply);
+          transcriptLine.textContent = reply;
+          speak(reply);
+        }
+      } catch (error) {
+        transcriptLine.textContent = 'SPARK offline: ' + (error && error.message ? error.message : 'voice upload failed');
+        setStatus('offline', 'offline');
+      }
+    }
+
+    async function init() {
+      updateServerLabels();
+      if (!currentServerUrl || !currentToken) {
+        settingsOverlay.classList.add('show');
+      } else {
+        settingsOverlay.classList.remove('show');
+        await pingServer();
+      }
+      renderTurns();
+      setInterval(pingServer, 30000);
+    }
+
+    settingsForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      currentServerUrl = normalizeBaseUrl(serverUrlInput.value);
+      currentToken = String(accessTokenInput.value || '').trim();
+      localStorage.setItem(STORAGE_URL, currentServerUrl);
+      localStorage.setItem(STORAGE_TOKEN, currentToken);
+      updateServerLabels();
+      closeSettings();
+      await pingServer();
+    });
+
+    openSettingsBtn.addEventListener('click', openSettings);
+    retryPingBtn.addEventListener('click', pingServer);
+    sendBtn.addEventListener('click', () => sendMessage(textInput.value));
+
+    textInput.addEventListener('keydown', async (event) => {
+      if (event.key === 'Enter' && !event.shiftKey) {
+        event.preventDefault();
+        await sendMessage(textInput.value);
+      }
+    });
+
+    pttBtn.addEventListener('pointerdown', async (event) => {
+      event.preventDefault();
+      await startVoiceCapture();
+    });
+    pttBtn.addEventListener('pointerup', async (event) => {
+      event.preventDefault();
+      await stopVoiceCapture();
+    });
+    pttBtn.addEventListener('pointercancel', stopVoiceCapture);
+    pttBtn.addEventListener('touchend', stopVoiceCapture);
+
+    init();
+  </script>
+</body>
+</html>

@@ -1,202 +1,66 @@
 [
   {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.644715",
-    "pid": 16900,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe /c c:\\program files\\amd\\cnext\\cnext\\amdrsserv.exe",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.648810",
-    "pid": 17308,
-    "process": "cncmd.exe",
-    "cmdline": "c:\\program files\\amd\\cnext\\cnext\\cncmd.exe watch 16644",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.655303",
-    "pid": 19664,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe /d /s /c c:\\program files\\donwloaded apps\\360 security\\360\\total security\\safemon\\chrome\\360webshield.exe chrome-extension://glcimepnljoholdmjchkloafkggfoijh/ --parent-wind",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.660202",
-    "pid": 21236,
-    "process": "powershell.exe",
-    "cmdline": "c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe -noexit -command try { . \"c:\\users\\itzme\\appdata\\local\\programs\\microsoft vs code\\8b640eef5a\\resources\\app\\out\\vs\\workbench\\contrib\\terminal\\c",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.665031",
-    "pid": 21860,
-    "process": "powershell.exe",
-    "cmdline": "c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe -noexit -command try { . \"c:\\users\\itzme\\appdata\\local\\programs\\microsoft vs code\\8b640eef5a\\resources\\app\\out\\vs\\workbench\\contrib\\terminal\\c",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.671665",
-    "pid": 25292,
-    "process": "powershell.exe",
-    "cmdline": "c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe -noexit -command try { . \"c:\\users\\itzme\\appdata\\local\\programs\\microsoft vs code\\8b640eef5a\\resources\\app\\out\\vs\\workbench\\contrib\\terminal\\c",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T17:49:36.677109",
-    "pid": 27316,
-    "process": "powershell.exe",
-    "cmdline": "c:\\windows\\system32\\windowspowershell\\v1.0\\powershell.exe -noexit -command try { . \"c:\\users\\itzme\\appdata\\local\\programs\\microsoft vs code\\8b640eef5a\\resources\\app\\out\\vs\\workbench\\contrib\\terminal\\c",
-    "severity": "high"
-  },
-  {
-    "type": "network_anomaly",
-    "timestamp": "2026-05-12T17:49:36.710935",
-    "remote_ip": "2001:67c:4e8:f004::b",
-    "connection_count": 321,
-    "threshold": 100,
-    "severity": "medium"
-  },
-  {
-    "type": "network_anomaly",
-    "timestamp": "2026-05-12T17:49:36.982080",
-    "remote_ip": "149.154.165.120",
-    "connection_count": 227,
-    "threshold": 100,
-    "severity": "medium"
-  },
-  {
     "type": "file_tampering",
-    "timestamp": "2026-05-12T18:04:26.539089",
+    "timestamp": "2026-05-16T12:05:07.609572",
     "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
-    "old_hash": "a1048b7ab2b4109a2f75f026a5eec72aa607599bdf09e4231be48ce834a2f913",
-    "new_hash": "0fd1a05f7a018fbd7cb8560d3cced3c82ee712fb2424e835baf7137dcc216207",
+    "old_hash": "3ee02355b6d97e59d1d1ba45c0f01843814b024735760ffaf6292a0fcddcfc61",
+    "new_hash": "dea371849ecd7c0c8ad95ca6b777a0e0a1c542ef16248c4c6a6a083341ab156b",
     "severity": "critical"
   },
   {
     "type": "file_tampering",
-    "timestamp": "2026-05-12T18:04:26.547255",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
-    "old_hash": "9a33f095283b2369fa9b6fabe2eec97651cf19e5553f4f4244bfc53bdcb14bac",
-    "new_hash": "fe6618d2300aa4799ba75cd06a219bf743b32c1be37f007674b8f2855460858c",
-    "severity": "critical"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-12T18:08:59.394505",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
-    "old_hash": "fe6618d2300aa4799ba75cd06a219bf743b32c1be37f007674b8f2855460858c",
-    "new_hash": "d724f888bd5c28f1143065e10b755d11d1a036057b5af02abd1a9744b0a65577",
-    "severity": "critical"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-12T18:11:59.760685",
+    "timestamp": "2026-05-16T12:05:07.655400",
     "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
-    "old_hash": "165640dc71f8ef28ce76f0f05fbccc2a5317ac60ab435ebd9cd0f207dd1af576",
-    "new_hash": "0efaffe0609f8cec927943ab71cfbeca88744685a959bc67d0108d39a31e064b",
-    "severity": "critical"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T18:19:44.598234",
-    "pid": 5352,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe /c c:\\program files\\nodejs\\npx.cmd -y @modelcontextprotocol/server-puppeteer",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T19:16:24.314582",
-    "pid": 22736,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T19:16:39.904958",
-    "pid": 22736,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T19:17:24.431887",
-    "pid": 22736,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe",
-    "severity": "high"
-  },
-  {
-    "type": "suspicious_process",
-    "timestamp": "2026-05-12T19:17:39.994571",
-    "pid": 22736,
-    "process": "cmd.exe",
-    "cmdline": "c:\\windows\\system32\\cmd.exe",
-    "severity": "high"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-12T21:22:47.848993",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\token_counter.py",
-    "old_hash": "e4c8fe78e846c6e672ba9d1122b9045afd25dda8268cb4dc26ca9fb15391cb28",
-    "new_hash": "ac61d0fc6794c71d20ea93122e934070d58db25db9e64c39cbd03a02f4ec0a28",
+    "old_hash": "3ee02355b6d97e59d1d1ba45c0f01843814b024735760ffaf6292a0fcddcfc61",
+    "new_hash": "dea371849ecd7c0c8ad95ca6b777a0e0a1c542ef16248c4c6a6a083341ab156b",
     "severity": "critical"
   },
   {
     "type": "file_tampering",
-    "timestamp": "2026-05-12T21:23:47.959872",
+    "timestamp": "2026-05-16T12:32:39.818980",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "dea371849ecd7c0c8ad95ca6b777a0e0a1c542ef16248c4c6a6a083341ab156b",
+    "new_hash": "f53d620d38aaca25cba99f9d542b545a7470f979e5a154ad54d1a33e178575cb",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-16T12:32:39.853144",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "dea371849ecd7c0c8ad95ca6b777a0e0a1c542ef16248c4c6a6a083341ab156b",
+    "new_hash": "f53d620d38aaca25cba99f9d542b545a7470f979e5a154ad54d1a33e178575cb",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-16T12:33:39.938501",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
+    "old_hash": "bdd461887721b240de9eb2914b4bafed79b0b36f6c800a741e0f375077b65201",
+    "new_hash": "ecd32be2fe167e6c4e139275932ab641b1e1af8f51f5b477748c814efb2ecbf4",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-16T12:33:39.978840",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
+    "old_hash": "bdd461887721b240de9eb2914b4bafed79b0b36f6c800a741e0f375077b65201",
+    "new_hash": "ecd32be2fe167e6c4e139275932ab641b1e1af8f51f5b477748c814efb2ecbf4",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-16T12:35:10.107389",
     "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\server.py",
-    "old_hash": "661c635a402dc1bf82e7149f22488a80ac21293a9c58549894f739403c9c4387",
-    "new_hash": "0a5bb04f8a044f95cd10895132b2492333f704e5b4e7bd0463b2de315fb04f1f",
+    "old_hash": "d732011614400a67f017d0261929175d315a7ef2ff1fb1050e3896d810f2a778",
+    "new_hash": "a79c9fefb988d94e120186689e3c2e7d3e2cc6b6dcad46fb0600ed6c20ec8849",
     "severity": "critical"
   },
   {
     "type": "file_tampering",
-    "timestamp": "2026-05-12T21:26:48.321034",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\security_daemon.py",
-    "old_hash": "dc7356ced45dac49a194fcf9c110d053a8062a27fb5ce09d97eb68fca6820867",
-    "new_hash": "19ff1511b9d3c8ecd767ab11da41e737b96d314f8b14e7c1d777491997448558",
-    "severity": "critical"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-12T23:14:58.817329",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
-    "old_hash": "59be932850ba01f6e52bf27d93bb19672135db9c1cae74be3a418f1db75b726d",
-    "new_hash": "43b7fcc6d7a5ba10a7e67711e6230c2ec64cbe32e0e9bd722e47c752e54043c9",
-    "severity": "critical"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-13T00:27:33.596741",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\memory.py",
-    "old_hash": "3ec8c6a1216494ba4785a1a1e4aab5c6980f0ac37f2d75352534345cdc146ea8",
-    "new_hash": "793dc43a49fc77db62e987cde6cef978f639304dcc00729da44f42f299dac930",
-    "severity": "critical"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-13T00:28:03.667685",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
-    "old_hash": "c848b3cc0188e7d22cfa4cf791e9250ca007032cfa9efc88267747f46d4e0846",
-    "new_hash": "1b386a8f63cea6ef81678bdb2c183584100281c09bf678720fc714055d8f12f7",
-    "severity": "critical"
-  },
-  {
-    "type": "file_tampering",
-    "timestamp": "2026-05-13T00:28:03.679313",
-    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
-    "old_hash": "7b4d933dcf2d656dbf6f859676f0646eaf1e14d3a5b819df7339a6258cdf7135",
-    "new_hash": "a02bfa1af3df1c66e830a8af70d06d4cec4c07e6c37e973a797974766502b688",
+    "timestamp": "2026-05-16T12:35:10.155511",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\server.py",
+    "old_hash": "d732011614400a67f017d0261929175d315a7ef2ff1fb1050e3896d810f2a778",
+    "new_hash": "a79c9fefb988d94e120186689e3c2e7d3e2cc6b6dcad46fb0600ed6c20ec8849",
     "severity": "critical"
   }
 ]

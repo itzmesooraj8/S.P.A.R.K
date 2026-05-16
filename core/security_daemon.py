@@ -9,6 +9,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import psutil
 import socket
 import subprocess
@@ -139,11 +140,12 @@ class SecurityDaemon:
     def _check_processes(self) -> None:
         """Monitor for suspicious processes."""
         try:
-            for proc in psutil.process_iter(["pid", "name", "cmdline"]):
+            for proc in psutil.process_iter(["pid", "name", "cmdline", "exe"]):
                 try:
-                    proc_name = proc.info["name"].lower()
-                    cmdline = (proc.info["cmdline"] or [])
+                    proc_name = str(proc.info.get("name") or "").lower()
+                    cmdline = (proc.info.get("cmdline") or [])
                     cmdline_str = " ".join(str(c) for c in cmdline).lower()
+                    exe_path = str(proc.info.get("exe") or "").lower()
                     
                     # Check for suspicious process names
                     for suspicious in self.suspicious_processes:
@@ -347,6 +349,15 @@ class SecurityDaemon:
         Whitelists development tools, system utilities, and known third-party security/service software.
         Prevents false positives on legitimate processes like VS Code terminals, AMD services, and 360 Security.
         """
+        proc_name = str(proc_info.get("name") or "").lower()
+        exe_path = str(proc_info.get("exe") or "").lower()
+
+        def _normalize(text: str) -> str:
+            return re.sub(r"[^a-z0-9]+", "", text.lower())
+
+        candidate_texts = [proc_name, cmdline_str, exe_path]
+        normalized_texts = [_normalize(text) for text in candidate_texts if text]
+
         # Whitelist legitimate processes and system utilities
         whitelist_patterns = [
             # SPARK development
@@ -371,9 +382,16 @@ class SecurityDaemon:
             "code-server",
             "electron",
             "vscode",
+            "visual studio code",
             "extensionhost",
             "debug.exe",
             ".vscode",
+            "terminal",
+            "windows terminal",
+            "wt.exe",
+            "powershell",
+            "powershell.exe",
+            "pwsh",
             
             # AMD CNxt Services & System
             "amd",
@@ -441,7 +459,10 @@ class SecurityDaemon:
         ]
         
         for pattern in whitelist_patterns:
-            if pattern.lower() in cmdline_str.lower():
+            normalized_pattern = _normalize(pattern)
+            if any(pattern.lower() in text for text in candidate_texts if text):
+                return True
+            if normalized_pattern and any(normalized_pattern in text for text in normalized_texts):
                 return True
         
         return False
