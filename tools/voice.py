@@ -164,7 +164,9 @@ def _speak_sync(text: str, check_barge_in: bool = True) -> None:
             if check_barge_in and _barge_in_flag:
                 return None
             communicate = edge_tts.Communicate(clean, voice="en-US-AriaNeural")
-            tmp = tempfile.mktemp(suffix=".mp3")
+            # Use secure NamedTemporaryFile instead of deprecated mktemp to prevent race conditions
+            with tempfile.NamedTemporaryFile(delete=False, suffix=".mp3") as tmp_file:
+                tmp = tmp_file.name
             await communicate.save(tmp)
             return tmp
         

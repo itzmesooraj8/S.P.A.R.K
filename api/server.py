@@ -71,6 +71,7 @@ app.include_router(runtime_router)
 app.include_router(security_router)
 
 _SPARK_ACCESS_TOKEN = os.getenv("SPARK_ACCESS_TOKEN") or os.getenv("SPARK_TOKEN", "change-this-token")
+SPARK_TOKEN = _SPARK_ACCESS_TOKEN
 request_counts: defaultdict[str, list[float]] = defaultdict(list)
 bearer_scheme = HTTPBearer(auto_error=False)
 
@@ -244,14 +245,14 @@ async def get_hud_mobile():
         return HTMLResponse(mobile_file.read())
 
 
-@app.post("/api/override/cast")
+@app.post("/api/override/cast", dependencies=[Depends(rate_limit)])
 async def cast_signal_override(request: Request, x_spark_token: str = Header(None)):
     """Remote Signal Override: cast to any display running SPARK HUD.
     
     Requires X-SPARK-TOKEN header matching SPARK_TOKEN.
     Broadcasts signal_override event to all connected WebSocket clients.
     """
-    if x_spark_token != SPARK_TOKEN:
+    if not _token_matches(x_spark_token or ""):
         raise HTTPException(status_code=401, detail="Unauthorized")
     
     try:
@@ -270,8 +271,9 @@ async def cast_signal_override(request: Request, x_spark_token: str = Header(Non
     })
     
     return {"status": "signal cast", "clients_notified": len(manager.active_connections)}
+@app.post("/api/auth/login", dependencies=[Depends(rate_limit)])
 async def auth_login():
-    token = uuid.uuid4().hex
+    token = _SPARK_ACCESS_TOKEN
     return {
         "access_token": token,
         "refresh_token": token,
@@ -281,9 +283,9 @@ async def auth_login():
     }
 
 
-@app.post("/api/auth/refresh")
+@app.post("/api/auth/refresh", dependencies=[Depends(rate_limit)])
 async def auth_refresh():
-    token = uuid.uuid4().hex
+    token = _SPARK_ACCESS_TOKEN
     return {
         "access_token": token,
         "refresh_token": token,
@@ -293,7 +295,7 @@ async def auth_refresh():
     }
 
 
-@app.post("/api/auth/logout")
+@app.post("/api/auth/logout", dependencies=[Depends(rate_limit)])
 async def auth_logout():
     return {"status": "ok"}
 
@@ -340,8 +342,10 @@ async def chat_endpoint(request: ChatRequest):
 @app.post("/listen", dependencies=[Depends(verify_token), Depends(rate_limit)])
 async def listen_endpoint():
     """Record 5s of audio, transcribe, run through SPARK."""
+    from audio.stt import SparkEars
+    ears = SparkEars()
     loop = asyncio.get_running_loop()
-    text = await loop.run_in_executor(None, listen_and_transcribe, 5)
+    text = await loop.run_in_executor(None, ears.listen, 5)
     if not text:
         return {"error": "No speech detected"}
     result = await ask_spark_brain(text, session_history=[])
@@ -350,13 +354,21 @@ async def listen_endpoint():
     return result
 
 
+
 @app.post("/voice-chat", dependencies=[Depends(verify_token), Depends(rate_limit)])
 async def voice_chat_endpoint(audio: UploadFile = File(...)):
     """Accept browser-recorded audio, transcribe with Whisper, and route through SPARK."""
     temp_audio_path = ""
     temp_response_path = ""
     try:
-        suffix = os.path.splitext(audio.filename or "")[1] or ".webm"
+        filename = audio.filename or ""
+        raw_suffix = os.path.splitext(filename)[1] or ".webm"
+        # Sanitize suffix to only contain valid extension characters (alphanumeric and dot)
+        suffix = "".join(c for c in raw_suffix if c.isalnum() or c == ".")
+        if not suffix.startswith("."):
+            suffix = "." + suffix
+        suffix = suffix[:10]
+
         with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
             temp_audio_path = tmp.name
             tmp.write(await audio.read())

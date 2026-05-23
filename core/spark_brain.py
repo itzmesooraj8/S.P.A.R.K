@@ -410,12 +410,17 @@ def _execute_python(code: str, description: str = "") -> str:
             tmp_file.write(code)
             tmp_path = tmp_file.name
 
+        # Resolve sandbox path under workspace directory
+        workspace_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        sandbox_path = os.path.join(workspace_dir, "sandbox")
+        os.makedirs(sandbox_path, exist_ok=True)
+
         result = subprocess.run(
             [sys.executable, tmp_path],
             capture_output=True,
             text=True,
             timeout=15,
-            cwd=os.path.expanduser("~"),
+            cwd=sandbox_path,
         )
 
         try:
@@ -914,44 +919,100 @@ async def _local_chat_completion(messages: list[dict[str, Any]]) -> str:
     return result.text
 
 
+class GroqFallbackError(RuntimeError):
+    """Raised when Groq API encounters network, rate limit, or timeout issues requiring fallback to local LLM."""
+    pass
+
+
 def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True, tools: list[dict[str, Any]] | None = None):
     # Double-check token budget before making ANY Groq call
     remaining_tokens = token_counter.get_remaining_today()
     if remaining_tokens < 5000:
         logger.warning(f"[token_guard] Blocking Groq call due to low budget: {remaining_tokens} tokens")
-        raise RuntimeError(f"Daily Groq token budget too low ({remaining_tokens} < 5000); switching to Ollama-only mode")
+        raise GroqFallbackError(f"Daily Groq token budget too low ({remaining_tokens} < 5000); switching to Ollama-only mode")
     
     if time.time() < _groq_cooldown_until:
-        raise RuntimeError("Groq is cooling down after rate limiting")
+        raise GroqFallbackError("Groq is cooling down after rate limiting")
 
-    groq_model = os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile")
+    if client is None:
+        raise GroqFallbackError("Groq client is not initialized")
+
+    import groq
+    import httpx
+    import requests
+
+    from core.model_router import get_groq_model
+    groq_model = get_groq_model()
     
+    try:
+        user_messages = [m.get("content") for m in messages if m.get("role") == "user" and m.get("content")]
+        if user_messages:
+            client.moderations.create(input=user_messages[-1])
+    except Exception:
+        pass
+
     kwargs: dict[str, Any] = {
         "model": groq_model,
         "messages": messages,
         "max_tokens": 1024,
+        "user": "spark-operator",
     }
     if allow_tools:
         kwargs["tools"] = tools or TOOLS
         kwargs["tool_choice"] = "auto"
-    try:
-        response = client.chat.completions.create(**kwargs)
-        
-        # Log token usage after successful call
+
+    retries = 3
+    backoff = 1.0
+    for attempt in range(retries):
         try:
-            if hasattr(response, 'usage'):
-                tokens_used = response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
-                token_counter.log_usage(tokens_used, model=groq_model)
-                remaining = token_counter.get_remaining_budget()
-                if remaining < 5000:
-                    logger.warning(f"Groq token budget low: {remaining} tokens remaining")
-        except Exception as e:
-            logger.debug(f"Failed to log token usage: {e}")
-        
-        return response
-    except Exception as exc:
-        _apply_rate_limit_cooldown(str(exc))
-        raise
+            if kwargs.get("tools"):
+                response = client.chat.completions.create(
+                    model=groq_model,
+                    messages=messages,
+                    max_tokens=1024,
+                    user="spark-operator",
+                    tools=kwargs.get("tools"),
+                    tool_choice=kwargs.get("tool_choice")
+                )
+            else:
+                response = client.chat.completions.create(
+                    model=groq_model,
+                    messages=messages,
+                    max_tokens=1024,
+                    user="spark-operator"
+                )
+            
+            # Log token usage after successful call
+            try:
+                if hasattr(response, 'usage'):
+                    tokens_used = response.usage.total_tokens if hasattr(response.usage, 'total_tokens') else 0
+                    token_counter.log_usage(tokens_used, model=groq_model)
+                    remaining = token_counter.get_remaining_budget()
+                    if remaining < 5000:
+                        logger.warning(f"Groq token budget low: {remaining} tokens remaining")
+            except Exception as e:
+                logger.debug(f"Failed to log token usage: {e}")
+            
+            return response
+        except (
+            groq.APIStatusError,
+            groq.APIConnectionError,
+            groq.APITimeoutError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as exc:
+            logger.warning(f"Groq API error on attempt {attempt + 1}: {exc}")
+            _apply_rate_limit_cooldown(str(exc))
+            if attempt == retries - 1:
+                raise GroqFallbackError(f"Groq API failed after {retries} retries: {exc}") from exc
+            time.sleep(backoff)
+            backoff *= 2.0
+        except Exception as exc:
+            logger.warning(f"Groq API unexpected error: {exc}")
+            raise GroqFallbackError(f"Groq API failed: {exc}") from exc
+
 
 
 async def _get_dynamic_tools() -> list[dict[str, Any]]:
@@ -974,7 +1035,10 @@ async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
             ],
             allow_tools=False,
         )
-        return (response.choices[0].message.content or "").strip()
+        msg = response.choices[0].message
+        if hasattr(msg, "refusal") and msg.refusal:
+            raise RuntimeError(f"Model refused request: {msg.refusal}")
+        return (msg.content or "").strip()
 
     async def _tool_executor(step_name: str, step_arg: str) -> str:
         payload: dict[str, Any]
@@ -1159,6 +1223,19 @@ async def _try_local_direct_tool_routing(user_input: str) -> dict[str, Any] | No
 
 
 async def handle(user_input: str, session_history: list[dict[str, Any]], stream_sink=None, cancel_event=None) -> dict[str, Any]:
+    from security.intent_validator import validate_intent_text
+    
+    # Run intent validation and conversational filler clean-up
+    scan = validate_intent_text(user_input)
+    if not scan.allowed:
+        reply = "I cannot act on that instruction safely, sir."
+        if stream_sink:
+            stream_sink("response_done", {"content": reply})
+        return {"reply": reply, "tool_used": None, "tool_result": None}
+        
+    if scan.cleaned_text and scan.cleaned_text.strip():
+        user_input = scan.cleaned_text
+
     # Check token budget at session start - block Groq early if budget is low
     remaining_tokens = token_counter.get_remaining_today()
     if remaining_tokens < 5000:
@@ -1310,6 +1387,13 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         tool_specs = await _get_dynamic_tools()
         allowed_tools = {tool["function"]["name"] for tool in tool_specs if tool.get("function", {}).get("name")}
         response = _chat_completion(messages, allow_tools=True, tools=tool_specs)
+    except GroqFallbackError as exc:
+        logger.warning("Groq call failed with GroqFallbackError, routing directly to local fallback: %s", exc)
+        reply = await _local_chat_completion(messages) or _offline_reply(user_input)
+        memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        if stream_sink:
+            stream_sink("response_done", {"content": reply})
+        return {"reply": reply, "tool_used": None, "tool_result": None}
     except Exception as exc:
         recovered_tool = _extract_failed_generation(exc, allowed_tools if "allowed_tools" in locals() else set())
         if recovered_tool:
@@ -1325,7 +1409,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         logger.warning("Tool-enabled chat failed; retrying without tools: %s", exc)
         try:
             response = _chat_completion(messages, allow_tools=False)
-        except Exception as retry_exc:
+        except (Exception, GroqFallbackError) as retry_exc:
             logger.warning("Plain Groq retry failed: %s", retry_exc)
             reply = await _local_chat_completion(messages) or _offline_reply(user_input)
             memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
@@ -1334,6 +1418,14 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             return {"reply": reply, "tool_used": None, "tool_result": None}
 
     msg = response.choices[0].message
+    if hasattr(msg, "refusal") and msg.refusal:
+        logger.warning(f"Groq API returned a refusal: {msg.refusal}")
+        reply = f"I am unable to fulfill that request: {msg.refusal}"
+        memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        if stream_sink:
+            stream_sink("response_done", {"content": reply})
+        return {"reply": reply, "tool_used": None, "tool_result": None}
+
     tool_used = None
     tool_result = None
 
@@ -1382,16 +1474,15 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         messages.append({"role": "tool", "tool_call_id": tool_call.id, "content": _stringify_result(tool_result)})
 
         try:
-            final = client.chat.completions.create(
-                model=os.getenv("GROQ_MODEL", "llama-3.3-70b-versatile"),
-                messages=messages,
-                max_tokens=1024,
-            )
-            reply = (final.choices[0].message.content or "").strip()
-        except Exception as exc:
-            logger.warning("Final tool-followup completion failed; using plain assistant response: %s", exc)
-            fallback = _chat_completion(messages, allow_tools=False)
-            reply = (fallback.choices[0].message.content or "").strip()
+            final = _chat_completion(messages, allow_tools=False)
+            final_msg = final.choices[0].message
+            if hasattr(final_msg, "refusal") and final_msg.refusal:
+                reply = f"Refusal: {final_msg.refusal}"
+            else:
+                reply = (final_msg.content or "").strip()
+        except (Exception, GroqFallbackError) as exc:
+            logger.warning("Final tool-followup completion failed; using local fallback: %s", exc)
+            reply = await _local_chat_completion(messages) or _offline_reply(user_input)
     else:
         reply = (msg.content or "").strip()
         tool_text = _stringify_result(tool_result)

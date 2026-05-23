@@ -52,9 +52,11 @@ def search_and_open_file(query: str) -> str:
             if platform.system() == 'Windows':
                 os.startfile(target_path)
             elif platform.system() == 'Darwin':
-                os.system(f'open "{target_path}"')
+                import subprocess
+                subprocess.Popen(['open', target_path])
             else:
-                os.system(f'xdg-open "{target_path}"')
+                import subprocess
+                subprocess.Popen(['xdg-open', target_path])
                 
             return f"Opening {target_name}, sir."
         except Exception as e:

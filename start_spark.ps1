@@ -34,6 +34,12 @@ if (-not (Test-Path $venvPython)) {
 $env:PYTHONUNBUFFERED = '1'
 $env:SPARK_HOST = '0.0.0.0'
 $env:SPARK_PORT = '8000'
+$env:SPARK_ACCESS_TOKEN = Get-EnvValue -Name 'SPARK_ACCESS_TOKEN' -Default $env:SPARK_ACCESS_TOKEN
+$env:SPARK_TOKEN = Get-EnvValue -Name 'SPARK_TOKEN' -Default $env:SPARK_TOKEN
+
+if (-not $env:SPARK_ACCESS_TOKEN -or $env:SPARK_ACCESS_TOKEN -eq 'change-this-token') {
+    Write-Warning 'SPARK_ACCESS_TOKEN is not set to a strong secret. Remote access should not be exposed until you configure one.'
+}
 
 $serverArgs = @('-m', 'uvicorn', 'api.server:app', '--host', '0.0.0.0', '--port', '8000')
 $serverLog = Join-Path $PSScriptRoot 'spark-server.log'
@@ -52,9 +58,15 @@ if ($cloudflaredToken) {
 }
 elseif (Test-Path (Join-Path $PSScriptRoot 'cloudflared-config.yml')) {
     $cloudflaredConfig = Join-Path $PSScriptRoot 'cloudflared-config.yml'
-    $tunnelLog = Join-Path $PSScriptRoot 'spark-tunnel.log'
-    $tunnelErrLog = Join-Path $PSScriptRoot 'spark-tunnel.err.log'
-    Start-Process -FilePath 'cloudflared' -ArgumentList @('tunnel', '--config', $cloudflaredConfig, 'run') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelErrLog | Out-Null
+    $configText = Get-Content -LiteralPath $cloudflaredConfig -Raw
+    if ($configText -match 'spark\.yourdomain\.example' -or $configText -match 'yourdomain\.example') {
+        Write-Warning 'cloudflared-config.yml still contains a placeholder hostname. Update it before relying on public access.'
+    }
+    else {
+        $tunnelLog = Join-Path $PSScriptRoot 'spark-tunnel.log'
+        $tunnelErrLog = Join-Path $PSScriptRoot 'spark-tunnel.err.log'
+        Start-Process -FilePath 'cloudflared' -ArgumentList @('tunnel', '--config', $cloudflaredConfig, 'run') -WorkingDirectory $PSScriptRoot -WindowStyle Hidden -RedirectStandardOutput $tunnelLog -RedirectStandardError $tunnelErrLog | Out-Null
+    }
 }
 
 Write-Host 'SPARK server and tunnel start sequence launched.'

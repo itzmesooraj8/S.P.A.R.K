@@ -67,7 +67,7 @@ def build_runtime_architecture() -> dict[str, Any]:
     vision_ready = _has_module("core.vision") or _has_module("pytesseract")
     actions_ready = _has_module("core.tools") and _has_module("tools.file_ops") and _has_module("tools.media")
     personality_ready = _has_module("core.persona")
-    ui_ready = Path("spark src/index.html").exists() and Path("package.json").exists()
+    ui_ready = Path("api/static/index.html").exists() and Path("hud/mobile.html").exists()
 
     modules = [
         _module(
@@ -158,8 +158,8 @@ def build_runtime_architecture() -> dict[str, Any]:
             _status(ui_ready),
             ["overlay hud", "status panels", "streaming responses"],
             {
-                "vite_index": Path("spark src/index.html").exists(),
-                "package_json": Path("package.json").exists(),
+                "api_static_index": Path("api/static/index.html").exists(),
+                "hud_mobile": Path("hud/mobile.html").exists(),
                 "api_server": _has_module("api.server"),
             },
         ),

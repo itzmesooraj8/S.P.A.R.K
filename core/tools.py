@@ -54,25 +54,63 @@ class SparkTools:
         return f"The current time is {current_time}."
 
     def open_application(self, app_name):
-        app_name_lower = app_name.lower().strip()
+        import re
+
+        # Strict type check
+        if not isinstance(app_name, str):
+            app_name = str(app_name) if app_name is not None else ""
+
+        app_name_clean = app_name.lower().strip()
+
+        # Safeguard: Prevent treating conversational phrases as raw program names
+        words = app_name_clean.split()
+        invalid_keywords = {"create", "code", "run", "do", "make", "write", "find", "search", "website", "html", "file", "folder"}
+        if len(words) > 3 or any(w in invalid_keywords for w in words):
+            logger.warning(f"Aborted opening application due to conversational search guard: {app_name}")
+            return f"LAUNCH_FAILED: Refusing to search for application with conversational phrase '{app_name}'."
+
+        # Cleanup space-separated names of common web services and speech errors
+        speech_replacements = {
+            "you tube": "youtube",
+            "git hub": "github",
+            "face book": "facebook",
+            "accu weather": "accuweather",
+            "google maps": "maps",
+        }
+        for err, rep in speech_replacements.items():
+            if err in app_name_clean:
+                app_name_clean = app_name_clean.replace(err, rep)
+
+        # Check if structurally a URL
+        is_url = False
+        if app_name_clean.startswith(("http://", "https://", "www.")):
+            is_url = True
+        elif re.search(r"\.[a-zA-Z]{2,6}(/.*)?$", app_name_clean):
+            is_url = True
+
+        if is_url:
+            return self.open_website(app_name_clean)
+
         # Redirection for web services erroneously called as apps
         web_services = ["youtube", "google", "github", "facebook", "accuweather"]
-        if any(service in app_name_lower for service in web_services):
-            return self.open_website(app_name_lower)
+        if any(service in app_name_clean for service in web_services):
+            return self.open_website(app_name_clean)
             
         apps = {
             "notepad": "notepad.exe",
             "calculator": "calc.exe",
             "chrome": "C:\\Program Files\\Google\\Chrome\\Application\\chrome.exe",
         }
-        app_path = apps.get(app_name_lower)
+        app_path = apps.get(app_name_clean)
         if app_path:
             try:
-                os.system(f'start "" "{app_path}"')
+                import subprocess
+                subprocess.Popen([app_path])
                 return f"Launching {app_name} now."
             except Exception as e:
                  return f"I encountered an error opening {app_name}."
         return f"I do not know the path for the application {app_name}."
+
 
     def read_clipboard(self):
         try:

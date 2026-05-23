@@ -3,10 +3,14 @@ credentials-file: C:\Users\itzme\.cloudflared\spark-home.json
 protocol: http2
 
 ingress:
+  # Replace this hostname with a real DNS name that is routed to the tunnel.
+  # Example: spark.example.com
   - hostname: spark.yourdomain.example
     service: http://localhost:8000
     originRequest:
       noTLSVerify: true
   - service: http_status:404
 
+# This file is a template for a named tunnel.
+# For token-based ad-hoc deployment, prefer `cloudflared tunnel run --token <TOKEN>`.
 loglevel: info

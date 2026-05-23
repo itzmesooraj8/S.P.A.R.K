@@ -6,7 +6,7 @@ load_dotenv()
 LLM_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 LLM_MODEL = os.getenv("OLLAMA_MODEL", "gemma4")
 LLM_BACKEND = os.getenv("LLM_BACKEND", "auto")
-VISION_MODEL = "gemma3:4b"
+VISION_MODEL = "gemma2:9b"
 SPARK_HOST = os.getenv("SPARK_HOST", "0.0.0.0")
 SPARK_PORT = int(os.getenv("SPARK_PORT", 8000))
 SPARK_WORKSPACE_DIR = os.getenv("SPARK_WORKSPACE_DIR", os.getcwd())

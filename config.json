@@ -11,7 +11,7 @@
     "backend": "auto",
     "groq_model": "llama-3.3-70b-versatile",
     "ollama_host": "http://localhost:11434",
-    "ollama_model": "gemma3:4b"
+    "ollama_model": "qwen2.5:7b"
   },
   "voice": {
     "stt_seconds": 5,

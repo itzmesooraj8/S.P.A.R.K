@@ -135,17 +135,56 @@ def _call_groq_structured(text: str) -> str:
     if client is None:
         raise IntentRouterError("Groq is unavailable")
 
-    response = client.chat.completions.create(
-        model=os.getenv("GROQ_MODEL", LLM_MODEL),
-        messages=_build_groq_prompt(text),
-        temperature=0,
-        stream=False,
-    )
-    choice = response.choices[0]
-    content = getattr(choice.message, "content", None) or ""
-    if not content:
-        raise IntentRouterError("Groq returned an empty response")
-    return str(content)
+    import groq
+    import httpx
+    import requests
+    import time
+
+    try:
+        client.moderations.create(input=text)
+    except Exception:
+        pass
+
+    from core.model_router import get_groq_model
+    model_name = get_groq_model()
+
+    retries = 3
+    backoff = 1.0
+    for attempt in range(retries):
+        try:
+            response = client.chat.completions.create(
+                model=model_name,
+                messages=_build_groq_prompt(text),
+                temperature=0,
+                max_tokens=1024,
+                user="spark-operator",
+                stream=False,
+            )
+            choice = response.choices[0]
+            if hasattr(choice.message, "refusal") and choice.message.refusal:
+                raise IntentRouterError(f"Model refused structured request: {choice.message.refusal}")
+            content = getattr(choice.message, "content", None) or ""
+            if not content:
+                raise IntentRouterError("Groq returned an empty response")
+            return str(content)
+        except (
+            groq.APIStatusError,
+            groq.APIConnectionError,
+            groq.APITimeoutError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            requests.exceptions.Timeout,
+            requests.exceptions.ConnectionError,
+        ) as exc:
+            logger.warning(f"Groq structured routing failed on attempt {attempt + 1}: {exc}")
+            if attempt == retries - 1:
+                raise IntentRouterError(f"Groq structured routing failed after {retries} retries: {exc}") from exc
+            time.sleep(backoff)
+            backoff *= 2.0
+        except Exception as exc:
+            logger.warning(f"Groq structured routing unexpected failure: {exc}")
+            raise IntentRouterError(f"Groq structured routing failed: {exc}") from exc
+
 
 
 def _parse_with_groq(text: str) -> list[Task]:

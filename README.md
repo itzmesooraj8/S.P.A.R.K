@@ -8,6 +8,22 @@
 
 Then open http://localhost:8000
 
+## Public Access
+SPARK can be exposed securely through a Cloudflare Tunnel or a VPS with HTTPS.
+
+Recommended remote-access setup:
+1. Set a strong `SPARK_ACCESS_TOKEN` in `.env`.
+2. Keep `SPARK_ENABLE_TUNNEL=1` only after the token is set.
+3. Point Cloudflare Tunnel at the local FastAPI server on `http://localhost:8000`.
+4. Replace the placeholder hostname in `cloudflared-config.yml` with your real domain, or use a tunnel token.
+5. Access the public URL over HTTPS and send `Authorization: Bearer <SPARK_ACCESS_TOKEN>` for protected routes.
+
+Protected routes include `/chat`, `/listen`, `/voice-chat`, `/status`, `/api/status`, and `/hud`.
+The login flow returns the currently configured bearer token so the HUD or client can reuse the same secret.
+
+For a step-by-step launch guide, see [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md).
+For a live smoke test against your public URL, use [scripts/check_public_tunnel.py](scripts/check_public_tunnel.py).
+
 ## Architecture
 ```text
 User Input (Voice/Text) → Whisper STT → Orchestrator → Groq LLM
@@ -43,10 +59,13 @@ Copy `.env.example` to `.env` and fill in the variables below.
 ```env
 GROQ_API_KEY=your_groq_api_key_here
 SPARK_TOKEN=change-this-to-something-strong-32chars
+SPARK_ACCESS_TOKEN=change-this-to-a-strong-secret
 MQTT_HOST=192.168.1.100
 MQTT_PORT=1883
 NEWS_API_KEY=optional_newsapi_key
 ```
+
+If both `SPARK_ACCESS_TOKEN` and `SPARK_TOKEN` are set, the API uses `SPARK_ACCESS_TOKEN` first.
 
 
 ## Run
@@ -69,6 +88,10 @@ cloudflared tunnel login
 cloudflared tunnel create spark-home
 cloudflared tunnel run spark-home
 ```
+
+For Windows and long-term remote access, the repository includes `start_spark.ps1`, which launches the API and then starts Cloudflared if a valid tunnel configuration or token is present.
+
+If you use the named tunnel config, update `cloudflared-config.yml` so the hostname matches a real DNS record in Cloudflare.
 
 Systemd service for auto-start on boot:
 
