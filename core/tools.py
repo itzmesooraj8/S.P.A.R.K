@@ -2,9 +2,20 @@ import webbrowser
 import os
 import datetime
 import logging
-import pyperclip
-import pyautogui
-from PIL import ImageGrab
+try:
+    import pyperclip
+except ImportError:
+    pyperclip = None
+
+try:
+    import pyautogui
+except Exception:
+    pyautogui = None
+
+try:
+    from PIL import ImageGrab
+except ImportError:
+    ImageGrab = None
 
 logger = logging.getLogger("SPARK_TOOLS")
 
@@ -113,6 +124,8 @@ class SparkTools:
 
 
     def read_clipboard(self):
+        if pyperclip is None:
+            return "Clipboard operations are not supported on this platform."
         try:
             content = pyperclip.paste()
             if not content: return "The clipboard is empty, sir."
@@ -121,6 +134,8 @@ class SparkTools:
             return f"I couldn't read the clipboard: {e}"
 
     def write_clipboard(self, text):
+        if pyperclip is None:
+            return "Clipboard operations are not supported on this platform."
         try:
             pyperclip.copy(text)
             return "I have copied that to your clipboard, sir."
@@ -128,6 +143,8 @@ class SparkTools:
             return f"Failed to copy to clipboard: {e}"
 
     def take_screenshot(self):
+        if ImageGrab is None:
+            return "Screenshot capture is not supported on this platform.", None
         import tempfile
         try:
             # Security Fix: Use a secure named temporary file instead of predictable static name
@@ -141,8 +158,10 @@ class SparkTools:
             return f"Failed to take screenshot: {e}", None
 
     def type_text(self, text):
-        import win32gui
+        if pyautogui is None:
+            return "Keyboard typing simulation is not supported on this platform."
         try:
+            import win32gui
             # Security Fix: Active Window Check before typing blindly
             active_window = win32gui.GetWindowText(win32gui.GetForegroundWindow()).lower()
             blacklist = ["cmd", "command prompt", "powershell", "terminal", "password", "bank", "login"]

@@ -126,5 +126,13 @@
     "old_hash": "fda42a7b26048589689cedec7fde3c3a9649680564163090d86392e7d5619999",
     "new_hash": "7822e8518a391b29d854b6466e184b4ff197b4ae08bb15a1e856ce5348f298f0",
     "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T00:02:45.081282",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\tools.py",
+    "old_hash": "a01afc12d88bb2d3b35db42f39e424de6f7214b281e3d8966d6f16e079d5c056",
+    "new_hash": "146f48f33fe63ed01feb3d62d727a20543b967cd772643a46b5d1cdc97838101",
+    "severity": "critical"
   }
 ]

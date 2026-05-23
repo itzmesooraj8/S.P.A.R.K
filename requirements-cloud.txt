@@ -1,0 +1,30 @@
+# S.P.A.R.K. — requirements-cloud.txt
+# Dependencies for Google Cloud Run (Headless API server)
+
+# Core LLM
+groq
+
+# Memory
+chromadb
+sentence-transformers
+numpy
+
+# API Bridge
+fastapi
+uvicorn[standard]
+websockets
+requests
+httpx
+python-multipart
+
+# Tools & Utilities
+psutil>=5.9.0
+mcp>=1.0.0
+duckduckgo-search
+geopy
+paho-mqtt
+watchdog
+pillow
+pytesseract
+APScheduler>=3.10.0
+python-dotenv
