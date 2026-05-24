@@ -11,9 +11,7 @@ from typing import Any
 
 from core.memory_loop import write_turn
 
-
 logger = logging.getLogger("SPARK_PERCEPTION")
-
 
 _CONTEXT_KEYWORDS: dict[str, tuple[str, ...]] = {
     "coding": ("def ", "import ", "class ", "return ", "async", "function", "stack trace", "traceback"),
