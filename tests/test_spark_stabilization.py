@@ -6,6 +6,7 @@ import time
 # Import targets
 from audio.stt import SparkEars
 from spark.voice import SparkVoice
+from spark.llm import SparkLLM
 from core.tools import SparkTools
 from tools.browser import open_app, open_url
 from core.spark_brain import _chat_completion, handle, GroqFallbackError, client
@@ -73,6 +74,18 @@ class SparkStabilizationTests(unittest.IsolatedAsyncioTestCase):
             res = open_app("google.com")
             mock_url.assert_called_with(url="google.com")
 
+        def test_spark_llm_extract_tasks_handles_fenced_json(self):
+                llm = SparkLLM({}, object(), {})
+                payload = """```json
+                [
+                    {"prompt": "open the dashboard", "source": "user"}
+                ]
+                ```"""
+
+                tasks = llm._extract_tasks(payload)
+
+                self.assertEqual(tasks, [{"prompt": "open the dashboard", "source": "user"}])
+
     @patch("core.spark_brain.client")
     def test_groq_fallback_errors(self, mock_client):
         # Test low budget raising GroqFallbackError
@@ -108,6 +121,43 @@ class SparkStabilizationTests(unittest.IsolatedAsyncioTestCase):
             res = await handle("test message", [])
             self.assertEqual(res["reply"], "Mocked local response")
             mock_local_comp.assert_called_once()
+
+    @patch("core.spark_brain._chat_completion")
+    @patch("core.spark_brain._local_chat_completion")
+    async def test_handle_falls_back_when_multi_action_resolves_nothing(self, mock_local_comp, mock_chat_comp):
+        mock_chat_comp.side_effect = GroqFallbackError("Simulated fallback trigger")
+        mock_local_comp.return_value = "Fallback conversational reply"
+
+        with patch("core.spark_brain.parse_intents", return_value=[
+            MagicMock(action="respond"),
+            MagicMock(action="respond"),
+        ]), patch("core.spark_brain.memory.recall", return_value=[]), \
+             patch("core.spark_brain.memory.store"):
+            res = await handle("tell me about SPARK and how you learn", [])
+
+        self.assertEqual(res["reply"], "Fallback conversational reply")
+        mock_local_comp.assert_called()
+
+    @patch("core.spark_brain._chat_completion")
+    @patch("core.spark_brain._local_chat_completion")
+    async def test_handle_rejects_malformed_tool_arguments(self, mock_local_comp, mock_chat_comp):
+        mock_msg = MagicMock()
+        mock_msg.refusal = None
+        mock_tool_call = MagicMock()
+        mock_tool_call.function = MagicMock(arguments="this is not valid json {")
+        mock_tool_call.function.name = "web_search"
+        mock_msg.tool_calls = [mock_tool_call]
+        mock_response = MagicMock()
+        mock_response.choices = [MagicMock(message=mock_msg)]
+        mock_chat_comp.return_value = mock_response
+
+        with patch("core.spark_brain.memory.recall", return_value=[]), \
+             patch("core.spark_brain.memory.store"):
+            res = await handle("list files", [])
+            
+        self.assertEqual(res["tool_used"], "web_search")
+        self.assertEqual(res["tool_result"], "Validation failed: tool_arguments_malformed")
+        self.assertIn("malformed", res["reply"])
 
 if __name__ == "__main__":
     unittest.main()

@@ -34,6 +34,7 @@ from api.routes.personal import router as personal_router
 from api.routes.task import router as task_router
 from api.routes.runtime import router as runtime_router
 from api.routes.security import router as security_router
+from api.routes.satellite import router as satellite_router
 import core.main as spark_main
 from core.main import run_agent_turn
 from core.scheduler import init_scheduler
@@ -69,6 +70,7 @@ app.include_router(personal_router)
 app.include_router(task_router)
 app.include_router(runtime_router)
 app.include_router(security_router)
+app.include_router(satellite_router)
 
 _SPARK_ACCESS_TOKEN = os.getenv("SPARK_ACCESS_TOKEN") or os.getenv("SPARK_TOKEN", "change-this-token")
 SPARK_TOKEN = _SPARK_ACCESS_TOKEN

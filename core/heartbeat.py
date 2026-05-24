@@ -5,7 +5,7 @@ import json
 from pathlib import Path
 from datetime import datetime, timedelta
 
-from tools.sysmon import get_system_health
+from tools.sysmon import get_system_health, get_raw_metrics
 from core.scheduler import list_reminders
 from core.automation import run_automation_cycle
 from core.prompt_adaptation import run_prompt_evolution_cycle
@@ -231,8 +231,13 @@ def _heartbeat_loop():
     logger.info("Heartbeat engine started — proactive agency mode active.")
     global _last_calendar_scan, _last_briefing_check
     
+    # Active polling cadence: 10s base to detect idle quickly
+    idle_low_count = 0
+    IDLE_REQUIRED_CONSECUTIVE = 3
+    POLL_INTERVAL = 10
+
     while not _stop_event.is_set():
-        time.sleep(60)  # 60-second background cron base
+        time.sleep(POLL_INTERVAL)  # active polling base
         if _stop_event.is_set():
             break
         
@@ -286,7 +291,7 @@ def _heartbeat_loop():
                 except Exception as anom_exc:
                     logger.debug(f"Anomaly detection failed: {anom_exc}")
             
-            # Update user model from recent patterns (every cycle)
+            # Update user model from recent patterns (periodic)
             _update_user_model_from_patterns()
             
             # Check for auto-approvable tools and prompts (every cycle)
@@ -318,6 +323,36 @@ def _heartbeat_loop():
                 run_prompt_evolution_cycle()
             except Exception as prompt_exc:
                 logger.warning("Prompt evolution cycle failed: %s", prompt_exc)
+
+            # Check raw metrics to detect idle state and trigger light summarization
+            raw = get_raw_metrics()
+            cpu = float(raw.get("cpu", 100))
+            ram_percent = float(raw.get("ram_percent", 100))
+
+            # Consider system idle when CPU and RAM are low for several consecutive polls
+            if cpu < 15 and ram_percent < 60:
+                idle_low_count += 1
+            else:
+                idle_low_count = 0
+
+            # When idle sustained, trigger background memory summarization
+            if idle_low_count >= IDLE_REQUIRED_CONSECUTIVE:
+                try:
+                    from core.memory_loop import summarize_recent
+                    summarize_recent(max_turns=100)
+                    broadcast_hud_event(
+                        "agent_log",
+                        {
+                            "type": "info",
+                            "agent": "HEARTBEAT",
+                            "action": "Idle Summarization",
+                            "data": "Performed background memory summarization.",
+                        },
+                    )
+                except Exception as sum_exc:
+                    logger.debug(f"Background summarization failed: {sum_exc}")
+                finally:
+                    idle_low_count = 0
 
             health_status = get_system_health()
             if "heavy load" in health_status.lower() or "unable" in health_status.lower():

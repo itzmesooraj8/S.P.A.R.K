@@ -174,3 +174,13 @@ class SparkTools:
             return "Text has been typed, sir."
         except Exception as e:
             return f"Typing failed: {e}"
+
+    def run_swarm_task(self, goal):
+        """Execute a task using the swarm of agents inside sandbox/temp_build."""
+        try:
+            from sandbox.autonomy.swarm import SwarmCoordinator
+            coordinator = SwarmCoordinator()
+            result = coordinator.execute_swarm_task(goal)
+            return f"Swarm completed task successfully. Report saved to {result.get('report_path')}.\nSummary:\n{result.get('report')}"
+        except Exception as exc:
+            return f"Swarm task execution failed: {exc}"

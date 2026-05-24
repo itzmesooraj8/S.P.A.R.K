@@ -32,6 +32,7 @@ from core.memory import MemoryStore, MemoryCategory
 from core.mcp_manager import MCPManager
 from core.planner import spark_plan_and_execute
 from core.local_brain_chain import local_chain_complete, chain_status
+from security.schema_validator import validate_tool_arguments, extract_json_object
 
 logger = logging.getLogger(__name__)
 spark_tools = SparkTools()
@@ -266,6 +267,20 @@ TOOLS = [
                 "type": "object",
                 "properties": {
                     "goal": {"type": "string", "description": "The user goal to plan and execute"}
+                },
+                "required": ["goal"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_swarm_task",
+            "description": "Execute a task autonomously using a swarm of sandbox-bounded agents (Code Agent, File Agent, Research Agent). Use this for complex multi-step developer, file, or coding tasks.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "goal": {"type": "string", "description": "Detailed goal or coding instruction for the swarm"}
                 },
                 "required": ["goal"]
             }
@@ -573,16 +588,9 @@ def _extract_tool_request(content: str, allowed_tools: set[str]) -> tuple[str, d
         return None
 
     try:
-        payload = json.loads(text)
+        payload = extract_json_object(text)
     except Exception:
-        start = text.find("{")
-        end = text.rfind("}")
-        if start == -1 or end == -1 or end <= start:
-            return None
-        try:
-            payload = json.loads(text[start : end + 1])
-        except Exception:
-            return None
+        payload = None
 
     if not isinstance(payload, dict):
         return None
@@ -597,28 +605,20 @@ def _extract_tool_request(content: str, allowed_tools: set[str]) -> tuple[str, d
     if tool_args is None:
         tool_args = payload.get("value")
 
-    if isinstance(tool_args, str):
-        default_key = "query"
-        if tool_name == "get_weather":
-            default_key = "location"
-        elif tool_name == "get_news":
-            default_key = "topic"
-        elif tool_name == "open_url":
-            default_key = "url"
-        elif tool_name == "execute_python":
-            default_key = "code"
-        tool_args = {default_key: tool_args}
-    elif not isinstance(tool_args, dict):
-        tool_args = {}
+    validation = validate_tool_arguments(tool_args, tool_name=tool_name)
+    if not validation.allowed:
+        return None
 
-    if tool_name == "get_weather":
-        tool_args.setdefault("location", str(payload.get("location") or payload.get("arg") or payload.get("value") or "current location"))
-    elif tool_name == "get_news":
-        tool_args.setdefault("topic", str(payload.get("topic") or payload.get("arg") or payload.get("value") or "current events"))
-    elif tool_name == "web_search":
-        tool_args.setdefault("query", str(payload.get("query") or payload.get("arg") or payload.get("value") or text))
+    tool_args = validation.cleaned_payload
+    if tool_name == "execute_python" and isinstance(payload.get("value"), str) and not tool_args:
+        tool_args = {"code": str(payload.get("value") or "")}
 
     return tool_name, tool_args
+
+
+def _coerce_tool_arguments(raw_arguments: str | dict[str, Any] | None) -> dict[str, Any]:
+    validation = validate_tool_arguments(raw_arguments)
+    return validation.cleaned_payload if validation.allowed else {}
 
 
 def _normalize_tool_name(name: str) -> str:
@@ -1086,6 +1086,8 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return _execute_python(tool_args["code"], tool_args.get("description", ""))
     if tool_name == "spark_plan_and_execute":
         return await _run_planner(tool_args["goal"])
+    if tool_name == "run_swarm_task":
+        return spark_tools.run_swarm_task(tool_args["goal"])
     if tool_name == "get_news":
         return get_news(tool_args["topic"])
     if tool_name == "get_weather":
@@ -1148,6 +1150,10 @@ async def _try_multi_action_routing(user_input: str, parsed_intents: list[Any] |
         except Exception as exc:
             logger.warning("[multi_action_routing] %s failed: %s", tool_name, exc)
             results.append((tool_name, tool_args, f"Failed: {exc}"))
+
+    if not results:
+        logger.debug("[multi_action_routing] No executable actions resolved; falling back to conversational flow")
+        return None
     
     # Summarize results
     summary_lines = []
@@ -1283,6 +1289,7 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     parsed_intents = parse_intents(user_input)
     actionable_intents = [intent for intent in parsed_intents if str(getattr(intent, "action", "") or "").strip() not in {"", "respond"}]
     compound_request = len(actionable_intents) > 1
+    conversational_request = not actionable_intents
 
     if _is_greeting_input(user_input):
         greeting_hour = datetime.now().hour
@@ -1322,6 +1329,34 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             return {"reply": reply, "tool_used": "get_time", "tool_result": tool_out}
         except Exception as exc:
             logger.warning("Deterministic time intent failed: %s", exc)
+
+    if conversational_request:
+        try:
+            if client is None:
+                reply = await _local_chat_completion(messages) or _offline_reply(user_input)
+            else:
+                response = _chat_completion(messages, allow_tools=False)
+                msg = response.choices[0].message
+                if hasattr(msg, "refusal") and msg.refusal:
+                    reply = f"I am unable to fulfill that request: {msg.refusal}"
+                else:
+                    reply = (msg.content or "").strip() or _offline_reply(user_input)
+        except GroqFallbackError:
+            reply = await _local_chat_completion(messages) or _offline_reply(user_input)
+
+        memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        if stream_sink:
+            stream_sink("response_done", {"content": reply})
+
+        try:
+            from tools.voice import speak
+            asyncio.create_task(speak(reply))
+        except RuntimeError:
+            import threading
+            from tools.voice import speak
+            threading.Thread(target=lambda: asyncio.run(speak(reply)), daemon=True).start()
+
+        return {"reply": reply, "tool_used": None, "tool_result": None}
 
     # Deterministic search/open URL handler — for "open github", "search X", etc.
     search_match = re.search(r"\b(?:open|search|go to|visit)\s+(\S+.*?)$", lower_input)
@@ -1432,7 +1467,14 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     if msg.tool_calls:
         tool_call = msg.tool_calls[0]
         tool_used = tool_call.function.name
-        tool_args = json.loads(tool_call.function.arguments or "{}")
+        validation = validate_tool_arguments(getattr(tool_call.function, "arguments", None), tool_name=tool_used)
+        if not validation.allowed:
+            logger.warning(f"Tool arguments validation failed for {tool_used}: {validation.reasons}")
+            reply = f"I encountered an error: the arguments for tool {tool_used} were malformed."
+            if stream_sink:
+                stream_sink("response_done", {"content": reply})
+            return {"reply": reply, "tool_used": tool_used, "tool_result": "Validation failed: tool_arguments_malformed"}
+        tool_args = validation.cleaned_payload
     else:
         fallback_tool = _extract_tool_request(msg.content or "", allowed_tools)
         if fallback_tool:

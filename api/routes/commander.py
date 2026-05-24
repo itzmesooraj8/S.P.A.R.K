@@ -4,13 +4,14 @@ import asyncio
 import json
 from typing import Any
 
-from fastapi import APIRouter, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, HTTPException, WebSocket, WebSocketDisconnect
 
 from core.agentic_brain import get_agentic_brain, is_agentic_goal
 from core.memory_loop import write_turn
 from core.main import broadcast_hud_event, run_agent_turn
 from security.content_sanitizer import sanitize_for_llm
 from security.intent_validator import validate_intent_text
+from security.schema_validator import validate_command_payload
 
 
 router = APIRouter()
@@ -252,10 +253,15 @@ async def _handle_standard_command(module: str, action: str, sanitized_text: str
 
 
 async def _run_commander(payload: dict[str, Any]) -> dict[str, Any]:
-    module = str(payload.get("module") or "agent")
-    action = str(payload.get("action") or "")
-    text = _extract_text(payload)
-    context_snapshot = _summarize_snapshot(payload.get("context_snapshot"))
+    envelope = validate_command_payload(payload)
+    if not envelope.allowed:
+        raise HTTPException(status_code=400, detail={"error": "invalid command payload", "reasons": sorted(envelope.reasons)})
+
+    cleaned_payload = envelope.cleaned_payload
+    module = str(cleaned_payload.get("module") or "agent")
+    action = str(cleaned_payload.get("action") or "")
+    text = envelope.cleaned_text or _extract_text(cleaned_payload)
+    context_snapshot = _summarize_snapshot(cleaned_payload.get("context_snapshot"))
 
     validation = validate_intent_text(text) if text else None
     sanitized_text = sanitize_for_llm(validation.cleaned_text or text) if validation and validation.cleaned_text else text

@@ -130,7 +130,21 @@ class SparkLLM:
 
     def _extract_tasks(self, text: str) -> list[dict[str, Any]]:
         try:
-            parsed = json.loads(text)
+            candidate = (text or "").strip()
+            fenced = re.search(r"```(?:json)?\s*(.*?)```", candidate, flags=re.IGNORECASE | re.DOTALL)
+            if fenced:
+                candidate = fenced.group(1).strip()
+            if candidate and not candidate.startswith(("[", "{")):
+                start = candidate.find("[")
+                object_start = candidate.find("{")
+                start_candidates = [index for index in (start, object_start) if index != -1]
+                if start_candidates:
+                    start_index = min(start_candidates)
+                    end_index = max(candidate.rfind("]"), candidate.rfind("}"))
+                    if end_index > start_index:
+                        candidate = candidate[start_index : end_index + 1]
+
+            parsed = json.loads(candidate)
             if isinstance(parsed, list):
                 tasks: list[dict[str, Any]] = []
                 for item in parsed:

@@ -69,16 +69,21 @@ SPARK: Hello again, sir. How can I assist you today?
 ```bash
 .venv\Scripts\python.exe spark_cli.py
 ```
-Then type messages at the `You:` prompt. SPARK will reply with the fallback chain active.
+Then type messages at the `You:` prompt. The CLI now routes through the redesigned standalone entrypoint.
 
 ### One-Shot Execution
 ```bash
-.venv\Scripts\python.exe spark.py --once
+.venv\Scripts\python.exe spark_cli.py once
 ```
 
 ### Voice Input (with mic)
 ```bash
-.venv\Scripts\python.exe spark.py --voice
+.venv\Scripts\python.exe spark_cli.py voice
+```
+
+### Direct Prompt
+```bash
+.venv\Scripts\python.exe spark_cli.py ask "what can you do?"
 ```
 
 ## Enable Full Offline-First Chain

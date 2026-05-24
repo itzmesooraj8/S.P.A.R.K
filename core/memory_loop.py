@@ -128,3 +128,40 @@ def retrieve(query: str, k_recent: int = 6, k_semantic: int = 4) -> list[dict[st
 
     merged.sort(key=lambda item: float(item.get("ts", 0.0)))
     return merged
+
+
+def summarize_recent(max_turns: int = 50) -> dict[str, Any]:
+    """Create a lightweight summary of recent conversation turns.
+
+    Writes a system 'summary' turn to the memory file and returns the summary entry.
+    This is intentionally conservative: when embedding models are unavailable it
+    falls back to a token-frequency based extractive summary.
+    """
+    turns = read_turns()
+    if not turns:
+        return {}
+
+    recent = turns[-max_turns:]
+    texts = [str(t.get("content", "")) for t in recent if t.get("content")]
+    joined = "\n".join(texts)
+
+    # Try an abstractive summary if sentence-transformers is available
+    try:
+        from transformers import pipeline
+        summarizer = pipeline("summarization")
+        # keep input reasonably small
+        chunk = joined[:2000]
+        summary_text = summarizer(chunk, max_length=120, min_length=30, do_sample=False)[0]["summary_text"]
+    except Exception:
+        # Fallback: simple keyword-driven extractive summary
+        import collections
+        tokens = []
+        for t in texts:
+            tokens.extend(re.findall(r"[a-z0-9_]+", t.lower()))
+        counter = collections.Counter(tokens)
+        most = [word for word, _ in counter.most_common(12) if len(word) > 3]
+        summary_text = "Recent topics: " + ", ".join(most)
+
+    # Persist the summary as a system turn
+    entry = write_turn(role="system", content=f"Summary: {summary_text}", metadata={"summary": True, "summarized_turns": len(recent)})
+    return entry

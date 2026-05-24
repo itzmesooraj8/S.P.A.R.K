@@ -134,5 +134,133 @@
     "old_hash": "a01afc12d88bb2d3b35db42f39e424de6f7214b281e3d8966d6f16e079d5c056",
     "new_hash": "146f48f33fe63ed01feb3d62d727a20543b967cd772643a46b5d1cdc97838101",
     "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:01:02.958488",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\launcher.py",
+    "old_hash": "f5eb82a693ffe7891d329f6455a60af3d6c49961e895dcd94034574a79c9e9ba",
+    "new_hash": "a5fa5bec8cb52cd7ee8832260834528eadde28ac119f6b7a4e6122a594e03d16",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:09:34.140175",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "7822e8518a391b29d854b6466e184b4ff197b4ae08bb15a1e856ce5348f298f0",
+    "new_hash": "b63d07abbd8b3678f266c472e48631652c9a6f4b5d9c6971c8f1ca1c8fc7895d",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:13:35.223490",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "b63d07abbd8b3678f266c472e48631652c9a6f4b5d9c6971c8f1ca1c8fc7895d",
+    "new_hash": "d059dd176258205923e7a6027d4f1e6f685d7349e7970a865753a51aa6e91e4f",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:14:05.276215",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\spark\\llm.py",
+    "old_hash": "3fe18ff310846eddd933f1250de15ee5a78163e0ac3e5ec4ea87ae90d7aea0a9",
+    "new_hash": "7571c23cf1440836aed6ae57e15cfd8d389e1222454a1ab6598a729ef0e33bf7",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:10.704900",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "a2cba4e625cf26254102b6617f2e0526668d93bb5016c2beb646d43124407208",
+    "new_hash": "27bf4422c2176525049ae218b85225501cb1fcc74f2e7a9739942ea354802809",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:10.717357",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\routes\\commander.py",
+    "old_hash": "41b6647a61eaab8cdb648736c715be9c7630c8038cb379e1203b52e6d617df48",
+    "new_hash": "e33b4a25d2fa659c3c241bc154ad1f6dd4548088ade32d24c24f49af0d29bd18",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:25.291035",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "a2cba4e625cf26254102b6617f2e0526668d93bb5016c2beb646d43124407208",
+    "new_hash": "27bf4422c2176525049ae218b85225501cb1fcc74f2e7a9739942ea354802809",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:25.298978",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\routes\\commander.py",
+    "old_hash": "41b6647a61eaab8cdb648736c715be9c7630c8038cb379e1203b52e6d617df48",
+    "new_hash": "e33b4a25d2fa659c3c241bc154ad1f6dd4548088ade32d24c24f49af0d29bd18",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:30.879292",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "a2cba4e625cf26254102b6617f2e0526668d93bb5016c2beb646d43124407208",
+    "new_hash": "27bf4422c2176525049ae218b85225501cb1fcc74f2e7a9739942ea354802809",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:30.888699",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\routes\\commander.py",
+    "old_hash": "41b6647a61eaab8cdb648736c715be9c7630c8038cb379e1203b52e6d617df48",
+    "new_hash": "e33b4a25d2fa659c3c241bc154ad1f6dd4548088ade32d24c24f49af0d29bd18",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:32.638479",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "a2cba4e625cf26254102b6617f2e0526668d93bb5016c2beb646d43124407208",
+    "new_hash": "27bf4422c2176525049ae218b85225501cb1fcc74f2e7a9739942ea354802809",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:45:32.648160",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\routes\\commander.py",
+    "old_hash": "41b6647a61eaab8cdb648736c715be9c7630c8038cb379e1203b52e6d617df48",
+    "new_hash": "e33b4a25d2fa659c3c241bc154ad1f6dd4548088ade32d24c24f49af0d29bd18",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:50:13.712673",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "27bf4422c2176525049ae218b85225501cb1fcc74f2e7a9739942ea354802809",
+    "new_hash": "cccb41e1ea20f14cf72ec380582db7bfce5218ded21591f269338d8aa251233c",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:51:14.001059",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\api\\server.py",
+    "old_hash": "1e1bf380ecf0e01f70855aaa6d854c153282740657b90211cef437462ff966cf",
+    "new_hash": "6f44aa4d9ce8567037d44c8e1f442a3c44eddfbfa2112ed6e0d6e81b27c01d61",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:51:44.292459",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\tools.py",
+    "old_hash": "fb18ac5f15f4aefe6f702e33332acceb380046014c69189bbf856085df834f8b",
+    "new_hash": "1481c9fc48426c228f31c65c3319b5779e2d76a2c06c75ff0496e9070fb3d0ec",
+    "severity": "critical"
+  },
+  {
+    "type": "file_tampering",
+    "timestamp": "2026-05-24T10:52:14.595652",
+    "file": "C:\\Users\\itzme\\Downloads\\S.P.A.R.K\\core\\spark_brain.py",
+    "old_hash": "cccb41e1ea20f14cf72ec380582db7bfce5218ded21591f269338d8aa251233c",
+    "new_hash": "ec2b93571db7c0789dca7b5d650477d966d0766ec9dfefa02e2e9b40caee3949",
+    "severity": "critical"
   }
 ]

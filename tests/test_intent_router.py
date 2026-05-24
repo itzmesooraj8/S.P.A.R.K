@@ -47,6 +47,19 @@ class IntentRouterTests(unittest.TestCase):
         self.assertEqual(tasks[-1].target, "github")
         self.assertEqual(tasks[-1].params.get("browser"), None)
 
+    def test_parse_intents_bypasses_models_for_conversation(self):
+        with patch.object(intent_router, "_call_groq_structured") as mock_groq, \
+             patch.object(intent_router, "_parse_with_local_hf") as mock_local, \
+             patch.object(intent_router, "_parse_with_regex") as mock_regex:
+            tasks = intent_router.parse_intents(
+                "list me out your features spark everything about you what you can do who developed you?"
+            )
+
+        self.assertEqual(tasks, [intent_router.Task(action="respond", target="list me out your features spark everything about you what you can do who developed you?", params={})])
+        mock_groq.assert_not_called()
+        mock_local.assert_not_called()
+        mock_regex.assert_not_called()
+
     def test_local_model_loader_is_singleton(self):
         intent_router._LOCAL_MODEL = None
         calls = {"count": 0}

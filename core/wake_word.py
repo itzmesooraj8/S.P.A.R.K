@@ -79,8 +79,14 @@ def listen_for_wake_word(callback: Callable[[], None]) -> None:
                 break
 
 
-def start_wake_engine(on_wake_callback=None, use_hotword: bool = True):
-    """Start wake-word monitoring in a daemon thread or fall back to F9 hotkey."""
+def start_wake_engine(on_wake_callback=None, use_hotword: bool = True, transcribe_on_wake: bool = False, transcribe_duration: int = 5):
+    """Start wake-word monitoring in a daemon thread or fall back to F9 hotkey.
+
+    If `transcribe_on_wake` is True, a background transcription loop will run on wake
+    using `audio.stt.SparkEars.listen()` and the result will be passed to
+    `core.brain_entry.ask_spark_brain_sync` in a background thread to avoid encoding
+    issues and keep the hotword handle responsive.
+    """
     global _listener_started, _hotkey_handle
     if _listener_started:
         return
@@ -92,9 +98,36 @@ def start_wake_engine(on_wake_callback=None, use_hotword: bool = True):
 
     def _invoke_callback():
         try:
+            # Invoke original callback (legacy behavior)
             on_wake_callback()
         except Exception as exc:
             logger.exception("Wake callback failed: %s", exc)
+
+        # If transcription-on-wake is enabled, perform a pre-warmed transcription
+        # synchronously in a background thread and dispatch to the core brain.
+        if transcribe_on_wake:
+            def _transcribe_and_dispatch():
+                try:
+                    from audio.stt import SparkEars
+                    from core.brain_entry import ask_spark_brain_sync
+
+                    ears = SparkEars()
+                    text = ears.listen(transcribe_duration)
+                    if not text:
+                        logger.debug("Wake transcription returned empty.")
+                        return
+
+                    # Deliver to the brain synchronously (thread-safe wrapper)
+                    try:
+                        ask_spark_brain_sync(text, session_history=[], timeout=120)
+                        logger.info("Wake transcription dispatched to brain: %s", text[:80])
+                    except Exception as exc:
+                        logger.exception("Dispatching wake transcription failed: %s", exc)
+                except Exception as exc:
+                    logger.exception("Transcription on wake failed: %s", exc)
+
+            t = threading.Thread(target=_transcribe_and_dispatch, daemon=True)
+            t.start()
 
     if not OPENWAKEWORD_AVAILABLE:
         logger.info("openwakeword not installed; wake word disabled.")

@@ -32,12 +32,38 @@ class IntentRouterError(RuntimeError):
 _LOCAL_MODEL: Any | None = None
 _LOCAL_MODEL_LOCK = threading.Lock()
 
+_DIRECTIVE_PATTERNS = (
+    r"\b(?:open|launch|start|run)\b\s+(?:the\s+|my\s+|app(?:lication)?\s+|program\s+)?\S",
+    r"\b(?:search|find|look up|lookup|research)\b\s+\S",
+    r"\b(?:weather|forecast|temperature|time|date|clock)\b",
+    r"\b(?:list|show|inspect|check|read|scan)\b\s+(?:files?|folders?|directories?|process(?:es)?|logs?|connections?|ports?|branches?|tasks?|issues?|packages?|modules?|services?|errors?|changes?|memory|history|status|stats|system|app(?:s)?|devices?)\b",
+    r"\b(?:create|delete|remove|copy|move|rename|install|build|test)\b\s+(?:files?|folders?|directories?|project|workspace|package|app|tool|script|server|service|module|branch|release)\b",
+)
+
+_CONVERSATION_HINTS = (
+    r"\b(?:what can you do|what are your features|who developed you|what is your purpose|how do you learn yourself|tell me about yourself|about you)\b",
+)
+
+
+def _is_conversational_query(text: str) -> bool:
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return True
+
+    if any(re.search(pattern, cleaned, flags=re.IGNORECASE) for pattern in _CONVERSATION_HINTS):
+        return True
+
+    return not any(re.search(pattern, cleaned, flags=re.IGNORECASE) for pattern in _DIRECTIVE_PATTERNS)
+
 
 def parse_intents(user_input: str) -> list[Task]:
     """Parse one user sentence into one or more executable tasks."""
     text = (user_input or "").strip()
     if not text:
         return []
+
+    if _is_conversational_query(text):
+        return [Task(action="respond", target=text, params={})]
 
     groq_tasks = _parse_with_groq(text)
     if groq_tasks:

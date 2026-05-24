@@ -190,7 +190,7 @@ def _speak_sync(text: str, check_barge_in: bool = True) -> None:
         pygame.mixer.music.unload()
         os.unlink(tmp)
     except Exception as e2:
-        logger.debug(f"[SPARK TTS] Both engines failed: pyttsx3={e1}, edge={e2}")
+        logger.debug(f"[SPARK TTS] Both engines failed: edge={e2}")
 
 async def speak(text: str, check_barge_in: bool = True) -> None:
     """

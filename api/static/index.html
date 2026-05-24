@@ -4,1165 +4,1103 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <meta name="color-scheme" content="dark" />
-  <title>S.P.A.R.K. - Chat Interface</title>
+  <title>S.P.A.R.K. HUD</title>
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+  <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+  <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
   <style>
     :root {
-      --bg: #071018;
-      --bg-elevated: rgba(10, 20, 31, 0.82);
-      --panel: rgba(11, 22, 34, 0.88);
-      --panel-strong: rgba(13, 27, 41, 0.96);
-      --line: rgba(175, 196, 216, 0.12);
-      --line-strong: rgba(106, 192, 255, 0.34);
-      --accent: #5ec8ff;
-      --accent-strong: #8ad1ff;
-      --accent-warm: #f0ab6d;
-      --text: #e5edf4;
-      --text-dim: rgba(229, 237, 244, 0.62);
-      --good: #5ee7b7;
-      --warn: #f5c66a;
-      --bad: #ff7f95;
-      --shadow: 0 20px 60px rgba(0, 0, 0, 0.35), 0 0 0 1px rgba(255, 255, 255, 0.02);
-      --shadow-soft: 0 12px 32px rgba(0, 0, 0, 0.24);
-      --radius: 22px;
-      --radius-lg: 28px;
+      --bg0: #04060d;
+      --bg1: #07111f;
+      --panel: rgba(8, 14, 24, 0.76);
+      --panel-strong: rgba(5, 11, 20, 0.94);
+      --line: rgba(122, 249, 255, 0.15);
+      --line-strong: rgba(122, 249, 255, 0.3);
+      --cyan: #7df9ff;
+      --gold: #ffc85a;
+      --crimson: #ff5c83;
+      --text: #eff6ff;
+      --muted: rgba(239, 246, 255, 0.62);
       --mono: 'IBM Plex Mono', monospace;
       --title: 'Space Grotesk', sans-serif;
+      --shadow: 0 28px 80px rgba(0, 0, 0, 0.5);
+      --radius: 18px;
+      --radius-lg: 30px;
     }
 
     * { box-sizing: border-box; }
-
-    html, body {
-      width: 100%; height: 100%; margin: 0; overflow: hidden;
-      background:
-        radial-gradient(circle at 12% 18%, rgba(94, 200, 255, 0.14), transparent 24%),
-        radial-gradient(circle at 88% 10%, rgba(240, 171, 109, 0.12), transparent 18%),
-        radial-gradient(circle at 50% 86%, rgba(94, 231, 183, 0.08), transparent 20%),
-        linear-gradient(180deg, #071018 0%, #0a1219 55%, #060b10 100%);
-      color: var(--text);
-      font-family: var(--mono);
-    }
-
+    html, body { width: 100%; min-height: 100%; margin: 0; background: radial-gradient(circle at center, #08111d 0%, #04060b 50%, #020307 100%); color: var(--text); font-family: var(--mono); overflow-x: hidden; overflow-y: auto; }
     body::before {
       content: '';
-      position: fixed; inset: 0;
-      background-image:
-        linear-gradient(rgba(255,255,255,0.02) 1px, transparent 1px),
-        linear-gradient(90deg, rgba(255,255,255,0.02) 1px, transparent 1px);
-      background-size: 48px 48px;
-      opacity: 0.16;
+      position: fixed; inset: -12%;
       pointer-events: none;
+      background-image:
+        radial-gradient(circle at 20% 18%, rgba(125,249,255,0.16), transparent 24%),
+        radial-gradient(circle at 80% 12%, rgba(255,200,90,0.08), transparent 20%),
+        linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+      background-size: auto, auto, 64px 64px, 64px 64px;
+      opacity: 0.58;
+      filter: blur(0.4px);
     }
-
     body::after {
       content: '';
-      position: fixed; inset: 0;
-      background: linear-gradient(180deg, rgba(255,255,255,0.02), transparent 18%, transparent 82%, rgba(255,255,255,0.018));
-      pointer-events: none; z-index: 9999;
+      position: fixed; inset: -6%;
+      pointer-events: none;
+      background:
+        radial-gradient(circle at 50% 34%, rgba(125,249,255,0.12), transparent 26%),
+        radial-gradient(circle at 50% 70%, rgba(255,92,131,0.06), transparent 30%),
+        linear-gradient(180deg, rgba(255,255,255,0.03), transparent 16%, transparent 84%, rgba(255,255,255,0.02));
+      mix-blend-mode: screen;
+      opacity: 0.9;
     }
 
-    @keyframes blink { 0%, 50% { opacity: 1; } 51%, 100% { opacity: 0; } }
-    @keyframes pulse { 0%, 100% { transform: scale(1); opacity: 0.76; } 50% { transform: scale(1.14); opacity: 1; } }
-    @keyframes floaty { 0%, 100% { transform: translateY(0px); } 50% { transform: translateY(-8px); } }
-    @keyframes waveform { 0%, 100% { transform: scaleY(0.36); } 50% { transform: scaleY(1); } }
+    body::before,
+    body::after { animation: driftGrid 28s linear infinite; }
+
+    @keyframes pulseIdle {
+      0%, 100% { transform: scale(1); opacity: 0.72; }
+      50% { transform: scale(1.08); opacity: 1; }
+    }
+    @keyframes spinSlow { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
+    @keyframes redRipple { 0% { transform: scale(0.94); opacity: 0.4; } 70% { transform: scale(1.12); opacity: 0.08; } 100% { transform: scale(1.18); opacity: 0; } }
+    @keyframes floaty { 0%, 100% { transform: translateY(0); } 50% { transform: translateY(-6px); } }
     @keyframes fadeUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
-    @keyframes spin { from { transform: rotate(0deg); } to { transform: rotate(360deg); } }
-    @keyframes spinReverse { from { transform: rotate(360deg); } to { transform: rotate(0deg); } }
-    @keyframes breathe { 0%, 100% { box-shadow: 0 20px 60px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255,255,255,0.02); } 50% { box-shadow: 0 22px 66px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(255,255,255,0.04); } }
+    @keyframes driftGrid { from { transform: translate3d(0, 0, 0); } to { transform: translate3d(-2%, -1%, 0); } }
 
     .app {
-      position: relative; width: 100vw; height: 100vh;
-      display: grid; grid-template-rows: 72px minmax(0, 1fr) 56px; gap: 14px; padding: 16px;
+      position: relative;
+      width: min(100%, 1800px);
+      min-height: 100vh;
+      margin: 0 auto;
+      padding: clamp(12px, 1.5vw, 22px);
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: clamp(10px, 1.2vw, 16px);
+      isolation: isolate;
     }
 
-    .hud-panel {
-      border: 1px solid var(--line);
-      background: linear-gradient(180deg, rgba(16, 28, 41, 0.92), rgba(9, 17, 25, 0.94));
-      backdrop-filter: blur(18px) saturate(118%);
-      box-shadow: var(--shadow);
+    .app::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      z-index: -1;
+      background:
+        radial-gradient(circle at 12% 16%, rgba(125,249,255,0.2), transparent 20%),
+        radial-gradient(circle at 86% 10%, rgba(255,200,90,0.12), transparent 16%),
+        radial-gradient(circle at 50% 54%, rgba(125,249,255,0.08), transparent 32%),
+        linear-gradient(180deg, rgba(255,255,255,0.02), transparent 18%, transparent 84%, rgba(255,255,255,0.02));
+      filter: blur(22px);
+      opacity: 0.95;
     }
 
-    .hud-panel:hover {
-      border-color: var(--line-strong);
-      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.34), 0 0 0 1px rgba(94, 200, 255, 0.08);
+    .panel {
+      position: relative;
+      border: 1px solid rgba(125, 249, 255, 0.12);
+      background:
+        linear-gradient(180deg, rgba(9, 16, 28, 0.92), rgba(3, 8, 14, 0.96)),
+        radial-gradient(circle at top, rgba(125,249,255,0.04), transparent 52%);
+      box-shadow:
+        0 18px 54px rgba(0, 0, 0, 0.34),
+        inset 0 1px 0 rgba(255, 255, 255, 0.04),
+        inset 0 0 0 1px rgba(125, 249, 255, 0.04);
+      backdrop-filter: blur(18px) saturate(130%);
+      overflow: hidden;
+    }
+
+    .panel::before {
+      content: '';
+      position: absolute;
+      inset: 0;
+      border-radius: inherit;
+      pointer-events: none;
+      background:
+        linear-gradient(90deg, rgba(125,249,255,0.06), transparent 12%, transparent 88%, rgba(125,249,255,0.04)),
+        linear-gradient(180deg, rgba(255,255,255,0.05), transparent 18%, transparent 82%, rgba(255,255,255,0.03));
+      opacity: 0.95;
     }
 
     .top-bar {
-      border-radius: var(--radius-lg); display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto; align-items: center;
-      padding: 16px 20px; gap: 14px; animation: fadeUp 0.7s ease both, breathe 10s ease-in-out infinite;
+      border-radius: 30px;
+      display: grid;
+      grid-template-columns: minmax(0, 1.1fr) minmax(0, 1fr) auto;
+      gap: clamp(10px, 1vw, 16px);
+      align-items: center;
+      padding: clamp(14px, 1.4vw, 20px) clamp(16px, 1.6vw, 24px);
+      animation: fadeUp 0.6s ease both;
     }
 
     .brand { display: flex; align-items: center; gap: 14px; min-width: 0; }
     .brand-mark {
-      width: 18px; height: 18px; border-radius: 6px;
-      border: 1px solid rgba(138, 209, 255, 0.52);
-      box-shadow: 0 0 14px rgba(94, 200, 255, 0.22);
+      width: 18px;
+      height: 18px;
+      border-radius: 7px;
+      background: linear-gradient(135deg, rgba(125,249,255,1), rgba(255,255,255,0.14));
+      box-shadow: 0 0 22px rgba(125,249,255,0.24);
       transform: rotate(45deg);
-      background: linear-gradient(135deg, rgba(94, 200, 255, 0.96), rgba(94, 231, 183, 0.18));
+      border: 1px solid rgba(125,249,255,0.52);
+      flex: 0 0 auto;
     }
-
+    .brand-copy { min-width: 0; }
     .brand-title {
-      font-family: var(--title); color: var(--accent-strong); letter-spacing: 0.32em;
-      font-size: clamp(20px, 2vw, 28px);
-      text-shadow: 0 0 12px rgba(94, 200, 255, 0.24);
+      font-family: var(--title);
+      letter-spacing: 0.3em;
+      font-size: clamp(20px, 2.2vw, 30px);
+      color: var(--cyan);
+      text-shadow: 0 0 16px rgba(125,249,255,0.18);
       white-space: nowrap;
     }
-    .brand-title span { color: rgba(229, 237, 244, 0.92); }
-
     .brand-subtitle {
       margin-top: 4px;
-      color: var(--text-dim);
       font-size: 10px;
       letter-spacing: 0.28em;
       text-transform: uppercase;
-    }
-
-    .status-strip {
-      display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
-      color: var(--text-dim); font-size: 12px; letter-spacing: 0.18em; text-transform: uppercase;
-    }
-
-    .status-chip {
-      display: inline-flex; align-items: center; gap: 8px; padding: 9px 13px; border-radius: 999px;
-      border: 1px solid rgba(175, 196, 216, 0.14); background: rgba(6, 14, 20, 0.64);
-      color: var(--text); white-space: nowrap; box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
-    }
-    .status-chip[data-state="online"] { color: var(--good); }
-    .status-chip[data-state="thinking"] { color: var(--warn); }
-    .status-chip[data-state="error"] { color: var(--bad); }
-    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; animation: pulse 1.8s infinite; }
-
-    .clock { justify-self: end; font-family: var(--title); letter-spacing: 0.2em; color: rgba(229, 237, 244, 0.84); font-size: 12px; text-transform: uppercase; }
-
-    .workspace { display: grid; grid-template-columns: minmax(280px, 320px) minmax(0, 1fr); gap: 14px; min-height: 0; }
-    .sidebar, .core, .activity-panel, .voice-panel { min-height: 0; }
-
-    .sidebar {
-      border-radius: var(--radius-lg); padding: 16px; display: grid; gap: 14px;
-      animation: fadeUp 0.8s ease 0.05s both;
-      grid-auto-rows: min-content;
-    }
-
-    .sidebar-section {
-      padding: 14px; border-radius: 18px; border: 1px solid rgba(175, 196, 216, 0.12);
-      background: rgba(10, 18, 27, 0.62);
-    }
-
-    .section-label {
-      display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;
-      font-size: 11px; letter-spacing: 0.22em; text-transform: uppercase; color: rgba(229, 237, 244, 0.62);
-    }
-    .section-label strong { font-family: var(--title); color: var(--accent-strong); letter-spacing: 0.24em; }
-
-    .meter { display: grid; gap: 8px; margin-bottom: 12px; }
-    .meter:last-child { margin-bottom: 0; }
-    .meter-row { display: flex; justify-content: space-between; align-items: center; gap: 12px; font-size: 12px; color: var(--text); }
-    .meter-track { width: 100%; height: 9px; border-radius: 999px; background: rgba(229, 237, 244, 0.06); overflow: hidden; border: 1px solid rgba(175, 196, 216, 0.08); }
-    .meter-fill { width: 0%; height: 100%; background: linear-gradient(90deg, rgba(94, 200, 255, 0.22), rgba(94, 200, 255, 1)); box-shadow: 0 0 14px rgba(94, 200, 255, 0.28); transition: width 220ms ease; }
-    .meter-fill.orange { background: linear-gradient(90deg, rgba(240, 171, 109, 0.24), rgba(240, 171, 109, 1)); box-shadow: 0 0 14px rgba(240, 171, 109, 0.2); }
-
-    .stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
-    .stat-card { padding: 12px; border-radius: 16px; border: 1px solid rgba(175, 196, 216, 0.12); background: rgba(10, 18, 27, 0.58); min-width: 0; }
-    .stat-card .k { color: rgba(229, 237, 244, 0.56); font-size: 10px; text-transform: uppercase; letter-spacing: 0.2em; margin-bottom: 8px; }
-    .stat-card .v { font-family: var(--title); font-size: 20px; letter-spacing: 0.08em; color: var(--accent-strong); text-shadow: 0 0 10px rgba(94, 200, 255, 0.16); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-
-    .tool-list { display: grid; gap: 8px; margin-top: 2px; max-height: 220px; overflow: auto; padding-right: 4px; }
-    .tool-item {
-      display: flex; justify-content: space-between; align-items: flex-start; gap: 10px; padding: 10px 12px;
-      border-radius: 14px; border: 1px solid rgba(175, 196, 216, 0.1); background: rgba(10, 18, 27, 0.5);
-      color: var(--text); animation: fadeUp 0.25s ease both;
-    }
-    .tool-item.pending { border-color: rgba(245, 198, 106, 0.28); }
-    .tool-item.done { border-color: rgba(94, 231, 183, 0.22); }
-    .tool-item.error { border-color: rgba(255, 127, 149, 0.24); }
-    .tool-name { font-size: 12px; color: var(--text); line-height: 1.45; }
-    .tool-meta { color: rgba(229, 237, 244, 0.56); font-size: 10px; letter-spacing: 0.14em; text-transform: uppercase; white-space: nowrap; }
-
-    .core {
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr) auto;
-      gap: 14px;
-      min-height: 0;
-      animation: fadeUp 0.8s ease 0.1s both;
-    }
-    .chat-shell {
-      display: grid;
-      grid-template-rows: auto auto;
-      gap: 12px;
-      min-height: 0;
-      padding: 16px;
-      border-radius: var(--radius-lg);
-    }
-    .chat-hero {
-      display: grid;
-      gap: 8px;
-      padding: 6px 2px 0;
-    }
-    .chat-hero .eyebrow {
-      font-size: 10px;
-      letter-spacing: 0.24em;
-      text-transform: uppercase;
-      color: var(--text-dim);
-    }
-    .chat-hero h1 {
-      margin: 0;
-      font-family: var(--title);
-      font-size: clamp(26px, 3.2vw, 44px);
-      line-height: 1.05;
-      letter-spacing: 0.02em;
-      color: var(--text);
-      max-width: 16ch;
-    }
-    .chat-hero h1 span { color: var(--accent-strong); }
-    .chat-hero p {
-      margin: 0;
-      max-width: 52ch;
-      color: var(--text-dim);
-      font-size: 14px;
-      line-height: 1.7;
-    }
-    .prompt-row {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-      margin-top: 4px;
-    }
-    .prompt-chip {
-      padding: 8px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(175, 196, 216, 0.12);
-      background: rgba(10, 18, 27, 0.52);
-      color: rgba(229, 237, 244, 0.82);
-      font-size: 10px;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-    }
-
-    .message-surface {
-      display: grid;
-      grid-template-rows: auto minmax(0, 1fr);
-      gap: 10px;
-      min-height: 0;
-      padding: 0 16px 0 16px;
-    }
-    .message-surface-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      font-size: 11px;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: rgba(229, 237, 244, 0.62);
-    }
-    .message-surface-head .mode { color: var(--accent-strong); font-family: var(--title); letter-spacing: 0.16em; }
-    .transcript-box {
-      position: relative;
-      border-radius: 24px;
-      border: 1px solid rgba(175, 196, 216, 0.1);
-      background: rgba(10, 18, 27, 0.5);
-      padding: 16px;
-      min-height: 0;
+      color: var(--muted);
+      white-space: nowrap;
       overflow: hidden;
-      display: grid;
-      gap: 12px;
+      text-overflow: ellipsis;
     }
-    .prompt-label { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(229, 237, 244, 0.54); }
-    .transcript-text { min-height: 0; white-space: pre-wrap; line-height: 1.78; font-size: clamp(15px, 1.45vw, 18px); color: rgba(245, 249, 252, 0.97); text-shadow: 0 0 10px rgba(94, 200, 255, 0.04); position: relative; overflow: auto; padding-right: 8px; }
-    .transcript-meta { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(175, 196, 216, 0.14); background: rgba(10, 18, 27, 0.52); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(229, 237, 244, 0.78); }
-    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-strong); box-shadow: 0 0 10px rgba(94, 200, 255, 0.34); }
-    .assistant-intro {
-      display: grid;
-      gap: 12px;
-      align-content: start;
+
+    .system-line {
+      display: flex;
+      justify-content: center;
+      gap: 10px;
+      flex-wrap: wrap;
+      align-items: center;
+      letter-spacing: 0.18em;
+      text-transform: uppercase;
+      font-size: 10px;
+      color: rgba(239,246,255,0.7);
     }
-    .assistant-kicker {
+    .chip {
       display: inline-flex;
       align-items: center;
       gap: 8px;
-      width: fit-content;
       padding: 8px 12px;
       border-radius: 999px;
-      border: 1px solid rgba(175, 196, 216, 0.12);
-      background: rgba(10, 18, 27, 0.5);
-      color: var(--accent-strong);
-      font-size: 10px;
-      letter-spacing: 0.24em;
-      text-transform: uppercase;
+      border: 1px solid rgba(125,249,255,0.12);
+      background: rgba(125,249,255,0.03);
+      white-space: nowrap;
     }
-    .assistant-copy {
-      font-family: var(--title);
-      font-size: clamp(22px, 2.6vw, 34px);
-      line-height: 1.04;
-      letter-spacing: 0.04em;
-      color: var(--text);
-    }
-    .assistant-copy span { color: var(--accent-strong); }
-    .assistant-body {
-      color: var(--text-dim);
-      font-size: 14px;
-      line-height: 1.7;
-      max-width: 52ch;
-    }
-    .mic-options {
-      display: flex;
-      flex-wrap: wrap;
-      gap: 8px;
-    }
-    .mic-option {
-      padding: 8px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(175, 196, 216, 0.14);
-      background: rgba(7, 13, 19, 0.7);
-      color: rgba(229, 237, 244, 0.84);
-      font-size: 10px;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
-    }
-    .mic-option.primary { border-color: rgba(94, 200, 255, 0.28); color: var(--accent-strong); }
+    .chip[data-state="online"] { color: var(--cyan); }
+    .chip[data-state="thinking"] { color: var(--gold); }
+    .chip[data-state="error"] { color: var(--crimson); }
+    .dot { width: 8px; height: 8px; border-radius: 50%; background: currentColor; box-shadow: 0 0 10px currentColor; animation: pulseIdle 1.8s infinite; }
 
-    .voice-panel {
+    .clock { justify-self: end; font-family: var(--title); letter-spacing: 0.18em; font-size: 12px; text-transform: uppercase; color: rgba(231,243,251,0.84); }
+
+    .workspace {
       display: grid;
-      grid-template-columns: minmax(0, 1fr) auto;
-      gap: 12px;
-      align-items: end;
+      grid-template-columns: minmax(300px, 340px) minmax(0, 1fr) minmax(300px, 340px);
+      grid-template-rows: minmax(0, 1fr);
+      gap: clamp(10px, 1.1vw, 16px);
       min-height: 0;
-      padding: 16px;
-      border-radius: var(--radius-lg);
     }
-    .voice-block { display: grid; gap: 10px; min-width: 0; }
-    .waveform { display: flex; align-items: end; gap: 5px; height: 56px; padding: 6px 0; min-width: 0; }
-    .waveform span { width: 6px; height: 16px; border-radius: 999px; background: linear-gradient(180deg, rgba(94, 200, 255, 0.22), rgba(94, 200, 255, 1)); box-shadow: 0 0 10px rgba(94, 200, 255, 0.22); transform-origin: center bottom; opacity: 0.45; }
-    .voice-panel.listening .waveform span { animation: waveform 0.9s ease-in-out infinite; opacity: 1; }
-    .voice-panel.listening .waveform span:nth-child(3n) { animation-duration: 0.72s; }
-    .voice-panel.listening .waveform span:nth-child(4n) { animation-duration: 1.04s; }
 
-    .composer-stack { display: grid; gap: 10px; }
-    .composer-presets { display: flex; flex-wrap: wrap; gap: 8px; }
-    .composer-pill {
-      padding: 8px 12px;
-      border-radius: 999px;
-      border: 1px solid rgba(175, 196, 216, 0.12);
-      background: rgba(10, 18, 27, 0.48);
-      color: rgba(229, 237, 244, 0.82);
-      font-size: 10px;
-      letter-spacing: 0.16em;
-      text-transform: uppercase;
+    .stack { display: grid; gap: clamp(10px, 1vw, 14px); min-height: 0; }
+    .sidebar, .telemetry, .feed-shell, .composer-shell, .hero-shell { border-radius: 30px; }
+    .sidebar { padding: clamp(12px, 1vw, 16px); display: grid; gap: clamp(10px, 1vw, 14px); animation: fadeUp 0.66s ease 0.03s both; }
+    .telemetry { padding: clamp(12px, 1vw, 16px); display: grid; gap: clamp(10px, 1vw, 14px); animation: fadeUp 0.72s ease 0.06s both; }
+
+    .section {
+      border: 1px solid rgba(125,249,255,0.11);
+      background: linear-gradient(180deg, rgba(125,249,255,0.03), rgba(125,249,255,0.015));
+      border-radius: 20px;
+      padding: 14px;
     }
-    .command-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
+    .section-head {
+      display: flex;
+      justify-content: space-between;
       gap: 10px;
       align-items: center;
-    }
-    .command-input {
-      width: 100%; border: 1px solid rgba(175, 196, 216, 0.16); background: rgba(7, 13, 19, 0.86); color: var(--text); border-radius: 18px;
-      padding: 18px 18px 18px 20px; font-family: var(--mono); font-size: 15px; outline: none; transition: border-color 180ms ease, box-shadow 180ms ease, transform 180ms ease;
-    }
-    .command-input::placeholder { color: rgba(229, 237, 244, 0.38); }
-    .command-input:focus { border-color: rgba(94, 200, 255, 0.48); box-shadow: 0 0 0 4px rgba(94, 200, 255, 0.08); }
-    .listen-button, .send-button {
-      width: 56px; height: 56px; border-radius: 16px; border: 1px solid rgba(94, 200, 255, 0.24);
-      background: linear-gradient(180deg, rgba(11, 22, 34, 0.88), rgba(7, 13, 19, 0.98)); color: var(--text); cursor: pointer; font-size: 20px; display: grid; place-items: center;
-      transition: transform 180ms ease, border-color 180ms ease, box-shadow 180ms ease;
-    }
-    .listen-button:hover, .send-button:hover { transform: translateY(-1px); border-color: rgba(94, 200, 255, 0.44); box-shadow: 0 0 20px rgba(94, 200, 255, 0.12); }
-    .listen-button.active { border-color: rgba(240, 171, 109, 0.44); box-shadow: 0 0 16px rgba(240, 171, 109, 0.14); color: var(--accent-warm); }
-    .send-button { color: var(--accent-strong); }
-    .command-help { display: flex; justify-content: space-between; align-items: center; gap: 8px; font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(229, 237, 244, 0.56); }
-
-    .activity-panel { display: none; }
-    .feed, .widget-shell { border-radius: var(--radius-lg); padding: 16px; min-height: 0; overflow: hidden; }
-    .feed-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; max-height: 100%; padding-right: 4px; }
-    .feed-item {
-      padding: 12px 14px;
-      border-radius: 18px;
-      border: 1px solid rgba(175, 196, 216, 0.12);
-      background: rgba(10, 18, 27, 0.56);
-      display: grid;
-      gap: 4px;
-      color: var(--text);
-      animation: fadeUp 0.22s ease both;
-      max-width: min(92%, 760px);
-      align-self: flex-start;
-    }
-    .feed-item.sender-you { align-self: flex-end; background: linear-gradient(180deg, rgba(21, 40, 57, 0.96), rgba(12, 23, 34, 0.96)); border-color: rgba(94, 200, 255, 0.2); }
-    .feed-item.sender-spark { align-self: flex-start; background: linear-gradient(180deg, rgba(10, 18, 27, 0.72), rgba(7, 13, 19, 0.96)); border-color: rgba(94, 231, 183, 0.16); }
-    .feed-item.sender-system { align-self: center; max-width: 100%; background: rgba(7, 13, 19, 0.74); border-color: rgba(240, 171, 109, 0.18); }
-    .feed-item .top { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(229, 237, 244, 0.6); }
-    .feed-item .body { font-size: 13px; line-height: 1.62; color: rgba(245, 249, 252, 0.92); white-space: pre-wrap; overflow-wrap: anywhere; }
-    .feed-item .badge { color: var(--accent-strong); font-family: var(--title); letter-spacing: 0.12em; }
-    .feed-item.sender-you .badge { color: var(--accent-warm); }
-    .feed-item.sender-spark .badge { color: var(--good); }
-    .feed-item.sender-system .badge { color: var(--accent-strong); }
-
-    .widget-grid { display: grid; gap: 10px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); overflow: auto; max-height: 100%; padding-right: 4px; }
-    .widget-card { padding: 14px; border-radius: 16px; border: 1px solid rgba(175, 196, 216, 0.12); background: rgba(10, 18, 27, 0.56); min-height: 120px; display: grid; gap: 8px; animation: fadeUp 0.3s ease both; }
-    .widget-card .title { font-family: var(--title); font-size: 12px; letter-spacing: 0.18em; color: var(--accent-strong); text-transform: uppercase; line-height: 1.4; }
-    .widget-card .body { font-size: 13px; line-height: 1.62; color: rgba(245, 249, 252, 0.92); white-space: pre-wrap; }
-    .widget-card .meta { font-size: 11px; color: rgba(229, 237, 244, 0.6); text-transform: uppercase; letter-spacing: 0.14em; }
-
-    .bottom-bar {
-      border-radius: var(--radius-lg); display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 10px; align-items: center; padding: 12px 16px;
-      font-size: 11px; letter-spacing: 0.2em; text-transform: uppercase; color: rgba(229, 237, 244, 0.66); animation: fadeUp 0.8s ease 0.2s both;
-    }
-    .bottom-bar strong { color: var(--accent-strong); font-family: var(--title); letter-spacing: 0.14em; }
-
-    .boot-overlay {
-      position: fixed; inset: 0; z-index: 10000; display: grid; place-items: center;
-      background: radial-gradient(circle at center, rgba(94, 200, 255, 0.08), rgba(0, 0, 0, 0.94) 68%);
-      backdrop-filter: blur(16px); transition: opacity 280ms ease, visibility 280ms ease;
-    }
-    .boot-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
-    .boot-card {
-      width: min(92vw, 560px); border-radius: 26px; border: 1px solid rgba(94, 200, 255, 0.18);
-      background: rgba(9, 18, 27, 0.94); box-shadow: 0 0 28px rgba(94, 200, 255, 0.06), 0 0 100px rgba(0, 0, 0, 0.34);
-      padding: 22px; display: grid; gap: 14px;
-    }
-    .boot-title { font-family: var(--title); color: var(--accent-strong); letter-spacing: 0.28em; font-size: clamp(22px, 3vw, 34px); text-align: center; text-shadow: 0 0 12px rgba(94, 200, 255, 0.2); }
-    .boot-text { min-height: 84px; font-size: 13px; line-height: 1.8; color: rgba(245, 249, 252, 0.9); white-space: pre-wrap; letter-spacing: 0.04em; }
-    .boot-progress { height: 10px; border-radius: 999px; overflow: hidden; border: 1px solid rgba(94, 200, 255, 0.18); background: rgba(229, 237, 244, 0.05); }
-    .boot-progress span { display: block; width: 0%; height: 100%; background: linear-gradient(90deg, rgba(94, 200, 255, 0.2), rgba(94, 200, 255, 1)); box-shadow: 0 0 12px rgba(94, 200, 255, 0.22); transition: width 240ms ease; }
-    .boot-foot { display: flex; justify-content: space-between; gap: 12px; align-items: center; color: rgba(229, 237, 244, 0.56); font-size: 10px; letter-spacing: 0.22em; text-transform: uppercase; }
-    .cursor { color: var(--accent-strong); animation: blink 1s steps(1) infinite; }
-    .glow-text { text-shadow: 0 0 10px rgba(94, 200, 255, 0.12); }
-
-    .workspace { grid-template-columns: minmax(280px, 300px) minmax(0, 1fr); gap: 16px; }
-    .sidebar { overflow: auto; }
-    .core { grid-template-rows: auto minmax(0, 1fr) auto; gap: 16px; }
-
-    .chat-shell {
-      display: grid;
-      gap: 12px;
-      min-height: 0;
-      padding: 20px;
-      border-radius: 28px;
-      background: linear-gradient(180deg, rgba(17, 24, 32, 0.95), rgba(10, 15, 20, 0.92));
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      box-shadow: 0 24px 60px rgba(0, 0, 0, 0.22);
-    }
-    .chat-hero { display: grid; gap: 8px; padding: 0; }
-    .chat-hero .eyebrow {
-      font-size: 10px;
-      letter-spacing: 0.24em;
+      margin-bottom: 10px;
+      font-size: 11px;
+      letter-spacing: 0.2em;
       text-transform: uppercase;
-      color: var(--text-dim);
+      color: rgba(231,243,251,0.6);
     }
-    .chat-hero h1 {
+    .section-head strong { color: var(--cyan); font-family: var(--title); letter-spacing: 0.22em; }
+    .meter { display: grid; gap: 8px; margin-bottom: 12px; }
+    .meter:last-child { margin-bottom: 0; }
+    .meter-row { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 12px; color: var(--text); }
+    .track { width: 100%; height: 10px; border-radius: 999px; background: rgba(239,246,255,0.06); overflow: hidden; border: 1px solid rgba(125,249,255,0.1); }
+    .fill { width: 0%; height: 100%; background: linear-gradient(90deg, rgba(125,249,255,0.22), rgba(125,249,255,1)); box-shadow: 0 0 18px rgba(125,249,255,0.22); transition: width 220ms ease; }
+    .fill.gold { background: linear-gradient(90deg, rgba(255,200,90,0.22), rgba(255,200,90,1)); box-shadow: 0 0 18px rgba(255,200,90,0.16); }
+
+    .stat-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px; }
+    .stat {
+      padding: 12px;
+      border-radius: 16px;
+      border: 1px solid rgba(125,249,255,0.11);
+      background: rgba(125,249,255,0.024);
+      min-width: 0;
+    }
+    .stat .k { color: rgba(231,243,251,0.56); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; margin-bottom: 8px; }
+    .stat .v { font-family: var(--title); font-size: 20px; letter-spacing: 0.08em; color: var(--cyan); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+
+    .tile-grid { display: grid; gap: 10px; }
+    .tile {
+      border-radius: 16px;
+      border: 1px solid rgba(125,249,255,0.11);
+      background: rgba(125,249,255,0.024);
+      padding: 12px 13px;
+      display: flex;
+      justify-content: space-between;
+      gap: 12px;
+      align-items: baseline;
+      font-size: 12px;
+    }
+    .tile .label { color: rgba(231,243,251,0.72); letter-spacing: 0.16em; text-transform: uppercase; }
+    .tile .value { color: var(--cyan); font-family: var(--title); letter-spacing: 0.1em; text-align: right; }
+    .tile .value.gold { color: var(--gold); }
+
+    .center {
+      display: grid;
+      grid-template-rows: auto minmax(0, 1fr) auto;
+      gap: clamp(10px, 1vw, 14px);
+      min-height: 0;
+      animation: fadeUp 0.7s ease 0.05s both;
+    }
+
+    .hero-shell {
+      padding: clamp(16px, 1.6vw, 22px);
+      border: 1px solid rgba(125,249,255,0.11);
+      background:
+        radial-gradient(circle at 18% 18%, rgba(125,249,255,0.08), transparent 24%),
+        radial-gradient(circle at 82% 12%, rgba(255,200,90,0.06), transparent 18%),
+        linear-gradient(180deg, rgba(8, 16, 27, 0.82), rgba(2, 7, 14, 0.96));
+      display: grid;
+      gap: 14px;
+      min-height: 0;
+    }
+    .hero-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 10px;
+      flex-wrap: wrap;
+    }
+    .eyebrow { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(231,243,251,0.58); }
+    .hero-title {
       margin: 0;
       font-family: var(--title);
-      font-size: clamp(22px, 2.3vw, 34px);
-      line-height: 1.05;
+      font-size: clamp(24px, 2.9vw, 42px);
+      line-height: 1.02;
       letter-spacing: 0.02em;
-      color: var(--text);
-      max-width: 20ch;
+      max-width: 18ch;
     }
-    .chat-hero p {
-      margin: 0;
-      max-width: 58ch;
-      color: var(--text-dim);
-      font-size: 14px;
-      line-height: 1.7;
-    }
-    .prompt-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 6px; }
-    .prompt-chip {
-      padding: 7px 11px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(10, 18, 27, 0.48);
-      color: rgba(229, 237, 244, 0.82);
-      font-size: 10px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
+    .hero-title span { color: var(--cyan); }
+    .hero-copy { margin: 0; max-width: 58ch; color: rgba(231,243,251,0.64); font-size: 14px; line-height: 1.72; }
+    .tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .tag { padding: 7px 11px; border-radius: 999px; border: 1px solid rgba(125,249,255,0.12); background: rgba(125,249,255,0.03); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(239,246,255,0.86); }
+
+    .orb-row {
+      display: grid;
+      grid-template-columns: minmax(220px, 1fr) minmax(0, 1.1fr);
+      gap: 16px;
+      align-items: center;
+      min-height: 0;
     }
 
-    .message-surface {
+    .orb-stage {
+      position: relative;
+      display: grid;
+      place-items: center;
+      min-height: 320px;
+      isolation: isolate;
+    }
+    .orb {
+      position: relative;
+      width: min(320px, 46vw);
+      aspect-ratio: 1;
+      border-radius: 50%;
+      display: grid;
+      place-items: center;
+      filter: drop-shadow(0 0 34px rgba(125,249,255,0.3));
+      animation: floaty 7s ease-in-out infinite;
+    }
+    .orb::before,
+    .orb::after {
+      content: '';
+      position: absolute;
+      inset: 12%;
+      border-radius: 50%;
+      border: 1px solid rgba(125,249,255,0.16);
+    }
+    .orb::after {
+      inset: 24%;
+      border-color: rgba(125,249,255,0.2);
+    }
+    .orb-core {
+      position: absolute;
+      inset: 24%;
+      border-radius: 50%;
+      background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.98) 0%, rgba(125,249,255,0.82) 18%, rgba(125,249,255,0.18) 52%, rgba(125,249,255,0.03) 70%, transparent 84%);
+      box-shadow: inset 0 0 40px rgba(255,255,255,0.12), 0 0 66px rgba(125,249,255,0.22);
+      transform-origin: center;
+      transition: background 180ms ease, box-shadow 180ms ease;
+    }
+    .orb-ring {
+      position: absolute;
+      inset: 0;
+      border-radius: 50%;
+      border: 1px solid rgba(125,249,255,0.18);
+      background: conic-gradient(from 180deg, transparent 0 30%, rgba(125,249,255,0.08) 38%, rgba(125,249,255,0.34) 44%, transparent 52% 100%);
+      animation: spinSlow 10s linear infinite;
+      opacity: 0.88;
+    }
+    .orb-ring.secondary {
+      inset: 12%;
+      animation-duration: 16s;
+      opacity: 0.64;
+      border-color: rgba(125,249,255,0.1);
+    }
+    .orb-ring.micro {
+      inset: 24%;
+      animation-duration: 6s;
+      animation-direction: reverse;
+      opacity: 0.92;
+    }
+    .orb[data-state="idle"] .orb-core { animation: pulseIdle 2.8s ease-in-out infinite; background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.96) 0%, rgba(125,249,255,0.84) 20%, rgba(125,249,255,0.18) 56%, transparent 78%); }
+    .orb[data-state="thinking"] .orb-core { background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.98) 0%, rgba(255,200,90,0.9) 22%, rgba(255,200,90,0.18) 58%, transparent 80%); box-shadow: inset 0 0 40px rgba(255,255,255,0.16), 0 0 66px rgba(255,200,90,0.16); }
+    .orb[data-state="thinking"] .orb-ring { animation-duration: 3.6s; background: conic-gradient(from 180deg, transparent 0 28%, rgba(255,200,90,0.08) 38%, rgba(255,200,90,0.42) 44%, transparent 52% 100%); }
+    .orb[data-state="error"] .orb-core { background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.92) 0%, rgba(255,92,131,0.92) 24%, rgba(255,92,131,0.18) 58%, transparent 82%); box-shadow: inset 0 0 40px rgba(255,255,255,0.12), 0 0 62px rgba(255,92,131,0.18); }
+    .orb[data-state="error"] .orb-ring { background: conic-gradient(from 180deg, transparent 0 28%, rgba(255,92,131,0.08) 38%, rgba(255,92,131,0.42) 44%, transparent 52% 100%); animation-duration: 2.1s; }
+    .orb[data-state="error"]::before,
+    .orb[data-state="error"]::after { animation: redRipple 1.1s ease-out infinite; border-color: rgba(255,92,131,0.2); }
+
+    .orb-meta {
+      display: grid;
+      gap: 10px;
+      min-width: 0;
+    }
+    .orb-card {
+      border-radius: 16px;
+      border: 1px solid rgba(125,249,255,0.11);
+      background: rgba(125,249,255,0.024);
+      padding: 12px 14px;
+    }
+    .orb-card .k { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(231,243,251,0.56); margin-bottom: 8px; }
+    .orb-card .v { font-family: var(--title); color: var(--cyan); letter-spacing: 0.08em; line-height: 1.3; }
+    .orb-card .v.gold { color: var(--gold); }
+
+    .feed-shell {
+      border-radius: 30px;
+      padding: 14px;
       display: grid;
       grid-template-rows: auto minmax(0, 1fr);
       gap: 12px;
       min-height: 0;
-      min-height: 320px;
-      padding: 0 4px;
     }
-    .message-surface-head {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 12px;
-      padding: 0 4px;
-      font-size: 11px;
-      letter-spacing: 0.2em;
-      text-transform: uppercase;
-      color: rgba(229, 237, 244, 0.62);
-    }
-    .message-surface-head .mode { color: var(--accent-strong); font-family: var(--title); }
-    .message-surface-head .state { color: var(--text-dim); }
-    .transcript-box {
+    .feed-head { display: flex; justify-content: space-between; gap: 10px; align-items: center; text-transform: uppercase; letter-spacing: 0.18em; font-size: 11px; color: rgba(231,243,251,0.62); }
+    .feed-head .mode { color: var(--cyan); font-family: var(--title); }
+    .feed-list { display: flex; flex-direction: column; gap: 10px; overflow: auto; padding-right: 4px; }
+    .msg { display: grid; gap: 8px; max-width: min(92%, 900px); align-self: flex-start; }
+    .msg.you { align-self: flex-end; }
+    .msg.system { align-self: center; max-width: 100%; }
+    .bubble {
+      border-radius: 18px;
+      border: 1px solid rgba(125,249,255,0.11);
+      background: rgba(4, 9, 16, 0.88);
       padding: 14px 16px;
-      border-radius: 22px;
-      background: linear-gradient(180deg, rgba(12, 18, 24, 0.88), rgba(8, 13, 18, 0.94));
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      display: grid;
-      gap: 10px;
-    }
-    .prompt-label { font-size: 10px; letter-spacing: 0.24em; text-transform: uppercase; color: rgba(229, 237, 244, 0.52); }
-    .transcript-text { min-height: 0; white-space: pre-wrap; line-height: 1.75; font-size: 15px; color: rgba(245, 249, 252, 0.97); text-shadow: 0 0 10px rgba(94, 200, 255, 0.04); position: relative; overflow: auto; padding-right: 8px; max-width: 72ch; }
-    .transcript-meta { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
-    .pill { display: inline-flex; align-items: center; gap: 8px; padding: 8px 12px; border-radius: 999px; border: 1px solid rgba(255, 255, 255, 0.08); background: rgba(10, 18, 27, 0.52); font-size: 11px; letter-spacing: 0.12em; text-transform: uppercase; color: rgba(229, 237, 244, 0.78); }
-    .pill .dot { width: 8px; height: 8px; border-radius: 50%; background: var(--accent-strong); box-shadow: 0 0 10px rgba(94, 200, 255, 0.34); }
-
-    .feed-list {
-      display: flex;
-      flex-direction: column;
-      gap: 12px;
-      overflow: auto;
-      padding: 8px 8px 12px;
-      min-height: 220px;
-      max-width: 860px;
-      width: 100%;
-      margin: 0 auto;
-    }
-    .feed-item {
-      max-width: min(84%, 720px);
-      align-self: flex-start;
+      box-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
       display: grid;
       gap: 8px;
     }
-    .feed-item .bubble {
-      padding: 14px 16px;
-      border-radius: 20px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(12, 18, 25, 0.92);
-      box-shadow: 0 12px 24px rgba(0, 0, 0, 0.18);
-      display: grid;
-      gap: 8px;
-    }
-    .feed-item.sender-you { align-self: flex-end; }
-    .feed-item.sender-you .bubble { background: linear-gradient(180deg, rgba(25, 44, 61, 0.96), rgba(13, 25, 35, 0.96)); border-color: rgba(94, 200, 255, 0.18); }
-    .feed-item.sender-spark .bubble { background: linear-gradient(180deg, rgba(11, 18, 24, 0.96), rgba(8, 13, 18, 0.96)); border-color: rgba(94, 231, 183, 0.16); }
-    .feed-item.sender-system { align-self: center; max-width: 100%; }
-    .feed-item.sender-system .bubble { background: rgba(8, 13, 18, 0.9); border-color: rgba(240, 171, 109, 0.14); }
-    .feed-item .top { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 11px; letter-spacing: 0.14em; text-transform: uppercase; color: rgba(229, 237, 244, 0.58); }
-    .feed-item .body { font-size: 13px; line-height: 1.65; color: rgba(245, 249, 252, 0.94); white-space: pre-wrap; overflow-wrap: anywhere; }
-    .feed-item .badge { color: var(--accent-strong); font-family: var(--title); }
-    .feed-item.sender-you .badge { color: var(--accent-warm); }
-    .feed-item.sender-spark .badge { color: var(--good); }
-    .feed-item.sender-system .badge { color: var(--accent-strong); }
+    .msg.you .bubble { background: linear-gradient(180deg, rgba(12, 22, 36, 0.98), rgba(4, 11, 18, 0.92)); border-color: rgba(125,249,255,0.2); }
+    .msg.spark .bubble { background: linear-gradient(180deg, rgba(8, 18, 24, 0.95), rgba(3, 9, 14, 0.92)); border-color: rgba(125,249,255,0.16); }
+    .msg.system .bubble { border-color: rgba(255,200,90,0.14); }
+    .msg-top { display: flex; justify-content: space-between; gap: 12px; align-items: center; font-size: 11px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(231,243,251,0.58); }
+    .badge { font-family: var(--title); color: var(--cyan); }
+    .msg.you .badge { color: var(--gold); }
+    .msg.spark .badge { color: var(--cyan); }
+    .msg-body { font-size: 13px; line-height: 1.68; white-space: pre-wrap; overflow-wrap: anywhere; color: rgba(231,243,251,0.94); }
 
-    .voice-panel {
+    .composer-shell {
+      border-radius: 30px;
+      padding: 16px 18px;
       display: grid;
-      gap: 14px;
-      grid-template-columns: minmax(0, 1fr);
-      padding: 18px 20px;
-      border-radius: 28px;
-    }
-    .voice-panel.listening {
-      border-color: rgba(94, 200, 255, 0.28);
-      box-shadow: 0 18px 52px rgba(0, 0, 0, 0.24), 0 0 0 1px rgba(94, 200, 255, 0.08);
+      gap: 12px;
+      min-height: 0;
+      backdrop-filter: blur(12px);
     }
     .composer-top { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; }
-    .composer-presets { display: flex; flex-wrap: wrap; gap: 8px; }
-    .composer-pill {
-      padding: 7px 11px;
-      border-radius: 999px;
-      border: 1px solid rgba(255, 255, 255, 0.08);
-      background: rgba(10, 18, 27, 0.48);
-      color: rgba(229, 237, 244, 0.8);
-      font-size: 10px;
-      letter-spacing: 0.14em;
-      text-transform: uppercase;
-    }
-    .composer-row {
-      display: grid;
-      grid-template-columns: minmax(0, 1fr) auto auto;
-      gap: 10px;
-      align-items: end;
-    }
-    .command-input {
-      min-height: 58px;
-      max-height: 160px;
+    .composer-tags { display: flex; flex-wrap: wrap; gap: 8px; }
+    .composer-tag { padding: 7px 11px; border-radius: 999px; border: 1px solid rgba(125,249,255,0.12); background: rgba(125,249,255,0.03); font-size: 10px; letter-spacing: 0.16em; text-transform: uppercase; color: rgba(239,246,255,0.82); }
+    .composer-help { font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; color: rgba(231,243,251,0.58); }
+    .composer-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: end; }
+    .input {
+      width: 100%;
+      min-height: 60px;
+      max-height: 170px;
       resize: none;
-      padding: 16px 16px;
       border-radius: 18px;
-      line-height: 1.5;
+      border: 1px solid rgba(125,249,255,0.14);
+      background: rgba(0, 5, 12, 0.9);
+      color: var(--text);
+      padding: 16px;
+      outline: none;
+      font-family: var(--mono);
+      font-size: 15px;
+      transition: border-color 160ms ease, box-shadow 160ms ease;
     }
-    .listen-button, .send-button {
-      width: 52px;
-      height: 52px;
+    .input::placeholder { color: rgba(231,243,251,0.36); }
+    .input:focus { border-color: rgba(125,249,255,0.38); box-shadow: 0 0 0 4px rgba(125,249,255,0.08); }
+    .btn {
+      width: 54px;
+      height: 54px;
       border-radius: 16px;
+      border: 1px solid rgba(125,249,255,0.24);
+      background: linear-gradient(180deg, rgba(6, 16, 26, 0.94), rgba(1, 6, 12, 1));
+      color: var(--text);
+      cursor: pointer;
+      display: grid;
+      place-items: center;
+      font-size: 20px;
+      transition: transform 160ms ease, border-color 160ms ease, box-shadow 160ms ease;
     }
-    .command-help {
-      display: flex;
-      justify-content: space-between;
+    .btn:hover { transform: translateY(-1px); border-color: rgba(125,249,255,0.42); box-shadow: 0 0 18px rgba(125,249,255,0.12); }
+    .btn.active { color: var(--gold); border-color: rgba(255,200,90,0.34); box-shadow: 0 0 18px rgba(255,200,90,0.14); }
+    .composer-bottom { display: flex; justify-content: space-between; gap: 10px; align-items: center; flex-wrap: wrap; color: rgba(231,243,251,0.58); font-size: 10px; letter-spacing: 0.18em; text-transform: uppercase; }
+
+    .bottom-bar {
+      border-radius: 30px;
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
       gap: 10px;
       align-items: center;
-      font-size: 10px;
+      padding: 12px 16px;
+      font-size: 11px;
       letter-spacing: 0.18em;
       text-transform: uppercase;
-      color: rgba(229, 237, 244, 0.56);
+      color: rgba(231,243,251,0.66);
+      animation: fadeUp 0.7s ease 0.15s both;
     }
+    .bottom-bar strong { color: var(--cyan); font-family: var(--title); }
 
-    .activity-panel { display: none; }
-    .widget-grid { grid-template-columns: 1fr; }
-    .widget-card { min-height: 0; }
-    .sidebar { overflow: auto; }
-
-    @media (max-width: 960px) {
-      .workspace { grid-template-columns: 1fr; }
-      .sidebar { order: 2; }
-      .core { order: 1; }
-      .top-bar { gap: 10px; justify-items: start; }
-      .clock { justify-self: start; }
-    }
-
-    @media (max-width: 860px) {
-      body { overflow: auto; }
-      .app { height: auto; min-height: 100vh; grid-template-rows: auto auto auto; padding: 12px; }
-      .workspace, .core { grid-template-columns: 1fr; grid-template-rows: auto; }
-      .sidebar, .core { min-height: auto; }
-      .composer-row { grid-template-columns: 1fr auto auto; }
-      .feed-item { max-width: 100%; }
-      .chat-hero h1 { max-width: 18ch; }
-    }
-
-    /* Signal Override Terminal */
-    .signal-override-overlay {
+    .boot-overlay {
       position: fixed;
       inset: 0;
-      background: rgba(0, 0, 0, 0.92);
-      display: flex;
-      align-items: center;
-      justify-content: center;
-      z-index: 99999;
-      animation: fadeUp 0.4s ease;
+      z-index: 9999;
+      display: grid;
+      place-items: center;
+      background: radial-gradient(circle at center, rgba(125,249,255,0.08), rgba(0,0,0,0.94) 68%);
+      backdrop-filter: blur(18px);
+      transition: opacity 240ms ease, visibility 240ms ease;
+    }
+    .boot-overlay.hidden { opacity: 0; visibility: hidden; pointer-events: none; }
+    .boot-card { width: min(92vw, 560px); border-radius: 28px; border: 1px solid rgba(125,249,255,0.18); background: rgba(4, 11, 18, 0.96); box-shadow: 0 0 32px rgba(125,249,255,0.06), 0 0 110px rgba(0,0,0,0.36); padding: 22px; display: grid; gap: 14px; }
+    .boot-title { font-family: var(--title); color: var(--cyan); letter-spacing: 0.28em; font-size: clamp(22px, 3vw, 34px); text-align: center; text-shadow: 0 0 14px rgba(125,249,255,0.22); }
+    .boot-text { min-height: 84px; font-size: 13px; line-height: 1.8; color: rgba(231,243,251,0.92); white-space: pre-wrap; }
+    .boot-progress { height: 10px; border-radius: 999px; overflow: hidden; border: 1px solid rgba(125,249,255,0.18); background: rgba(231,243,251,0.05); }
+    .boot-progress span { display: block; width: 0%; height: 100%; background: linear-gradient(90deg, rgba(125,249,255,0.2), rgba(125,249,255,1)); box-shadow: 0 0 12px rgba(125,249,255,0.24); transition: width 240ms ease; }
+    .boot-foot { display: flex; justify-content: space-between; gap: 12px; align-items: center; color: rgba(231,243,251,0.58); font-size: 10px; letter-spacing: 0.2em; text-transform: uppercase; }
+
+    .override {
+      position: fixed;
+      inset: 0;
+      z-index: 10000;
+      display: grid;
+      place-items: center;
+      background: rgba(0,0,0,0.92);
       backdrop-filter: blur(8px);
     }
+    .override-card { width: min(90vw, 820px); border-radius: 18px; border: 1px solid rgba(255,200,90,0.24); background: linear-gradient(135deg, rgba(9, 18, 28, 0.96), rgba(3, 9, 16, 0.96)); padding: 20px; box-shadow: 0 0 60px rgba(125,249,255,0.14); }
+    .override-head { font-family: var(--title); letter-spacing: 0.24em; text-transform: uppercase; color: var(--gold); margin-bottom: 14px; }
+    .override-body { display: grid; gap: 10px; color: rgba(231,243,251,0.9); font-size: 13px; line-height: 1.7; }
+    .override-row { padding: 8px 0; border-bottom: 1px dotted rgba(125,249,255,0.15); color: rgba(125,249,255,0.92); word-break: break-all; }
+    .override-row:last-child { border-bottom: 0; }
 
-    .signal-override-terminal {
-      width: 90%;
-      max-width: 800px;
-      background: linear-gradient(135deg, rgba(10, 20, 31, 0.96), rgba(13, 27, 41, 0.88));
-      border: 2px solid var(--accent);
-      border-radius: 8px;
-      padding: 24px;
-      box-shadow: 0 0 60px rgba(94, 200, 255, 0.4), inset 0 0 30px rgba(94, 200, 255, 0.08);
-      font-family: 'IBM Plex Mono', monospace;
-      color: var(--accent);
-      animation: fadeUp 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+    @media (max-width: 1480px) {
+      .workspace { grid-template-columns: minmax(280px, 0.94fr) minmax(0, 1.26fr) minmax(280px, 0.94fr); }
+      .orb { width: min(290px, 44vw); }
     }
-
-    .override-header {
-      font-size: 18px;
-      font-weight: 700;
-      letter-spacing: 3px;
-      text-transform: uppercase;
-      margin-bottom: 16px;
-      padding-bottom: 12px;
-      border-bottom: 1px solid rgba(94, 200, 255, 0.3);
-      text-shadow: 0 0 20px rgba(94, 200, 255, 0.6);
+    @media (max-width: 1220px) {
+      .app { min-height: 100dvh; }
+      .workspace { grid-template-columns: 1fr; }
+      .top-bar { grid-template-columns: 1fr; justify-items: start; }
+      .clock { justify-self: start; }
+      .orb-row { grid-template-columns: 1fr; }
+      .orb-stage { min-height: 250px; }
+      .feed-shell { min-height: 320px; }
     }
-
-    .override-content {
-      display: flex;
-      flex-direction: column;
-      gap: 16px;
+    @media (max-width: 860px) {
+      .app { padding: 10px; }
+      .composer-row { grid-template-columns: 1fr auto auto; }
+      .bottom-bar { grid-template-columns: 1fr; }
+      .stat-grid { grid-template-columns: 1fr; }
+      .orb { width: min(260px, 72vw); }
+      .hero-title { max-width: 12ch; }
+      .hero-copy { font-size: 13px; }
     }
-
-    .override-section {
-      border: 1px solid rgba(94, 200, 255, 0.2);
-      padding: 12px;
-      border-radius: 4px;
-      background: rgba(94, 200, 255, 0.05);
-    }
-
-    .override-title {
-      font-size: 14px;
-      font-weight: 600;
-      letter-spacing: 2px;
-      color: var(--accent-strong);
-      margin-bottom: 4px;
-    }
-
-    .override-subtitle {
-      font-size: 12px;
-      color: rgba(138, 209, 255, 0.6);
-      letter-spacing: 1px;
-    }
-
-    .connections-list {
-      background: rgba(0, 0, 0, 0.3);
-      border: 1px solid rgba(94, 200, 255, 0.2);
-      border-radius: 4px;
-      padding: 12px;
-      max-height: 300px;
-      overflow-y: auto;
-      font-size: 12px;
-      line-height: 1.8;
-    }
-
-    .conn-row {
-      padding: 6px 0;
-      border-bottom: 1px dotted rgba(94, 200, 255, 0.15);
-      font-family: 'IBM Plex Mono', monospace;
-      color: #5ee7b7;
-      word-break: break-all;
-    }
-
-    .conn-row:last-child {
-      border-bottom: none;
-    }
-
-    .override-footer {
-      display: flex;
-      justify-content: space-between;
-      font-size: 11px;
-      letter-spacing: 1px;
-      padding-top: 12px;
-      border-top: 1px solid rgba(94, 200, 255, 0.2);
-      color: rgba(138, 209, 255, 0.7);
+    @media (prefers-reduced-motion: reduce) {
+      *, *::before, *::after { animation-duration: 0.001ms !important; animation-iteration-count: 1 !important; transition-duration: 0.001ms !important; scroll-behavior: auto !important; }
     }
   </style>
 </head>
 <body>
-  <div class="boot-overlay" id="boot-overlay">
-    <div class="boot-card">
-      <div class="boot-title">S.P.A.R.K.</div>
-      <div class="boot-text" id="boot-text">Initializing chat workspace...</div>
-      <div class="boot-progress"><span id="boot-progress"></span></div>
-      <div class="boot-foot">
-        <span>Systems Check</span>
-        <span id="boot-stage">Stage 01</span>
-      </div>
-    </div>
-  </div>
-
-  <div class="app">
-    <header class="top-bar hud-panel">
-      <div class="brand">
-        <div class="brand-mark"></div>
-        <div>
-          <div class="brand-title">S.P.A.R.K<span>.</span></div>
-          <div class="brand-subtitle">Chat interface for text, mic, and system status</div>
-        </div>
-      </div>
-      <div class="status-strip">
-        <div class="status-chip" id="engine-chip" data-state="thinking"><span class="status-dot"></span><span id="engine-state">BOOTING</span></div>
-        <div class="status-chip" id="voice-chip" data-state="online"><span class="status-dot"></span><span id="voice-state">VOICE READY</span></div>
-        <div class="status-chip" id="net-chip" data-state="online"><span class="status-dot"></span><span id="net-state">LINK STABLE</span></div>
-      </div>
-      <div class="clock" id="clock">--:--:--</div>
-    </header>
-
-    <section class="workspace">
-      <aside class="sidebar hud-panel">
-        <div class="sidebar-section">
-          <div class="section-label"><strong>System Status</strong><span id="sys-status-label">LIVE</span></div>
-          <div class="meter">
-            <div class="meter-row"><span>CPU</span><span id="cpu-text">--%</span></div>
-            <div class="meter-track"><div class="meter-fill" id="cpu-bar"></div></div>
-          </div>
-          <div class="meter">
-            <div class="meter-row"><span>RAM</span><span id="ram-text">--%</span></div>
-            <div class="meter-track"><div class="meter-fill orange" id="ram-bar"></div></div>
-          </div>
-          <div class="meter">
-            <div class="meter-row"><span>NET</span><span id="net-text">Active</span></div>
-            <div class="meter-track"><div class="meter-fill" id="net-bar" style="width:100%"></div></div>
-          </div>
-          <div class="stat-grid">
-            <div class="stat-card"><div class="k">Uptime</div><div class="v" id="uptime-text">--</div></div>
-            <div class="stat-card"><div class="k">Memory</div><div class="v" id="memory-text">--</div></div>
-          </div>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="section-label"><strong>Mic Modes</strong><span id="voice-status-text">READY</span></div>
-          <div class="prompt-row">
-            <span class="prompt-chip">Push to talk</span>
-            <span class="prompt-chip">Hands-free</span>
-            <span class="prompt-chip">Mute audio</span>
-          </div>
-          <div class="command-help" style="margin-top: 10px;">
-            <span id="voice-hint">Press the mic or hit Enter to transmit</span>
-            <span id="audio-state">LISTENERS STANDBY</span>
-          </div>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="section-label"><strong>Active Tools</strong><span id="tool-count">0</span></div>
-          <div class="tool-list" id="tool-list"></div>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="section-label"><strong>Connection</strong><span id="ai-link-label">WAITING</span></div>
-          <div class="meter-row" style="margin-bottom: 8px;"><span>AI WebSocket</span><span id="ai-link-state">CONNECTING</span></div>
-          <div class="meter-row"><span>System WebSocket</span><span id="sys-link-state">CONNECTING</span></div>
-        </div>
-
-        <div class="sidebar-section">
-          <div class="section-label"><strong>System Context</strong><span id="widget-state">EMPTY</span></div>
-          <div class="widget-grid" id="widget-zone"></div>
-        </div>
-      </aside>
-
-      <main class="core">
-        <section class="chat-shell hud-panel">
-          <div class="chat-hero">
-            <div class="eyebrow">S.P.A.R.K Assistant</div>
-            <h1>Ask SPARK anything.</h1>
-            <p>Message, voice, and system status live in one place.</p>
-          </div>
-
-          <div class="transcript-box">
-            <div class="prompt-label">Live response</div>
-            <div class="transcript-text glow-text" id="transcript-text">Boot complete. Ask SPARK a question or send a command.</div>
-            <div class="transcript-meta">
-              <span class="pill"><span class="dot"></span><span id="last-action">SYSTEM READY</span></span>
-              <span class="pill"><span class="dot"></span><span id="last-tool">NO ACTIVE TOOL</span></span>
-              <span class="pill"><span class="dot"></span><span id="memory-pill">0 MEMORY ITEMS</span></span>
-              <span class="pill"><span class="dot"></span><span id="orb-caption-state">ONLINE</span></span>
-            </div>
-          </div>
-        </section>
-
-        <section class="message-surface hud-panel">
-          <div class="message-surface-head">
-            <span>Conversation</span>
-            <span class="mode" id="mode-label">AWAITING INPUT</span>
-            <span class="state" id="feed-state">IDLE</span>
-          </div>
-          <div class="feed-list" id="feed-list"></div>
-        </section>
-
-        <section class="voice-panel hud-panel" id="voice-panel">
-          <div class="composer-top">
-            <div class="section-label"><strong>Composer</strong><span id="voice-status-text">READY</span></div>
-            <div class="command-help"><span id="voice-hint">Press the mic or hit Enter to transmit</span><span id="audio-state">LISTENERS STANDBY</span></div>
-          </div>
-          <div class="composer-presets" aria-hidden="true">
-            <span class="composer-pill">Ask anything</span>
-            <span class="composer-pill">Voice mode</span>
-            <span class="composer-pill">System status</span>
-          </div>
-          <div class="composer-row">
-            <textarea id="chat-input" class="command-input" rows="1" placeholder="Message SPARK..." autocomplete="off"></textarea>
-            <button id="send-btn" class="send-button" type="button" aria-label="Send message" title="Send message">➤</button>
-            <button id="listen-btn" class="listen-button" type="button" aria-label="Speak to SPARK" title="Speak to SPARK">🎙</button>
-          </div>
-        </section>
-      </main>
-    </section>
-
-    <footer class="bottom-bar hud-panel">
-      <div>Memory: <strong id="footer-memory">0 items</strong></div>
-      <div>Uptime: <strong id="footer-uptime">--</strong></div>
-      <div>Build: <strong>v2.0 CHAT</strong></div>
-    </footer>
-  </div>
-
+  <div id="root"></div>
   <script>
-    const el = {
-      bootOverlay: document.getElementById('boot-overlay'), bootText: document.getElementById('boot-text'), bootProgress: document.getElementById('boot-progress'), bootStage: document.getElementById('boot-stage'),
-      clock: document.getElementById('clock'), engineChip: document.getElementById('engine-chip'), engineState: document.getElementById('engine-state'),
-      voiceChip: document.getElementById('voice-chip'), voiceState: document.getElementById('voice-state'), netChip: document.getElementById('net-chip'), netState: document.getElementById('net-state'),
-      aiLinkState: document.getElementById('ai-link-state'), sysLinkState: document.getElementById('sys-link-state'), aiLinkLabel: document.getElementById('ai-link-label'), sysStatusLabel: document.getElementById('sys-status-label'),
-      cpuBar: document.getElementById('cpu-bar'), ramBar: document.getElementById('ram-bar'), netBar: document.getElementById('net-bar'), cpuText: document.getElementById('cpu-text'), ramText: document.getElementById('ram-text'), netText: document.getElementById('net-text'),
-      uptimeText: document.getElementById('uptime-text'), memoryText: document.getElementById('memory-text'), memoryPill: document.getElementById('memory-pill'), footerMemory: document.getElementById('footer-memory'), footerUptime: document.getElementById('footer-uptime'),
-      toolList: document.getElementById('tool-list'), toolCount: document.getElementById('tool-count'), transcriptText: document.getElementById('transcript-text'), lastAction: document.getElementById('last-action'), lastTool: document.getElementById('last-tool'),
-      modeLabel: document.getElementById('mode-label'), feedState: document.getElementById('feed-state'), feedList: document.getElementById('feed-list'), widgetZone: document.getElementById('widget-zone'), widgetState: document.getElementById('widget-state'),
-      voicePanel: document.getElementById('voice-panel'), voiceStatusText: document.getElementById('voice-status-text'), audioState: document.getElementById('audio-state'), voiceHint: document.getElementById('voice-hint'), listenBtn: document.getElementById('listen-btn'), sendBtn: document.getElementById('send-btn'), chatInput: document.getElementById('chat-input'), orbCaptionState: document.getElementById('orb-caption-state'),
-    };
+    const h = React.createElement;
+    const { useEffect, useMemo, useRef, useState } = React;
 
-    const state = { aiWs: null, sysWs: null, listening: false, thinking: false, toolMap: new Map(), memoryCount: 0, feedLimit: 10 };
     const BOOT_STEPS = [
-      { stage: 'Stage 01', text: 'Initializing SPARK chat core...', progress: 12 },
-      { stage: 'Stage 02', text: 'Calibrating chat panels and system lanes...', progress: 28 },
-      { stage: 'Stage 03', text: 'Syncing memory, chat history, and live insights...', progress: 52 },
-      { stage: 'Stage 04', text: 'Charging mic controls and system monitors...', progress: 76 },
-      { stage: 'Stage 05', text: 'Chat interface online.', progress: 100 },
+      { stage: 'Stage 01', text: 'Initializing S.P.A.R.K. HUD core...', progress: 12 },
+      { stage: 'Stage 02', text: 'Locking spatial telemetry grid...', progress: 34 },
+      { stage: 'Stage 03', text: 'Syncing websockets and memory lane...', progress: 58 },
+      { stage: 'Stage 04', text: 'Charging plasma core and command bar...', progress: 82 },
+      { stage: 'Stage 05', text: 'Layer 4 HUD online.', progress: 100 },
     ];
+
+    const TIER_ROWS = [
+      ['Tier 0', 'Groq cloud gateway'],
+      ['Tier 1', 'Ollama gemma3:4b'],
+      ['Tier 2', 'Ollama gemma4'],
+      ['Tier 3', 'Ollama qwen2.5:1.5b'],
+    ];
+
+    const TIER_PROMPTS = [
+      'Cognitive gateway / cloud synthesis',
+      'Local edge reasoning / safe routing',
+      'Structural parsing / fallback logic',
+      'Emergency mini / safe-mode output',
+    ];
+
     const TOOL_LABELS = {
-      web_search: '🔍 Searching the web...', get_news: '🗞️ Fetching live news...', get_weather: '🌦️ Pulling weather data...', execute_python: '⚡ Running code...',
-      open_url: '🌐 Opening target...', open_app: '🚀 Launching app...', get_system_stats: '🛰️ Reading system state...', get_clipboard: '📋 Reading clipboard...', get_network_connections: '🛡️ Scanning network...',
-      read_screen: '👁️ Reading screen...', read_region: '🔎 Inspecting region...', control_device: '🏠 Sending device command...', scene_leaving: '🏠 Running scene: leaving...', scene_arriving: '🏠 Running scene: arriving...', scene_good_night: '🌙 Running scene: good night...', spark_plan_and_execute: '🧠 Planning multi-step action...',
+      web_search: 'Searching the web', get_news: 'Fetching live news', get_weather: 'Pulling weather data', execute_python: 'Running code',
+      open_url: 'Opening target', open_app: 'Launching app', get_system_stats: 'Reading system state', get_clipboard: 'Reading clipboard', get_network_connections: 'Scanning network',
+      read_screen: 'Reading screen', read_region: 'Inspecting region', control_device: 'Sending device command', spark_plan_and_execute: 'Planning multi-step action',
     };
 
-    const nowClock = () => new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
-    const clamp = (n, min, max) => Math.max(min, Math.min(max, n));
     const wsUrl = (path) => `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}${path}`;
-
-    function formatUptime(value) {
+    const clamp = (value, min, max) => Math.max(min, Math.min(max, value));
+    const nowClock = () => new Intl.DateTimeFormat([], { hour: '2-digit', minute: '2-digit', second: '2-digit' }).format(new Date());
+    const formatUptime = (value) => {
       if (value == null || value === '') return '--';
       if (typeof value === 'string') return value;
       const total = Number(value);
       if (!Number.isFinite(total)) return String(value);
       const seconds = Math.max(0, Math.floor(total));
-      const days = Math.floor(seconds / 86400); const hours = Math.floor((seconds % 86400) / 3600); const mins = Math.floor((seconds % 3600) / 60);
-      if (days > 0) return `${days}d ${hours}h ${mins}m`;
-      if (hours > 0) return `${hours}h ${mins}m`;
-      return `${mins}m`;
-    }
-
-    function setClock() { el.clock.textContent = nowClock(); }
-    function setStatus(text, stateName = 'online') { el.engineState.textContent = text; el.engineChip.dataset.state = stateName; el.orbCaptionState.textContent = stateName === 'thinking' ? 'PROCESSING' : stateName === 'error' ? 'ATTENTION' : 'ONLINE'; }
-    function setVoiceState(text, active) { el.voiceState.textContent = text; el.voiceChip.dataset.state = active ? 'thinking' : 'online'; el.voicePanel.classList.toggle('listening', active); el.audioState.textContent = active ? 'RECORDING' : 'LISTENERS STANDBY'; el.voiceStatusText.textContent = active ? 'LISTENING' : 'READY'; el.voiceHint.textContent = active ? 'Speak now, live capture enabled' : 'Press the mic or hit Enter to transmit'; el.listenBtn.classList.toggle('active', active); }
-    function setNetworkState(text, stateName = 'online') { el.netState.textContent = text; el.netChip.dataset.state = stateName; el.aiLinkLabel.textContent = text; }
-
-    function createFeedItem(title, body, meta, type = 'pending') {
-      const item = document.createElement('article');
-      item.className = `feed-item ${type}`;
-      const sender = String(title || '').toLowerCase();
-      if (sender.includes('you') || sender.includes('voice')) item.classList.add('sender-you');
-      else if (sender.includes('spark') || sender.includes('assistant')) item.classList.add('sender-spark');
-      else item.classList.add('sender-system');
-
-      const bubble = document.createElement('div');
-      bubble.className = 'bubble';
-      const top = document.createElement('div'); top.className = 'top';
-      const titleNode = document.createElement('span'); titleNode.className = 'badge'; titleNode.textContent = title;
-      const metaNode = document.createElement('span'); metaNode.textContent = meta || nowClock(); top.append(titleNode, metaNode);
-      const bodyNode = document.createElement('div'); bodyNode.className = 'body'; bodyNode.textContent = body;
-      bubble.append(top, bodyNode);
-      item.append(bubble);
-
-      el.feedList.append(item);
-      while (el.feedList.children.length > state.feedLimit) el.feedList.removeChild(el.feedList.firstElementChild);
-      el.feedList.scrollTop = el.feedList.scrollHeight;
-      return item;
-    }
-
-    function updateFeedState(text) { if (el.feedState) el.feedState.textContent = text; }
-    function toolLabel(toolName) { return TOOL_LABELS[toolName] || `⚙️ ${toolName.replaceAll('_', ' ')}`; }
-
-    function addTool(toolName, status = 'pending', details = '') {
-      const key = `${toolName}:${details || 'default'}`; const existing = state.toolMap.get(key);
-      if (existing) { existing.querySelector('.tool-meta').textContent = status.toUpperCase(); existing.className = `tool-item ${status}`; existing.querySelector('.tool-name').textContent = details || toolLabel(toolName); return existing; }
-      const item = document.createElement('div'); item.className = `tool-item ${status}`;
-      const nameNode = document.createElement('div'); nameNode.className = 'tool-name'; nameNode.textContent = details || toolLabel(toolName);
-      const metaNode = document.createElement('div'); metaNode.className = 'tool-meta'; metaNode.textContent = status.toUpperCase(); item.append(nameNode, metaNode);
-      el.toolList.prepend(item); while (el.toolList.children.length > 7) el.toolList.removeChild(el.toolList.lastElementChild); state.toolMap.set(key, item); el.toolCount.textContent = String(el.toolList.children.length); return item;
-    }
-
-    function updateTool(toolName, status, details) { const key = `${toolName}:${details || 'default'}`; const item = state.toolMap.get(key) || addTool(toolName, status, details); item.className = `tool-item ${status}`; item.querySelector('.tool-meta').textContent = status.toUpperCase(); item.querySelector('.tool-name').textContent = details || toolLabel(toolName); return item; }
-    function setTranscript(text, typing = false) { el.transcriptText.classList.toggle('typing', Boolean(typing)); el.transcriptText.innerHTML = ''; const span = document.createElement('span'); span.textContent = text; el.transcriptText.appendChild(span); if (typing) { const cursor = document.createElement('span'); cursor.className = 'cursor'; cursor.textContent = '▋'; el.transcriptText.appendChild(cursor); } }
-    function setTranscriptTyping(text) { setTranscript(text, true); }
-
-    function addWidgetCard(title, body, meta) { const card = document.createElement('article'); card.className = 'widget-card'; const titleNode = document.createElement('div'); titleNode.className = 'title'; titleNode.textContent = title; const bodyNode = document.createElement('div'); bodyNode.className = 'body'; bodyNode.textContent = body; const metaNode = document.createElement('div'); metaNode.className = 'meta'; metaNode.textContent = meta || ''; card.append(titleNode, bodyNode, metaNode); return card; }
-
-    function renderWidget(type, data) {
-      el.widgetZone.replaceChildren(); el.widgetState.textContent = 'LIVE';
-      if (type === 'news' && Array.isArray(data)) {
-        data.slice(0, 6).forEach((item) => {
-          const card = addWidgetCard(item?.title || 'News', item?.body || item?.description || 'No summary provided.', item?.url ? 'open source link' : 'news item');
-          if (item?.url) { const link = document.createElement('a'); link.href = item.url; link.target = '_blank'; link.rel = 'noreferrer noopener'; link.textContent = 'Open source'; link.style.color = 'var(--accent-warm)'; link.style.textDecoration = 'none'; card.appendChild(link); }
-          el.widgetZone.appendChild(card);
-        }); return;
-      }
-      if (type === 'weather' && data && typeof data === 'object') {
-        const temperature = Number(data.temperature_c ?? data.temperature ?? data.temp ?? NaN); const summary = [Number.isFinite(temperature) ? `${Math.round(temperature)}°C` : '--', data.location || 'Unknown location', `Humidity ${data['humidity_%'] ?? data.humidity ?? '--'}%`, `Wind ${data.wind_kmh ?? data.wind ?? '--'} km/h`].join(' • ');
-        el.widgetZone.appendChild(addWidgetCard('Weather', summary, `Code ${data.weather_code ?? '--'}`)); return;
-      }
-      if (type === 'system' && data && typeof data === 'object') { el.widgetZone.appendChild(addWidgetCard('System Telemetry', `CPU ${data.cpu ?? data.cpu_percent ?? '--'}% • RAM ${data.ram ?? data.ram_percent ?? '--'}% • Uptime ${formatUptime(data.uptime)}`, 'Live telemetry lane')); return; }
-      if (type) el.widgetZone.appendChild(addWidgetCard(type, typeof data === 'string' ? data : JSON.stringify(data, null, 2), 'raw payload'));
-    }
-
-    function updateMemory(memoryData) {
-      const total = Number(memoryData?.total ?? 0);
-      state.memoryCount = Number.isFinite(total) ? total : 0;
-      if (el.memoryText) el.memoryText.textContent = `${state.memoryCount}`;
-      if (el.memoryPill) el.memoryPill.textContent = `${state.memoryCount} MEMORY ITEMS`;
-      if (el.footerMemory) el.footerMemory.textContent = `${state.memoryCount} items`;
-    }
-    function updateMetrics(data = {}) {
-      const cpu = Number(data.cpu ?? data.cpu_percent ?? data.cpuUsage ?? 0);
-      const ram = Number(data.ram ?? data.ram_percent ?? data.ramUsage ?? 0);
-      const cpuValue = clamp(Number.isFinite(cpu) ? cpu : 0, 0, 100);
-      const ramValue = clamp(Number.isFinite(ram) ? ram : 0, 0, 100);
-      if (el.cpuBar) el.cpuBar.style.width = `${cpuValue}%`;
-      if (el.ramBar) el.ramBar.style.width = `${ramValue}%`;
-      if (el.cpuText) el.cpuText.textContent = `${cpuValue.toFixed(1)}%`;
-      if (el.ramText) el.ramText.textContent = `${ramValue.toFixed(1)}%`;
-      const uptime = formatUptime(data.uptime ?? data.uptime_seconds ?? data.upTime ?? '--');
-      if (el.uptimeText) el.uptimeText.textContent = uptime;
-      if (el.footerUptime) el.footerUptime.textContent = uptime;
-      if (el.netText) el.netText.textContent = typeof data.network === 'string' ? data.network : 'Active';
-      if (data.memory_total != null) updateMemory({ total: data.memory_total });
-      if (el.sysStatusLabel) el.sysStatusLabel.textContent = 'LIVE';
-    }
-
-    function setBootProgress(progress, stage, text) { el.bootProgress.style.width = `${progress}%`; el.bootStage.textContent = stage; el.bootText.textContent = text; }
-    function runBootSequence() { let index = 0; const timer = window.setInterval(() => { const step = BOOT_STEPS[index] || BOOT_STEPS[BOOT_STEPS.length - 1]; setBootProgress(step.progress, step.stage, step.text); index += 1; if (index >= BOOT_STEPS.length) { window.clearInterval(timer); window.setTimeout(() => el.bootOverlay.classList.add('hidden'), 520); } }, 420); setBootProgress(BOOT_STEPS[0].progress, BOOT_STEPS[0].stage, BOOT_STEPS[0].text); }
-    function setThinking(active) { state.thinking = active; setStatus(active ? 'THINKING' : 'ONLINE', active ? 'thinking' : 'online'); updateFeedState(active ? 'BUSY' : 'IDLE'); if (active) setTranscriptTyping('Analyzing command stream'); }
-    function addSystemMessage(message, type = 'info') { return createFeedItem(type === 'error' ? 'SYSTEM ERROR' : type === 'warn' ? 'WARNING' : 'SYSTEM', message, nowClock(), type === 'error' ? 'error' : 'done'); }
-    function setLinkState(target, status) { if (target === 'ai') { el.aiLinkState.textContent = status; el.aiLinkLabel.textContent = status; } if (target === 'sys') el.sysLinkState.textContent = status; }
-    async function fetchMemoryCount() { try { const res = await fetch('/memory'); if (!res.ok) throw new Error('memory fetch failed'); updateMemory(await res.json()); } catch { el.memoryText.textContent = '--'; el.memoryPill.textContent = '-- MEMORY ITEMS'; el.footerMemory.textContent = '--'; } }
-
-    async function sendTextMessage(message) {
-      const text = String(message || '').trim(); if (!text) return;
-      createFeedItem('YOU', text, nowClock(), 'done'); setThinking(true);
-      try {
-        if (state.aiWs && state.aiWs.readyState === WebSocket.OPEN) { state.aiWs.send(JSON.stringify({ message: text })); return; }
-        const response = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) });
-        const payload = await response.json(); const reply = payload.response || payload.reply || payload.content || 'No response.';
-        setTranscript(reply, false); createFeedItem('SPARK', reply, nowClock(), 'done'); setThinking(false); await fetchMemoryCount();
-      } catch (err) { console.error(err); setTranscript('Neural core error. Check backend logs or LLM configuration.', false); createFeedItem('SPARK', 'Neural core error. Check backend logs or LLM configuration.', nowClock(), 'error'); setThinking(false); }
-    }
-
-    async function listenForSpeech() {
-      if (state.listening) return; state.listening = true; setVoiceState('LISTENING', true); setTranscriptTyping('Listening for speech input');
-      try {
-        const response = await fetch('/listen', { method: 'POST' }); const payload = await response.json();
-        if (payload.error) { addSystemMessage(payload.error, 'warn'); setTranscript(payload.error, false); return; }
-        if (payload.transcript) { createFeedItem('VOICE', `Transcribed: ${payload.transcript}`, nowClock(), 'done'); setTranscript(payload.transcript, false); }
-        if (payload.reply) { createFeedItem('SPARK', payload.reply, nowClock(), 'done'); setTranscript(payload.reply, false); }
-        if (payload.tool_used) { updateTool(payload.tool_used, 'done', toolLabel(payload.tool_used)); el.lastTool.textContent = payload.tool_used.toUpperCase(); }
-        await fetchMemoryCount();
-      } catch (err) { console.error(err); addSystemMessage('Voice pipeline error.', 'error'); setTranscript('Voice pipeline error.', false); }
-      finally { state.listening = false; setVoiceState('VOICE READY', false); }
-    }
-
-    function handleAIEvent(raw) {
-      const type = String(raw?.type || '').toLowerCase();
-      if (type === 'status') { const step = String(raw.state || raw.status || '').toLowerCase(); if (step === 'thinking') setThinking(true); else if (step === 'idle' || step === 'done' || step === 'ready') setThinking(false); return; }
-      if (type === 'tool_execute' || type === 'tool_result') {
-        const toolName = String(raw.tool || raw.name || '').trim() || 'tool'; const details = toolLabel(toolName);
-        const status = type === 'tool_result' ? (String(raw.output || '').toLowerCase().includes('failed') ? 'error' : 'done') : 'pending';
-        const item = updateTool(toolName, status, details);
-        if (type === 'tool_execute') { el.lastTool.textContent = toolName.toUpperCase(); el.lastAction.textContent = details; addSystemMessage(details, 'info'); }
-        else { const output = raw.output || raw.result || raw.content || 'Completed.'; createFeedItem(toolName.toUpperCase(), `${details}\n${output}`, nowClock(), status); item.querySelector('.tool-meta').textContent = status.toUpperCase(); if (toolName === 'memory_store' || toolName === 'store_memory') fetchMemoryCount(); }
-        return;
-      }
-      if (type === 'widget') { renderWidget(raw.widget, raw.data); return; }
-      if (type === 'response_token') { setTranscript((el.transcriptText.textContent || '').replace('▋', '') + (raw.content || raw.token || ''), true); return; }
-      if (type === 'response_done') { const reply = raw.content || raw.response || raw.text || ''; setTranscript(reply || 'Ready.', false); createFeedItem('SPARK', reply || 'Ready.', nowClock(), 'done'); setThinking(false); fetchMemoryCount(); return; }
-      if (type === 'error') { const message = raw.message || 'Neural core error.'; setTranscript(message, false); createFeedItem('SPARK', message, nowClock(), 'error'); setThinking(false); return; }
-      if (type === 'done') { const message = raw.content || 'Ready.'; setTranscript(message, false); createFeedItem('SPARK', message, nowClock(), 'done'); setThinking(false); }
-    }
-
-    function connectSystemSocket() {
-      setLinkState('sys', 'CONNECTING'); const socket = new WebSocket(wsUrl('/ws')); state.sysWs = socket;
-      socket.onopen = () => { setLinkState('sys', 'ONLINE'); };
-      socket.onmessage = (event) => { try { const payload = JSON.parse(event.data); if (payload.type === 'sys_metrics' || payload.cpu !== undefined || payload.ram !== undefined) { updateMetrics(payload.payload || payload); setLinkState('sys', 'ONLINE'); } } catch (err) { console.error('system ws parse error', err); } };
-      socket.onclose = () => { setLinkState('sys', 'RECONNECTING'); window.setTimeout(connectSystemSocket, 1800); };
-      socket.onerror = () => { setLinkState('sys', 'ERROR'); };
-    }
-
-    function connectAISocket() {
-      setLinkState('ai', 'CONNECTING'); const socket = new WebSocket(wsUrl('/ws/ai')); state.aiWs = socket;
-      socket.onopen = () => { setLinkState('ai', 'ONLINE'); setStatus('ONLINE', 'online'); el.modeLabel.textContent = 'AWAITING INPUT'; };
-      socket.onmessage = (event) => { try { handleAIEvent(JSON.parse(event.data)); } catch (err) { console.error('ai ws parse error', err); } };
-      socket.onclose = () => { setLinkState('ai', 'RECONNECTING'); window.setTimeout(connectAISocket, 1800); };
-      socket.onerror = () => { setLinkState('ai', 'ERROR'); };
-    }
-
-    function startClock() { setClock(); window.setInterval(setClock, 1000); }
-    function startTypingBanner() { const phrases = ['Ask SPARK anything.', 'Try a voice command.', 'System status is live.', 'Message in plain language.']; let index = 0; window.setInterval(() => { if (state.thinking || state.listening) return; setTranscript(phrases[index % phrases.length], true); index += 1; }, 16000); }
-    function bindUI() {
-      const resizeComposer = () => {
-        if (!el.chatInput) return;
-        el.chatInput.style.height = 'auto';
-        el.chatInput.style.height = `${Math.min(el.chatInput.scrollHeight, 160)}px`;
-      };
-      const submitComposer = () => {
-        sendTextMessage(el.chatInput.value);
-        el.chatInput.value = '';
-        resizeComposer();
-      };
-
-      el.chatInput.addEventListener('input', resizeComposer);
-      el.chatInput.addEventListener('keydown', (event) => {
-        if (event.key === 'Enter' && !event.shiftKey) {
-          event.preventDefault();
-          submitComposer();
-        }
-      });
-      el.listenBtn.addEventListener('click', () => listenForSpeech());
-      if (el.sendBtn) el.sendBtn.addEventListener('click', submitComposer);
-      resizeComposer();
-    }
-    function seedInitialState() { updateFeedState('BOOTING'); setVoiceState('VOICE READY', false); setNetworkState('CONNECTING', 'thinking'); setStatus('BOOTING', 'thinking'); setTranscript('Booting SPARK chat interface...', true); addTool('system', 'done', 'Boot sequence'); addSystemMessage('SPARK chat interface online.', 'info'); }
-
-    async function init() {
-      seedInitialState(); startClock(); bindUI(); runBootSequence(); connectSystemSocket(); connectAISocket(); await fetchMemoryCount(); window.setTimeout(() => { setTranscript('Boot complete. Ask SPARK a question or send a command.', false); addSystemMessage('S.P.A.R.K chat interface online.', 'info'); }, 2200); startTypingBanner();
-    }
-
-    // Signal Override Terminal Handler
-    function handleSignalOverride(payload) {
-      const terminal = document.getElementById('signal-override-terminal');
-      if (!terminal) return;
-      
-      // Fetch active TCP connections
-      fetch('/api/runtime/orchestrator')
-        .then(r => r.json())
-        .then(data => {
-          const connections = data.active_connections || [];
-          const connHtml = connections.map(c => 
-            `<div class="conn-row">TCP | ${(c.target || 'local').substring(0, 50)} | ${c.type || 'UNKNOWN'} | ESTABLISHED</div>`
-          ).join('');
-          
-          terminal.innerHTML = `
-            <div class="override-header">SIGNAL OVERRIDE TERMINAL</div>
-            <div class="override-content">
-              <div class="override-section">
-                <div class="override-title">COMMANDEERING SYSTEM</div>
-                <div class="override-subtitle">Active Connections: ${connections.length}</div>
-              </div>
-              <div class="connections-list">
-                ${connHtml || '<div class="conn-row">No connections</div>'}
-              </div>
-              <div class="override-footer">
-                <span>Signal strength: 100%</span>
-                <span>Latency: ${Math.random() * 10 | 0}ms</span>
-              </div>
-            </div>
-          `;
-          
-          // Auto-hide after 8 seconds
-          window.setTimeout(() => {
-            document.getElementById('signal-override-overlay')?.remove();
-          }, 8000);
-        });
-      
-      // Show the terminal
-      terminal.style.display = 'block';
-    }
-
-    // Modify connectSystemSocket to handle signal_override
-    const originalConnectSystemSocket = connectSystemSocket;
-    connectSystemSocket = function() {
-      setLinkState('sys', 'CONNECTING'); 
-      const socket = new WebSocket(wsUrl('/ws')); 
-      state.sysWs = socket;
-      socket.onopen = () => { setLinkState('sys', 'ONLINE'); };
-      socket.onmessage = (event) => { 
-        try { 
-          const payload = JSON.parse(event.data); 
-          if (payload.type === 'signal_override') {
-            // Show Signal Override Terminal
-            if (!document.getElementById('signal-override-overlay')) {
-              const overlay = document.createElement('div');
-              overlay.id = 'signal-override-overlay';
-              overlay.className = 'signal-override-overlay';
-              overlay.innerHTML = `<div id="signal-override-terminal" class="signal-override-terminal"></div>`;
-              document.body.appendChild(overlay);
-            }
-            handleSignalOverride(payload);
-          } else if (payload.type === 'sys_metrics' || payload.cpu !== undefined || payload.ram !== undefined) { 
-            updateMetrics(payload.payload || payload); 
-            setLinkState('sys', 'ONLINE'); 
-          } 
-        } catch (err) { 
-          console.error('system ws parse error', err); 
-        } 
-      };
-      socket.onclose = () => { setLinkState('sys', 'RECONNECTING'); window.setTimeout(connectSystemSocket, 1800); };
-      socket.onerror = () => { setLinkState('sys', 'ERROR'); };
+      const days = Math.floor(seconds / 86400);
+      const hours = Math.floor((seconds % 86400) / 3600);
+      const minutes = Math.floor((seconds % 3600) / 60);
+      if (days > 0) return `${days}d ${hours}h ${minutes}m`;
+      if (hours > 0) return `${hours}h ${minutes}m`;
+      return `${minutes}m`;
     };
 
-    init();
+    function useInterval(callback, delay) {
+      const saved = useRef(callback);
+      useEffect(() => { saved.current = callback; }, [callback]);
+      useEffect(() => {
+        if (delay == null) return;
+        const timer = window.setInterval(() => saved.current(), delay);
+        return () => window.clearInterval(timer);
+      }, [delay]);
+    }
+
+    function App() {
+      const [clock, setClock] = useState(nowClock());
+      const [bootStep, setBootStep] = useState(BOOT_STEPS[0]);
+      const [bootHidden, setBootHidden] = useState(false);
+      const [engine, setEngine] = useState({ label: 'BOOTING', state: 'thinking' });
+      const [voice, setVoice] = useState({ label: 'VOICE READY', listening: false });
+      const [links, setLinks] = useState({ ai: 'CONNECTING', sys: 'CONNECTING' });
+      const [metrics, setMetrics] = useState({ cpu: 0, ram: 0, uptime: '--' });
+      const [memoryCount, setMemoryCount] = useState(0);
+      const [status, setStatus] = useState('AWAITING INPUT');
+      const [feedState, setFeedState] = useState('IDLE');
+      const [transcript, setTranscript] = useState('Booting S.P.A.R.K. HUD...');
+      const [typing, setTyping] = useState(true);
+      const [input, setInput] = useState('');
+      const [messages, setMessages] = useState([
+        { id: 'seed', sender: 'SYSTEM', body: 'SPARK HUD online. Connect to /ws/ai and /ws/system.', meta: nowClock(), kind: 'system' },
+      ]);
+      const [tools, setTools] = useState([{ name: 'System bootstrap', meta: 'DONE', kind: 'done' }]);
+      const [widget, setWidget] = useState({ title: 'System Context', body: 'No payload yet.', meta: 'idle' });
+      const [overridePayload, setOverridePayload] = useState(null);
+      const [showBoot, setShowBoot] = useState(true);
+      const aiSocketRef = useRef(null);
+      const sysSocketRef = useRef(null);
+      const feedRef = useRef(null);
+      const listeningRef = useRef(false);
+
+      const addMessage = (sender, body, kind = 'done') => {
+        setMessages((current) => [...current.slice(-11), { id: `${Date.now()}-${Math.random()}`, sender, body, meta: nowClock(), kind }]);
+      };
+
+      const toolLabel = (name) => TOOL_LABELS[name] || name.replaceAll('_', ' ');
+
+      const pushTool = (name, meta, kind = 'pending') => {
+        const label = toolLabel(name);
+        setTools((current) => {
+          const next = current.filter((item) => item.name !== label).slice(-6);
+          next.unshift({ name: label, meta, kind });
+          return next;
+        });
+      };
+
+      const setOrbState = (label, state) => setEngine({ label, state });
+
+      const updateMetrics = (data = {}) => {
+        const cpu = Number(data.cpu ?? data.cpu_percent ?? data.cpuUsage ?? 0);
+        const ram = Number(data.ram ?? data.ram_percent ?? data.ramUsage ?? 0);
+        setMetrics({
+          cpu: clamp(Number.isFinite(cpu) ? cpu : 0, 0, 100),
+          ram: clamp(Number.isFinite(ram) ? ram : 0, 0, 100),
+          uptime: formatUptime(data.uptime ?? data.uptime_seconds ?? data.upTime ?? '--'),
+        });
+      };
+
+      const fetchMemory = async () => {
+        try {
+          const response = await fetch('/memory');
+          if (!response.ok) return;
+          const payload = await response.json();
+          const total = Number(payload.total ?? 0);
+          setMemoryCount(Number.isFinite(total) ? total : 0);
+        } catch (error) {
+          console.warn('memory fetch failed', error);
+        }
+      };
+
+      const connectSystemSocket = () => {
+        const socket = new WebSocket(wsUrl('/ws/system'));
+        sysSocketRef.current = socket;
+        setLinks((current) => ({ ...current, sys: 'CONNECTING' }));
+        socket.onopen = () => setLinks((current) => ({ ...current, sys: 'ONLINE' }));
+        socket.onmessage = (event) => {
+          try {
+            const payload = JSON.parse(event.data);
+            if (payload.type === 'signal_override') {
+              setOverridePayload(payload);
+              return;
+            }
+            if (payload.type === 'sys_metrics' || payload.cpu !== undefined || payload.ram !== undefined) {
+              updateMetrics(payload.payload || payload);
+            }
+          } catch (error) {
+            console.warn('system websocket parse failed', error);
+          }
+        };
+        socket.onerror = () => setLinks((current) => ({ ...current, sys: 'ERROR' }));
+        socket.onclose = () => {
+          setLinks((current) => ({ ...current, sys: 'RECONNECTING' }));
+          window.setTimeout(connectSystemSocket, 1800);
+        };
+      };
+
+      const handleAIEvent = (raw) => {
+        const type = String(raw?.type || '').toLowerCase();
+        if (type === 'status') {
+          const step = String(raw.state || raw.status || '').toLowerCase();
+          if (step === 'thinking') { setOrbState('THINKING', 'thinking'); setFeedState('BUSY'); }
+          if (step === 'idle' || step === 'done' || step === 'ready') { setOrbState('ONLINE', 'idle'); setFeedState('IDLE'); }
+          return;
+        }
+        if (type === 'tool_execute' || type === 'tool_result') {
+          const toolName = String(raw.tool || raw.name || '').trim() || 'tool';
+          pushTool(toolName, type === 'tool_execute' ? 'PENDING' : 'DONE', type === 'tool_execute' ? 'pending' : 'done');
+          if (type === 'tool_execute') {
+            addMessage('SYSTEM', `${toolLabel(toolName)}...`, 'system');
+          } else {
+            const output = raw.output || raw.result || raw.content || 'Completed.';
+            addMessage(toolName.toUpperCase(), `${toolLabel(toolName)}\n${output}`, 'done');
+            if (toolName === 'memory_store' || toolName === 'store_memory') fetchMemory();
+          }
+          return;
+        }
+        if (type === 'widget') {
+          setWidget({
+            title: String(raw.widget || 'Widget'),
+            body: typeof raw.data === 'string' ? raw.data : JSON.stringify(raw.data, null, 2),
+            meta: 'live',
+          });
+          return;
+        }
+        if (type === 'response_token') {
+          setTranscript((current) => `${String(current || '').replace('▋', '')}${raw.content || raw.token || ''}`);
+          setTyping(true);
+          return;
+        }
+        if (type === 'response_done') {
+          const reply = raw.content || raw.response || raw.text || '';
+          setTranscript(reply || 'Ready.');
+          setTyping(false);
+          addMessage('SPARK', reply || 'Ready.', 'done');
+          setOrbState('ONLINE', 'idle');
+          setFeedState('IDLE');
+          fetchMemory();
+          return;
+        }
+        if (type === 'error') {
+          const message = raw.message || 'Neural core error.';
+          setTranscript(message);
+          setTyping(false);
+          addMessage('SPARK', message, 'error');
+          setOrbState('ERROR', 'error');
+          setFeedState('IDLE');
+          return;
+        }
+        if (type === 'done') {
+          setTranscript(raw.content || 'Ready.');
+          setTyping(false);
+          setOrbState('ONLINE', 'idle');
+          setFeedState('IDLE');
+        }
+      };
+
+      const connectAISocket = () => {
+        const socket = new WebSocket(wsUrl('/ws/ai'));
+        aiSocketRef.current = socket;
+        setLinks((current) => ({ ...current, ai: 'CONNECTING' }));
+        socket.onopen = () => {
+          setLinks((current) => ({ ...current, ai: 'ONLINE' }));
+          setOrbState('ONLINE', 'idle');
+          setStatus('AWAITING INPUT');
+        };
+        socket.onmessage = (event) => {
+          try {
+            handleAIEvent(JSON.parse(event.data));
+          } catch (error) {
+            console.warn('ai websocket parse failed', error);
+          }
+        };
+        socket.onerror = () => setLinks((current) => ({ ...current, ai: 'ERROR' }));
+        socket.onclose = () => {
+          setLinks((current) => ({ ...current, ai: 'RECONNECTING' }));
+          window.setTimeout(connectAISocket, 1800);
+        };
+      };
+
+      const submitMessage = async (value) => {
+        const text = String(value || '').trim();
+        if (!text) return;
+        addMessage('YOU', text, 'done');
+        setOrbState('THINKING', 'thinking');
+        setStatus('THINKING');
+        setFeedState('BUSY');
+        try {
+          if (aiSocketRef.current && aiSocketRef.current.readyState === WebSocket.OPEN) {
+            aiSocketRef.current.send(JSON.stringify({ message: text }));
+            return;
+          }
+          const response = await fetch('/chat', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ message: text }) });
+          const payload = await response.json();
+          const reply = payload.response || payload.reply || payload.content || 'No response.';
+          setTranscript(reply);
+          setTyping(false);
+          addMessage('SPARK', reply, 'done');
+          setOrbState('ONLINE', 'idle');
+          setFeedState('IDLE');
+          fetchMemory();
+        } catch (error) {
+          console.error(error);
+          const fallback = 'Neural core error. Check backend logs or model routing.';
+          setTranscript(fallback);
+          setTyping(false);
+          addMessage('SPARK', fallback, 'error');
+          setOrbState('ERROR', 'error');
+          setFeedState('IDLE');
+        }
+      };
+
+      const listenForSpeech = async () => {
+        if (listeningRef.current) return;
+        listeningRef.current = true;
+        setVoice({ label: 'LISTENING', listening: true });
+        setTranscript('Listening for speech input...');
+        setTyping(true);
+        try {
+          const response = await fetch('/listen', { method: 'POST' });
+          const payload = await response.json();
+          if (payload.error) {
+            addMessage('SYSTEM', payload.error, 'system');
+            setTranscript(payload.error);
+            setTyping(false);
+            return;
+          }
+          if (payload.transcript) {
+            addMessage('VOICE', `Transcribed: ${payload.transcript}`, 'done');
+            setTranscript(payload.transcript);
+            setTyping(false);
+          }
+          if (payload.reply) {
+            addMessage('SPARK', payload.reply, 'done');
+            setTranscript(payload.reply);
+            setTyping(false);
+          }
+          if (payload.tool_used) {
+            pushTool(payload.tool_used, 'DONE', 'done');
+          }
+          fetchMemory();
+        } catch (error) {
+          console.error(error);
+          addMessage('SYSTEM', 'Voice pipeline error.', 'error');
+          setTranscript('Voice pipeline error.');
+          setTyping(false);
+        } finally {
+          listeningRef.current = false;
+          setVoice({ label: 'VOICE READY', listening: false });
+        }
+      };
+
+      const sendMessage = async () => {
+        const value = input;
+        setInput('');
+        await submitMessage(value);
+      };
+
+      useEffect(() => {
+        const timer = window.setInterval(() => setClock(nowClock()), 1000);
+        return () => window.clearInterval(timer);
+      }, []);
+
+      useInterval(() => {
+        if (voice.listening || status === 'THINKING') return;
+        const phrase = ['Ask SPARK anything.', 'Try a voice command.', 'System telemetry is live.', 'Message in plain language.'][Math.floor(Date.now() / 16000) % 4];
+        setTranscript(phrase);
+        setTyping(true);
+      }, 16000);
+
+      useEffect(() => {
+        let index = 0;
+        const timer = window.setInterval(() => {
+          const step = BOOT_STEPS[index];
+          if (!step) {
+            window.clearInterval(timer);
+            window.setTimeout(() => setBootHidden(true), 380);
+            return;
+          }
+          setBootStep(step);
+          index += 1;
+        }, 430);
+        return () => window.clearInterval(timer);
+      }, []);
+
+      useEffect(() => {
+        connectAISocket();
+        connectSystemSocket();
+        fetchMemory();
+        window.setTimeout(() => {
+          setTranscript('Boot complete. Ask SPARK a question or send a command.');
+          setTyping(false);
+        }, 1800);
+        return () => {
+          try { aiSocketRef.current && aiSocketRef.current.close(); } catch (error) {}
+          try { sysSocketRef.current && sysSocketRef.current.close(); } catch (error) {}
+        };
+      }, []);
+
+      useEffect(() => {
+        if (feedRef.current) feedRef.current.scrollTop = feedRef.current.scrollHeight;
+      }, [messages]);
+
+      const signalLines = useMemo(() => {
+        if (!overridePayload) return [];
+        const connections = overridePayload?.payload?.active_connections || overridePayload?.connections || [];
+        return connections.map((item, index) => `${index + 1}. ${item.target || 'local'} | ${item.type || 'UNKNOWN'} | ESTABLISHED`);
+      }, [overridePayload]);
+
+      return h(React.Fragment, null,
+        !bootHidden && h('div', { className: 'boot-overlay' },
+          h('div', { className: 'boot-card' },
+            h('div', { className: 'boot-title' }, 'S.P.A.R.K.'),
+            h('div', { className: 'boot-text' }, bootStep.text),
+            h('div', { className: 'boot-progress' }, h('span', { style: { width: `${bootStep.progress}%` } })),
+            h('div', { className: 'boot-foot' }, h('span', null, 'Systems Check'), h('span', null, bootStep.stage))
+          )
+        ),
+        overridePayload && h('div', { className: 'override', onClick: () => setOverridePayload(null) },
+          h('div', { className: 'override-card', onClick: (event) => event.stopPropagation() },
+            h('div', { className: 'override-head' }, 'Signal Override Terminal'),
+            h('div', { className: 'override-body' },
+              h('div', null, 'Active connections: ', String(signalLines.length)),
+              signalLines.length ? signalLines.map((row) => h('div', { className: 'override-row', key: row }, row)) : h('div', { className: 'override-row' }, 'No active connections detected.'),
+              h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', color: 'rgba(231,243,251,0.68)', textTransform: 'uppercase', letterSpacing: '0.16em', fontSize: '10px' } },
+                h('span', null, 'Signal strength: 100%'),
+                h('span', null, 'Latency: 0ms')
+              )
+            )
+          )
+        ),
+        h('div', { className: 'app' },
+          h('header', { className: 'top-bar panel' },
+            h('div', { className: 'brand' },
+              h('div', { className: 'brand-mark' }),
+              h('div', { className: 'brand-copy' },
+                h('div', { className: 'brand-title' }, 'S.P.A.R.K.'),
+                h('div', { className: 'brand-subtitle' }, 'cybernetic telemetry workspace')
+              )
+            ),
+            h('div', { className: 'system-line' },
+              h('div', { className: 'chip', 'data-state': engine.state }, h('span', { className: 'dot' }), h('span', null, `Region: ${engine.label}`)),
+              h('div', { className: 'chip', 'data-state': voice.listening ? 'thinking' : 'online' }, h('span', { className: 'dot' }), h('span', null, `Voice: ${voice.label}`)),
+              h('div', { className: 'chip', 'data-state': links.ai === 'ERROR' ? 'error' : links.ai === 'ONLINE' ? 'online' : 'thinking' }, h('span', { className: 'dot' }), h('span', null, `AI WS: ${links.ai}`)),
+              h('div', { className: 'chip', 'data-state': links.sys === 'ERROR' ? 'error' : links.sys === 'ONLINE' ? 'online' : 'thinking' }, h('span', { className: 'dot' }), h('span', null, `SYS WS: ${links.sys}`))
+            ),
+            h('div', { className: 'clock' }, clock)
+          ),
+
+          h('section', { className: 'workspace' },
+            h('aside', { className: 'stack' },
+              h('div', { className: 'sidebar panel' },
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Hardware Vital'), h('span', null, 'LIVE')),
+                  h('div', { className: 'meter' }, h('div', { className: 'meter-row' }, h('span', null, 'CPU'), h('span', null, `${metrics.cpu.toFixed(1)}%`)), h('div', { className: 'track' }, h('div', { className: 'fill', style: { width: `${metrics.cpu}%` } }))),
+                  h('div', { className: 'meter' }, h('div', { className: 'meter-row' }, h('span', null, 'RAM'), h('span', null, `${metrics.ram.toFixed(1)}%`)), h('div', { className: 'track' }, h('div', { className: 'fill gold', style: { width: `${metrics.ram}%` } }))),
+                  h('div', { className: 'stat-grid' },
+                    h('div', { className: 'stat' }, h('div', { className: 'k' }, 'Uptime'), h('div', { className: 'v' }, metrics.uptime)),
+                    h('div', { className: 'stat' }, h('div', { className: 'k' }, 'Memory'), h('div', { className: 'v' }, memoryCount))
+                  )
+                ),
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Thread Core'), h('span', null, 'READY')),
+                  h('div', { className: 'tile-grid' },
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Active'), h('span', { className: 'value' }, 'Groq API')),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Handoff'), h('span', { className: 'value gold' }, 'Local cascade')),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Mode'), h('span', { className: 'value' }, 'Hybrid brain'))
+                  )
+                ),
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Hybrid Tiers'), h('span', null, 'MAP')),
+                  h('div', { className: 'tile-grid' },
+                    TIER_ROWS.map((row) => h('div', { className: 'tile', key: row[0] }, h('span', { className: 'label' }, row[0]), h('span', { className: 'value' }, row[1])))
+                  )
+                )
+              )
+            ),
+
+            h('main', { className: 'center' },
+              h('section', { className: 'hero-shell panel' },
+                h('div', { className: 'hero-top' },
+                  h('div', null,
+                    h('div', { className: 'eyebrow' }, 'S.P.A.R.K. Live Interface Matrix'),
+                    h('h1', { className: 'hero-title' }, 'System core is ', h('span', null, 'online')),
+                    h('p', { className: 'hero-copy' }, 'This workspace stays bound to live websocket, chat, voice, and memory lanes. The layout expands and collapses by available space so it stays readable on wide monitors, laptops, and smaller screens.')
+                  ),
+                  h('div', { className: 'tags' },
+                    h('span', { className: 'tag' }, 'Live data driven'),
+                    h('span', { className: 'tag' }, 'Adaptive grid'),
+                    h('span', { className: 'tag' }, 'Responsive by design')
+                  )
+                ),
+                h('div', { className: 'orb-row' },
+                  h('div', { className: 'orb-stage' },
+                    h('div', { className: 'orb', 'data-state': engine.state },
+                      h('div', { className: 'orb-ring' }),
+                      h('div', { className: 'orb-ring secondary' }),
+                      h('div', { className: 'orb-ring micro' }),
+                      h('div', { className: 'orb-core' })
+                    )
+                  ),
+                  h('div', { className: 'orb-meta' },
+                    h('div', { className: 'orb-card' }, h('div', { className: 'k' }, 'State Engine'), h('div', { className: 'v' }, engine.label)),
+                    h('div', { className: 'orb-card' }, h('div', { className: 'k' }, 'Telemetry'), h('div', { className: 'v' }, `CPU ${metrics.cpu.toFixed(1)}%  •  RAM ${metrics.ram.toFixed(1)}%`)),
+                    h('div', { className: 'orb-card' }, h('div', { className: 'k' }, 'Cascade'), h('div', { className: 'v gold' }, 'Groq → Local fallback chain'))
+                  )
+                )
+              ),
+
+              h('section', { className: 'feed-shell panel' },
+                h('div', { className: 'feed-head' }, h('span', null, 'Transaction Monitor Panel'), h('span', { className: 'mode' }, status), h('span', null, feedState)),
+                h('div', { className: 'feed-list', ref: feedRef },
+                  messages.map((message) => h('article', { className: `msg ${message.sender.toLowerCase()}`, key: message.id },
+                    h('div', { className: 'bubble' },
+                      h('div', { className: 'msg-top' }, h('span', { className: 'badge' }, message.sender), h('span', null, message.meta)),
+                      h('div', { className: 'msg-body' }, message.body)
+                    )
+                  ))
+                )
+              ),
+
+              h('section', { className: 'composer-shell panel' },
+                h('div', { className: 'composer-top' },
+                  h('div', { className: 'composer-tags' },
+                    h('span', { className: 'composer-tag' }, 'Ask anything'),
+                    h('span', { className: 'composer-tag' }, 'Voice mode'),
+                    h('span', { className: 'composer-tag' }, 'System status')
+                  ),
+                  h('div', { className: 'composer-help' }, voice.listening ? 'Speak now, live capture enabled' : 'Press mic or hit Enter to transmit')
+                ),
+                h('div', { className: 'composer-row' },
+                  h('textarea', {
+                    className: 'input',
+                    value: input,
+                    placeholder: 'Message S.P.A.R.K....',
+                    onChange: (event) => setInput(event.target.value),
+                    onKeyDown: (event) => {
+                      if (event.key === 'Enter' && !event.shiftKey) {
+                        event.preventDefault();
+                        sendMessage();
+                      }
+                    },
+                  }),
+                  h('button', { className: 'btn', type: 'button', onClick: sendMessage, title: 'Send message', 'aria-label': 'Send message' }, '➤'),
+                  h('button', { className: `btn ${voice.listening ? 'active' : ''}`, type: 'button', onClick: listenForSpeech, title: 'Speak to SPARK', 'aria-label': 'Speak to SPARK' }, '🎙')
+                ),
+                h('div', { className: 'composer-bottom' },
+                  h('span', null, 'Memory count ', h('strong', null, String(memoryCount))),
+                  h('span', null, 'AI lane ', h('strong', null, links.ai)),
+                  h('span', null, 'System lane ', h('strong', null, links.sys))
+                )
+              )
+            ),
+
+            h('aside', { className: 'stack' },
+              h('div', { className: 'telemetry panel' },
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Connection'), h('span', null, 'WS')),
+                  h('div', { className: 'tile-grid' },
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'AI WebSocket'), h('span', { className: 'value' }, links.ai)),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'System WebSocket'), h('span', { className: 'value' }, links.sys))
+                  )
+                ),
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Cascade Notes'), h('span', null, 'JSON')),
+                  h('div', { className: 'tile-grid' },
+                    TIER_PROMPTS.map((text, index) => h('div', { className: 'tile', key: text }, h('span', { className: 'label' }, `Tier ${index}`), h('span', { className: 'value' }, text)))
+                  )
+                ),
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'System Context'), h('span', null, 'LIVE')),
+                  h('div', { className: 'tile-grid' },
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Transcript'), h('span', { className: 'value' }, typing ? 'Typing' : 'Stable')),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Uptime'), h('span', { className: 'value' }, metrics.uptime)),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Chat status'), h('span', { className: 'value' }, status))
+                  )
+                ),
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Active Tools'), h('span', null, String(tools.length))),
+                  h('div', { className: 'tile-grid' },
+                    tools.map((tool) => h('div', { className: 'tile', key: `${tool.name}-${tool.meta}` }, h('span', { className: 'label' }, tool.name), h('span', { className: 'value' }, tool.meta)))
+                  )
+                ),
+                h('div', { className: 'section' },
+                  h('div', { className: 'section-head' }, h('strong', null, 'Transaction Stream'), h('span', null, 'READY')),
+                  h('div', { className: 'tile-grid' },
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'System'), h('span', { className: 'value' }, 'Boot complete')),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Input'), h('span', { className: 'value' }, 'Reactive')),
+                    h('div', { className: 'tile' }, h('span', { className: 'label' }, 'Output'), h('span', { className: 'value' }, 'Typed stream'))
+                  )
+                )
+              )
+            )
+          ),
+
+          h('footer', { className: 'bottom-bar panel' },
+            h('div', null, 'Memory: ', h('strong', null, `${memoryCount} items`)),
+            h('div', null, 'Uptime: ', h('strong', null, metrics.uptime)),
+            h('div', null, 'Build: ', h('strong', null, 'Adaptive HUD'))
+          )
+        )
+      );
+    }
+
+    ReactDOM.createRoot(document.getElementById('root')).render(h(App));
   </script>
 </body>
 </html>

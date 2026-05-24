@@ -15,9 +15,10 @@ from core.generated_tools import publish_generated_tool
 
 log = logging.getLogger("spark.tool_forge")
 
-FORGE_DIR = Path("spark_dev_memory/tool_forge")
+FORGE_DIR = Path("sandbox/tool_forge")
 FORGE_DIR.mkdir(parents=True, exist_ok=True)
-TOOL_REVIEW_PATH = Path("spark_dev_memory/autonomy/pending_tools.json")
+TOOL_REVIEW_PATH = Path("sandbox/autonomy/pending_tools.json")
+TOOL_REVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
 TOOL_REVIEW_PATH.parent.mkdir(parents=True, exist_ok=True)
 
 ALLOWED_IMPORTS = {
@@ -209,6 +210,7 @@ def forge_tool(name: str, code: str, description: str = "") -> ForgeResult:
     path = FORGE_DIR / f"{safe_name}.py"
     review_id = hashlib.sha1(f"{safe_name}:{code}".encode("utf-8")).hexdigest()[:16]
     if approved:
+        # Write tool into sandboxed forge directory to isolate filesystem effects
         path.write_text(code, encoding="utf-8")
         reviews = _load_tool_reviews()
         proposal = {
@@ -236,13 +238,28 @@ def run_forged_tool(path: str, argument: str = "", timeout: int = 15) -> str:
     script_path = Path(path)
     if not script_path.exists():
         return f"Forge error: {script_path} does not exist"
+    # Run compilation step first (py_compile) when possible
+    try:
+        import py_compile
+        try:
+            py_compile.compile(str(script_path), doraise=True)
+        except py_compile.PyCompileError as ce:
+            return f"Forge compilation failed: {ce}"
+    except Exception:
+        # py_compile may not be available in constrained envs — continue
+        pass
 
-    result = subprocess.run(
-        [sys.executable, str(script_path), argument],
-        capture_output=True,
-        text=True,
-        timeout=timeout,
-    )
+    # Execute the forged tool inside the sandbox directory for isolation
+    try:
+        result = subprocess.run(
+            [sys.executable, str(script_path), argument],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            cwd=str(FORGE_DIR),
+        )
+    except Exception as ex:
+        return f"Forge execution failed to start: {ex}"
     stdout = result.stdout.strip()
     stderr = result.stderr.strip()
     if result.returncode != 0:
