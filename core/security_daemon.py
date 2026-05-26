@@ -62,6 +62,12 @@ class SecurityDaemon:
         self.threat_throttle = {}  # Throttle repeated alerts (cache threat signatures + timestamps)
         self.daemon_thread = None
         self.running = False
+
+        # Phase 3 integrations
+        from security.network_anomaly_detector import NetworkAnomalyDetector
+        from security.self_healing import SelfHealingDaemon
+        self.network_detector = NetworkAnomalyDetector(sample_interval=5.0)
+        self.self_healing = SelfHealingDaemon(monitored_files=["config.json", ".env"])
     
     def _get_suspicious_processes(self) -> list[str]:
         """Get suspicious process list from user config or default.
@@ -107,6 +113,8 @@ class SecurityDaemon:
             return
         
         self.running = True
+        self.network_detector.start()
+        self.self_healing.start()
         self.daemon_thread = threading.Thread(target=self._run_daemon, daemon=True)
         self.daemon_thread.start()
         logger.info("Security daemon started")
@@ -114,6 +122,8 @@ class SecurityDaemon:
     def stop(self) -> None:
         """Stop the security daemon."""
         self.running = False
+        self.network_detector.stop()
+        self.self_healing.stop()
         if self.daemon_thread:
             self.daemon_thread.join(timeout=5)
         logger.info("Security daemon stopped")
