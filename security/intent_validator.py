@@ -56,3 +56,12 @@ def validate_intent_text(text: str) -> IntentScan:
         return IntentScan(allowed=False, score=1.0, reasons={"intent_too_long"}, cleaned_text=cleaned)
         
     return IntentScan(allowed=True, score=0.0, reasons=set(), cleaned_text=cleaned)
+
+
+class IntentValidator:
+    """Validator wrapping intent sanitization loops."""
+
+    @classmethod
+    def sanitize(cls, text: str) -> str:
+        """Sanitizes conversational filler words from command inputs."""
+        return clean_conversational_filler(text)

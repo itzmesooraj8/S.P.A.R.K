@@ -1669,3 +1669,8 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         logger.error(f"TTS Error: {e}")
 
     return {"reply": reply, "tool_used": tool_used, "tool_result": tool_result}
+
+
+async def spark_plan_and_execute(goal: str) -> dict[str, Any]:
+    """Exposes main planning agent loop for the console interface."""
+    return await _run_planner(goal)
