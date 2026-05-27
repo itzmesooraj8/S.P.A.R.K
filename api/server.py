@@ -587,6 +587,27 @@ class VitalsWebSocketRouter:
             self.disconnect(websocket)
 
 manager = ConnectionManager()
+
+
+def broadcast_system_alert(alert_payload: dict[str, Any]) -> None:
+    """Broadcasts a system-wide alert or warning to all active websocket terminals."""
+    logger.warning("SYSTEM ALERT BROADCAST: %s", alert_payload)
+    msg = {
+        "type": "system_alert",
+        "payload": alert_payload,
+        "timestamp": time.time()
+    }
+    try:
+        import threading
+        # Spawn short-lived thread to run the async broadcast safely
+        threading.Thread(
+            target=lambda: asyncio.run(manager.broadcast(msg)),
+            daemon=True
+        ).start()
+    except Exception as exc:
+        logger.error("Failed to spawn thread for alert broadcast: %s", exc)
+
+
 ai_manager = AIDispatcher()
 vitals_router = VitalsWebSocketRouter()
 

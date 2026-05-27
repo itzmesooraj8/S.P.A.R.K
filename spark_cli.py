@@ -75,10 +75,25 @@ def display_help() -> None:
     if not TOOLS:
         print(f"│ {'No registered tools found in schema dictionary.':<{width - 4}} │")
     else:
-        for tool in TOOLS:
-            func = tool.get("function", {})
-            name = func.get("name", "unknown")
-            desc = func.get("description", "No description provided.")
+        # Check if TOOLS is a dict or list
+        tools_dict = {}
+        if isinstance(TOOLS, dict):
+            tools_dict = TOOLS
+        elif isinstance(TOOLS, list):
+            for t in TOOLS:
+                if isinstance(t, dict):
+                    # It could be a tool definition {"type": "function", "function": {"name": ..., "description": ...}}
+                    func = t.get("function", {})
+                    name = func.get("name")
+                    if name:
+                        tools_dict[name] = func
+                    else:
+                        name = t.get("name")
+                        if name:
+                            tools_dict[name] = t
+
+        for name, tool_info in tools_dict.items():
+            desc = tool_info.get("description", "No description provided.")
             
             # Format and wrap tool info
             tool_title = f"- {name}:"
@@ -121,6 +136,7 @@ async def run_system_cleanup() -> None:
         pass
         
     print("[SPARK SYSTEM] Cleanup completed. Exit safe.")
+    logger.info("SPARK_CLI console exiting with status: safe_shutdown")
 
 
 async def main() -> None:
@@ -156,8 +172,15 @@ async def main() -> None:
                 try:
                     DefensiveInterceptor.pre_flight_checks()
                     print("  -> Pre-Flight Checks: Staged and Safe.")
-                except PermissionError as perm_err:
-                    print(f"  [SECURITY ALERT] Pre-Flight Checks Blocked Execution: {perm_err}\n")
+                except (PermissionError, OSError) as env_err:
+                    width = 76
+                    print("\n┌" + "─" * (width - 2) + "┐")
+                    print(f"│ {'[SECURITY ALERT] PRE-FLIGHT BLOCKED EXECUTION':^{(width - 4)}} │")
+                    print("├" + "─" * (width - 2) + "┤")
+                    wrapper = textwrap.TextWrapper(width=width - 4)
+                    for line in wrapper.wrap(str(env_err)):
+                        print(f"│ {line:<{width - 4}} │")
+                    print("└" + "─" * (width - 2) + "┘\n")
                     continue
                 except Exception as check_exc:
                     print(f"  [ERROR] Pre-Flight execution error: {check_exc}\n")
@@ -169,7 +192,7 @@ async def main() -> None:
             print(f"[Phase B] Sanitizing conversational preambles...")
             if IntentValidator is not None:
                 sanitized_query = IntentValidator.sanitize(query)
-                print(f"  -> Lexical Cleaned Query: '{sanitized_query}'")
+                print(f"  -> Clean Command Verb Array Target: '{sanitized_query}'")
             else:
                 sanitized_query = query
                 print("  -> Warning: IntentValidator not imported, skipping preambles sanitization.")

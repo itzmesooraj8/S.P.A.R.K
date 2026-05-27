@@ -53,3 +53,24 @@ def get_ollama_model(configured_model: str | None = None) -> str:
         
     # Standard fallback
     return "qwen2.5:7b"
+
+
+def log_fallback_completion(model_used: str, completion: str) -> None:
+    """Logs fallback completions inside structured, block-aligned console divider outlines."""
+    width = 76
+    print("\n┌" + "─" * (width - 2) + "┐")
+    print(f"│ {'OLLAMA LOCAL FALLBACK COMPLETION':^{(width - 4)}} │")
+    print(f"│ {'Model: ' + model_used:^{(width - 4)}} │")
+    print("├" + "─" * (width - 2) + "┤")
+    
+    import textwrap
+    wrapper = textwrap.TextWrapper(width=width - 4)
+    lines = completion.split("\n")
+    for raw_line in lines:
+        if not raw_line.strip():
+            print(f"│ {' ' * (width - 4)} │")
+            continue
+        for wrapped_line in wrapper.wrap(raw_line):
+            print(f"│ {wrapped_line:<{width - 4}} │")
+            
+    print("└" + "─" * (width - 2) + "┘\n")
