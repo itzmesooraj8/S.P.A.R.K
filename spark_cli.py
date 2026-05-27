@@ -134,6 +134,14 @@ async def run_system_cleanup() -> None:
         print("  - Wake word engine listeners cleared.")
     except Exception:
         pass
+
+    # 4. Stop telemetry refresher loop
+    try:
+        from api.server import telemetry_refresher
+        telemetry_refresher.stop()
+        print("  - Swarm telemetry refresher stopped.")
+    except Exception:
+        pass
         
     print("[SPARK SYSTEM] Cleanup completed. Exit safe.")
     logger.info("SPARK_CLI console exiting with status: safe_shutdown")
@@ -145,6 +153,17 @@ async def main() -> None:
     print("  Interactive Bare-Metal Systems Console Modality [Online]")
     print("======================================================================")
     print("Type 'help' to inspect registered tools. Type 'exit' or 'quit' to close.")
+
+    try:
+        from core.session_archivist import SessionContextArchivist
+        archivist = SessionContextArchivist()
+        calibration_states = await archivist.load_last_calibration_states()
+        if calibration_states:
+            print(f"[SPARK SYSTEM] Prior calibration states loaded: {calibration_states}")
+        else:
+            print("[SPARK SYSTEM] No prior calibration states found. Starting fresh.")
+    except Exception as exc:
+        print(f"[SPARK SYSTEM] Warning: Failed to load prior calibration states: {exc}")
 
     loop_active = True
 

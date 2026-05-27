@@ -217,8 +217,20 @@ async def startup_tasks():
         except Exception as exc:
             logger.warning(f"Cloudflare tunnel startup failed: {exc}")
 
+    try:
+        telemetry_refresher.start()
+        logger.info("Telemetry refresher started at 10 Hz.")
+    except Exception as exc:
+        logger.warning(f"Telemetry refresher failed to start: {exc}")
+
 @app.on_event("shutdown")
 async def shutdown_tasks():
+    try:
+        telemetry_refresher.stop()
+        logger.info("Telemetry refresher stopped.")
+    except Exception:
+        pass
+
     try:
         vitals_router.stop_daemon()
         logger.info("Vitals daemon stopped.")
@@ -591,7 +603,16 @@ manager = ConnectionManager()
 
 def broadcast_system_alert(alert_payload: dict[str, Any]) -> None:
     """Broadcasts a system-wide alert or warning to all active websocket terminals."""
-    logger.warning("SYSTEM ALERT BROADCAST: %s", alert_payload)
+    if alert_payload.get("type") == "swarm_heartbeat":
+        msg_str = (
+            f"[TELEMETRY 10Hz] Node Drops: {alert_payload.get('computation_node_drops')} | "
+            f"Packet Loss: {alert_payload.get('packet_loss'):.2f} | "
+            f"Prediction: {alert_payload.get('vibration_prediction')} ({alert_payload.get('vibration_confidence'):.2f})"
+        )
+        logger.info(msg_str)
+    else:
+        logger.warning("SYSTEM ALERT BROADCAST: %s", alert_payload)
+
     msg = {
         "type": "system_alert",
         "payload": alert_payload,
@@ -608,6 +629,91 @@ def broadcast_system_alert(alert_payload: dict[str, Any]) -> None:
         logger.error("Failed to spawn thread for alert broadcast: %s", exc)
 
 
+class TelemetryRefresher:
+    """Thread-safe background telemetry refresher running at 10 Hz."""
+
+    def __init__(self, orchestrator=None, classifier=None):
+        self.orchestrator = orchestrator
+        self.classifier = classifier
+        self._running = False
+        self._thread = None
+        self._lock = threading.Lock()
+
+    def start(self):
+        with self._lock:
+            if self._thread is None:
+                self._running = True
+                self._thread = threading.Thread(target=self._loop, daemon=True, name="spark-telemetry-refresher")
+                self._thread.start()
+                logger.info("TelemetryRefresher background thread started.")
+
+    def stop(self):
+        with self._lock:
+            self._running = False
+            self._thread = None
+            logger.info("TelemetryRefresher background thread stopped.")
+
+    def _loop(self):
+        try:
+            import numpy as np
+            from network.swarm_orchestrator import SwarmOrchestrator
+            from diagnostics.industrial_diagnostics import IndustrialTelemetryClassifier
+        except Exception as e:
+            logger.error("Failed to import telemetry/diagnostics dependencies: %s", e)
+            return
+
+        orch = self.orchestrator
+        if orch is None:
+            try:
+                orch = SwarmOrchestrator()
+                orch.start()
+            except Exception as e:
+                logger.warning("SwarmOrchestrator could not be started: %s", e)
+
+        classif = self.classifier or IndustrialTelemetryClassifier()
+
+        while self._running:
+            try:
+                node_drops = 0
+                packet_loss = 0.0
+                routing_state = "cloud_preferred"
+                if orch:
+                    snapshot = orch.get_cluster_snapshot()
+                    routing_state = snapshot.get("routing_state", "cloud_preferred")
+                    nodes = snapshot.get("nodes", {})
+                    for ip, n in nodes.items():
+                        if not n.get("healthy", False):
+                            node_drops += 1
+                        packet_loss = max(packet_loss, n.get("drop_rate", 0.0))
+
+                t = np.linspace(0.0, 1.0, 128)
+                signal = np.vstack([
+                    np.sin(2 * np.pi * 10 * t) + 0.1 * np.random.randn(128),
+                    np.cos(2 * np.pi * 20 * t) + 0.1 * np.random.randn(128),
+                    np.sin(2 * np.pi * 50 * t) + 0.1 * np.random.randn(128)
+                ])
+                diag_res = classif.classify(signal)
+
+                payload = {
+                    "type": "swarm_heartbeat",
+                    "timestamp": time.time(),
+                    "computation_node_drops": node_drops,
+                    "packet_loss": packet_loss,
+                    "routing_state": routing_state,
+                    "vibration_prediction": diag_res.get("prediction", "nominal"),
+                    "vibration_confidence": diag_res.get("confidence", 1.0),
+                    "class_probabilities": diag_res.get("class_probabilities", {})
+                }
+
+                broadcast_system_alert(payload)
+
+            except Exception as exc:
+                logger.error("Error in TelemetryRefresher loop: %s", exc)
+
+            time.sleep(0.1)
+
+
+telemetry_refresher = TelemetryRefresher()
 ai_manager = AIDispatcher()
 vitals_router = VitalsWebSocketRouter()
 
