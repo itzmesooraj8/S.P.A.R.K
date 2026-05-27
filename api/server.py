@@ -35,6 +35,7 @@ from api.routes.task import router as task_router
 from api.routes.runtime import router as runtime_router
 from api.routes.security import router as security_router
 from api.routes.satellite import router as satellite_router
+from api.biometric_stream import router as biometric_router
 import core.main as spark_main
 from core.main import run_agent_turn
 from core.scheduler import init_scheduler
@@ -71,6 +72,7 @@ app.include_router(task_router)
 app.include_router(runtime_router)
 app.include_router(security_router)
 app.include_router(satellite_router)
+app.include_router(biometric_router)
 
 _SPARK_ACCESS_TOKEN = os.getenv("SPARK_ACCESS_TOKEN") or os.getenv("SPARK_TOKEN", "change-this-token")
 SPARK_TOKEN = _SPARK_ACCESS_TOKEN
@@ -128,6 +130,19 @@ async def rate_limit(request: Request):
 
 @app.on_event("startup")
 async def startup_tasks():
+    try:
+        vitals_router.start_daemon()
+        logger.info("Vitals daemon started in background thread.")
+    except Exception as exc:
+        logger.warning(f"Vitals daemon failed to start: {exc}")
+
+    try:
+        from api.audio_daemon import audio_daemon_instance
+        audio_daemon_instance.start()
+        logger.info("Audio isolation daemon started on startup.")
+    except Exception as exc:
+        logger.warning(f"Audio isolation daemon failed to start: {exc}")
+
     try:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(None, load_whisper)
@@ -201,6 +216,21 @@ async def startup_tasks():
             logger.info("[SPARK] Cloudflare tunnel starting for remote Signal Override")
         except Exception as exc:
             logger.warning(f"Cloudflare tunnel startup failed: {exc}")
+
+@app.on_event("shutdown")
+async def shutdown_tasks():
+    try:
+        vitals_router.stop_daemon()
+        logger.info("Vitals daemon stopped.")
+    except Exception:
+        pass
+
+    try:
+        from api.audio_daemon import audio_daemon_instance
+        audio_daemon_instance.stop()
+        logger.info("Audio isolation daemon stopped.")
+    except Exception:
+        pass
 if not os.path.exists(STATIC_DIR):
     os.makedirs(STATIC_DIR)
 
@@ -461,34 +491,112 @@ class AIDispatcher:
             logger.error(f"Failed to send to {websocket.client}: {e}")
             logger.error(f"WebSocket error: {e}", exc_info=True)
 
-manager = ConnectionManager()
-ai_manager = AIDispatcher()
+class VitalsWebSocketRouter:
+    def __init__(self):
+        self.active_connections: list[WebSocket] = []
+        self._metrics = {}
+        self._lock = threading.Lock()
+        self._thread = None
+        self._running = False
 
-async def _system_websocket(websocket: WebSocket):
-    await manager.connect(websocket)
-    try:
-        # Push initial sysmon state immediately
-        await websocket.send_json({
-            "type": "sys_metrics",
-            "payload": get_raw_metrics()
-        })
-        
-        # Then loop every 2s
-        while True:
-            await asyncio.sleep(2)
+    def start_daemon(self):
+        if self._thread is None:
+            self._running = True
+            self._thread = threading.Thread(target=self._update_loop, daemon=True, name="vitals-daemon")
+            self._thread.start()
+
+    def stop_daemon(self):
+        self._running = False
+
+    def _update_loop(self):
+        import psutil
+        import GPUtil
+        # Warm up CPU percent
+        psutil.cpu_percent(interval=None)
+        while self._running:
+            try:
+                cpu = psutil.cpu_percent(interval=None)
+                mem = psutil.virtual_memory()
+                disk = psutil.disk_usage('/')
+                battery = psutil.sensors_battery()
+                
+                metrics = {
+                    "cpu": cpu,
+                    "ramFree": mem.available / (1024 ** 3),
+                    "ramTotal": mem.total / (1024 ** 3),
+                    "diskFree": disk.free / (1024 ** 3),
+                    "diskTotal": disk.total / (1024 ** 3),
+                    "batteryPercent": battery.percent if battery else 100,
+                    "cpu_percent": cpu,
+                    "ram_percent": mem.percent,
+                    "ram_used_gb": (mem.total - mem.available) / (1024 ** 3),
+                    "ram_total_gb": mem.total / (1024 ** 3),
+                    "disk_percent": disk.percent,
+                    "gpu_name": "N/A",
+                    "gpu_util": 0,
+                    "vram_used_mb": 0
+                }
+                try:
+                    gpus = GPUtil.getGPUs()
+                    if gpus:
+                        gpu = gpus[0]
+                        metrics["gpu_name"] = gpu.name
+                        metrics["gpu_util"] = gpu.load * 100
+                        metrics["vram_used_mb"] = gpu.memoryUsed
+                except Exception:
+                    pass
+                with self._lock:
+                    self._metrics = metrics
+            except Exception as e:
+                logger.error(f"Error in vitals daemon update loop: {e}")
+            time.sleep(0.1)
+
+    def get_metrics(self) -> dict:
+        with self._lock:
+            return dict(self._metrics)
+
+    async def connect(self, websocket: WebSocket):
+        await websocket.accept()
+        self.active_connections.append(websocket)
+
+    def disconnect(self, websocket: WebSocket):
+        if websocket in self.active_connections:
+            self.active_connections.remove(websocket)
+
+    async def stream(self, websocket: WebSocket):
+        await self.connect(websocket)
+        try:
+            # Send initial packet immediately
+            initial_metrics = self.get_metrics() or get_raw_metrics()
             await websocket.send_json({
                 "type": "sys_metrics",
-                "payload": get_raw_metrics()
+                "payload": initial_metrics
             })
-    except WebSocketDisconnect:
-        manager.disconnect(websocket)
-    except Exception as e:
-        logger.error(f"System WebSocket error: {e}", exc_info=True)
-        manager.disconnect(websocket)
+            while True:
+                await asyncio.sleep(0.0166) # 60 FPS
+                metrics = self.get_metrics()
+                if metrics:
+                    await websocket.send_json({
+                        "type": "sys_metrics",
+                        "payload": metrics
+                    })
+        except WebSocketDisconnect:
+            self.disconnect(websocket)
+        except Exception as e:
+            logger.error(f"Vitals stream connection error: {e}")
+            self.disconnect(websocket)
+
+manager = ConnectionManager()
+ai_manager = AIDispatcher()
+vitals_router = VitalsWebSocketRouter()
+
+async def _system_websocket(websocket: WebSocket):
+    await vitals_router.stream(websocket)
 
 
 @app.websocket("/ws")
 @app.websocket("/ws/system")
+@app.websocket("/ws/vitals")
 async def websocket_endpoint(websocket: WebSocket):
     await _system_websocket(websocket)
 

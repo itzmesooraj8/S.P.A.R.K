@@ -5,22 +5,29 @@ import logging
 
 logger = logging.getLogger("spark.model_router")
 
-# Valid, stable Groq models whitelisted for routing
-GROQ_MODELS = {
-    "llama-3.3-70b-versatile",
-    "llama-3.1-8b-instant",
-    "gemma2-9b-it",
-    "mixtral-8x7b-32768"
+# Strict, predefined model dictionary containing stable cloud and offline models
+MODEL_DICTIONARY = {
+    "llama-3.3-70b-versatile": {"provider": "groq", "stable": True},
+    "llama-3.1-8b-instant": {"provider": "groq", "stable": True},
+    "gemma2-9b-it": {"provider": "groq", "stable": True},
+    "mixtral-8x7b-32768": {"provider": "groq", "stable": True},
+    "gemma2:9b": {"provider": "ollama", "stable": True},
+    "qwen2.5:7b": {"provider": "ollama", "stable": True},
+    "qwen2.5:1.5b": {"provider": "ollama", "stable": True},
+    "qwen2.5:0.5b": {"provider": "ollama", "stable": True},
+    "gemma4": {"provider": "ollama", "stable": True},
 }
 
-# Valid stable Ollama models whitelisted for fallback
-OLLAMA_MODELS = {
-    "gemma2:9b",
-    "qwen2.5:7b",
-    "qwen2.5:1.5b",
-    "qwen2.5:0.5b",
-    "gemma4" # Keep local config tag compatible
-}
+GROQ_MODELS = {k for k, v in MODEL_DICTIONARY.items() if v["provider"] == "groq" and v["stable"]}
+OLLAMA_MODELS = {k for k, v in MODEL_DICTIONARY.items() if v["provider"] == "ollama" and v["stable"]}
+
+
+def validate_model(model_name: str) -> bool:
+    """Validate if the model name is in the strict predefined stable dictionary."""
+    if not model_name:
+        return False
+    info = MODEL_DICTIONARY.get(model_name)
+    return info is not None and info.get("stable", False)
 
 
 def get_groq_model() -> str:

@@ -79,6 +79,27 @@ class DatabasePartitioner:
                 result TEXT
             )
         """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS conversation_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                conversation_id TEXT,
+                role TEXT,
+                content TEXT,
+                metadata TEXT
+            )
+        """)
+
+        cursor.execute("""
+            CREATE TABLE IF NOT EXISTS cluster_state_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                timestamp TEXT DEFAULT CURRENT_TIMESTAMP,
+                cluster_id TEXT,
+                state_blob TEXT,
+                metadata TEXT
+            )
+        """)
         conn.commit()
 
     def log_agent_state(self, agent_name: str, mode: str, state_data: str) -> None:
@@ -119,6 +140,32 @@ class DatabasePartitioner:
             conn.commit()
         except Exception as e:
             logger.error(f"Failed to log tool execution: {e}")
+
+    def log_conversation_history(self, conversation_id: str, role: str, content: str, metadata: str = "") -> None:
+        """Persists conversation history into the active monthly partition."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO conversation_history (conversation_id, role, content, metadata) VALUES (?, ?, ?, ?)",
+                (conversation_id, role, content, metadata),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to log conversation history: {e}")
+
+    def log_cluster_state(self, cluster_id: str, state_blob: str, metadata: str = "") -> None:
+        """Persists cluster state snapshots into the active monthly partition."""
+        try:
+            conn = self.get_connection()
+            cursor = conn.cursor()
+            cursor.execute(
+                "INSERT INTO cluster_state_history (cluster_id, state_blob, metadata) VALUES (?, ?, ?)",
+                (cluster_id, state_blob, metadata),
+            )
+            conn.commit()
+        except Exception as e:
+            logger.error(f"Failed to log cluster state: {e}")
 
     def query_cross_partitions(self, table_name: str, start_date: str, end_date: str) -> List[Dict[str, Any]]:
         """Queries across all monthly partitions covered within the start and end dates (YYYY-MM)."""

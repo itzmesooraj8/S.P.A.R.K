@@ -23,7 +23,12 @@ def clean_conversational_filler(text: str) -> str:
         
         # Leading whitelisted conversational filler words/phrases
         fillers = [
-            r"^(?:hey|hi|hello|ok|okay|alright|so|now|yes|no|but|just|please|start|gently|quickly|quietly)\b",
+            r"^(?:alright\s+no\s+but\s+listen)\b",
+            r"^(?:start\s+creating\s+for\s+me)\b",
+            r"^(?:start\s+creating)\b",
+            r"^(?:create\s+for\s+me)\b",
+            r"^(?:okay\s+so\s+now|hey\s+spark|ok\s+spark|okay\s+spark)\b",
+            r"^(?:hey|hi|hello|ok|okay|alright|so|now|yes|no|but|just|please|start|gently|quickly|quietly|look)\b",
             r"^(?:can|could|would|will)\s+you\s+(?:please\s+)?(?:mind\s+)?(?:gently\s+)?(?:just\s+)?",
             r"^(?:hey|hi|hello)\s+spark\b",
             r"^(?:gently|quietly|quickly|please)\b",

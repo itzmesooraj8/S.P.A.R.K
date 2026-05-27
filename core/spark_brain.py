@@ -403,6 +403,81 @@ TOOLS = [
                 "required": []
             },
         },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "generate_workspace",
+            "description": "Translate a code or website creation request into a structured JSON manifest and build/serve the result inside a sandboxed subfolder.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "project_name": {
+                        "type": "string",
+                        "description": "Name of the project (no spaces, e.g. healthcare_portal)"
+                    },
+                    "prompt": {
+                        "type": "string",
+                        "description": "The user's original request details to build"
+                    }
+                },
+                "required": ["project_name", "prompt"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "optimize_cad_topology",
+            "description": "Optimize voxel topology for structural compliance using SIMP calculations.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "volume_fraction": {
+                        "type": "number",
+                        "description": "Target volume fraction (between 0.01 and 1.0)"
+                    },
+                    "compliance_target": {
+                        "type": "number",
+                        "description": "Target compliance threshold"
+                    }
+                },
+                "required": ["volume_fraction", "compliance_target"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "solve_robot_kinematics",
+            "description": "Solve analytical inverse kinematics for a 3-DoF robotic arm using DH models.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "x": {"type": "number", "description": "Target X coordinate"},
+                    "y": {"type": "number", "description": "Target Y coordinate"},
+                    "z": {"type": "number", "description": "Target Z coordinate"}
+                },
+                "required": ["x", "y", "z"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "run_predictive_diagnostics",
+            "description": "Analyze an acoustic audio stream of a spindle to detect chatter and predict system degradation.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "audio_stream_path": {
+                        "type": "string",
+                        "description": "Path to the WAV audio file stream"
+                    }
+                },
+                "required": ["audio_stream_path"]
+            }
+        }
     }
 ]
 
@@ -941,8 +1016,10 @@ def _chat_completion(messages: list[dict[str, Any]], allow_tools: bool = True, t
     import httpx
     import requests
 
-    from core.model_router import get_groq_model
+    from core.model_router import get_groq_model, validate_model
     groq_model = get_groq_model()
+    if not validate_model(groq_model):
+        raise GroqFallbackError(f"Model validation failed for '{groq_model}'. Model is not in predefined stable whitelists.")
     
     try:
         user_messages = [m.get("content") for m in messages if m.get("role") == "user" and m.get("content")]
@@ -1028,17 +1105,34 @@ async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
     dynamic_tools = await _get_dynamic_tools()
 
     def _sync_llm(prompt: str) -> str:
-        response = _chat_completion(
-            [
-                {"role": "system", "content": "You are SPARK's planning engine. Return only JSON."},
-                {"role": "user", "content": prompt},
-            ],
-            allow_tools=False,
-        )
-        msg = response.choices[0].message
-        if hasattr(msg, "refusal") and msg.refusal:
-            raise RuntimeError(f"Model refused request: {msg.refusal}")
-        return (msg.content or "").strip()
+        try:
+            response = _chat_completion(
+                [
+                    {"role": "system", "content": "You are SPARK's planning engine. Return only JSON."},
+                    {"role": "user", "content": prompt},
+                ],
+                allow_tools=False,
+            )
+            msg = response.choices[0].message
+            if hasattr(msg, "refusal") and msg.refusal:
+                raise RuntimeError(f"Model refused request: {msg.refusal}")
+            return (msg.content or "").strip()
+        except GroqFallbackError as exc:
+            logger.warning("GroqFallbackError in planner _sync_llm: %s. Falling back to local brain chain.", exc)
+            import asyncio
+            try:
+                loop = asyncio.new_event_loop()
+                asyncio.set_event_loop(loop)
+                try:
+                    return loop.run_until_complete(_local_chat_completion([
+                        {"role": "system", "content": "You are SPARK's planning engine. Return only JSON."},
+                        {"role": "user", "content": prompt},
+                    ]))
+                finally:
+                    loop.close()
+            except Exception as local_exc:
+                logger.error("Local chain fallback also failed in planner: %s", local_exc)
+                raise RuntimeError(f"All model paths failed in planner: {local_exc}") from local_exc
 
     async def _tool_executor(step_name: str, step_arg: str) -> str:
         payload: dict[str, Any]
@@ -1088,6 +1182,21 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         return await _run_planner(tool_args["goal"])
     if tool_name == "run_swarm_task":
         return spark_tools.run_swarm_task(tool_args["goal"])
+    if tool_name == "generate_workspace":
+        from security.defense_interceptor import secure_generate_workspace
+        return await secure_generate_workspace(tool_args.get("project_name", "project"), tool_args.get("prompt", ""))
+    if tool_name == "optimize_cad_topology":
+        from core.hardware_bridge import HardwareAgentBridge
+        bridge = HardwareAgentBridge()
+        return bridge.optimize_cad_topology(tool_args["volume_fraction"], tool_args["compliance_target"])
+    if tool_name == "solve_robot_kinematics":
+        from core.hardware_bridge import HardwareAgentBridge
+        bridge = HardwareAgentBridge()
+        return bridge.solve_robot_kinematics(tool_args["x"], tool_args["y"], tool_args["z"])
+    if tool_name == "run_predictive_diagnostics":
+        from core.hardware_bridge import HardwareAgentBridge
+        bridge = HardwareAgentBridge()
+        return bridge.run_predictive_diagnostics(tool_args["audio_stream_path"])
     if tool_name == "get_news":
         return get_news(tool_args["topic"])
     if tool_name == "get_weather":

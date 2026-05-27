@@ -71,7 +71,8 @@ class SparkTools:
         if not isinstance(app_name, str):
             app_name = str(app_name) if app_name is not None else ""
 
-        app_name_clean = app_name.lower().strip()
+        from security.intent_validator import clean_conversational_filler
+        app_name_clean = clean_conversational_filler(app_name).lower().strip()
 
         # Safeguard: Prevent treating conversational phrases as raw program names
         words = app_name_clean.split()
