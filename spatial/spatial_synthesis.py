@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import threading
 import time
@@ -39,6 +40,18 @@ class SpatialSynthesisEngine:
         self._thread: Optional[threading.Thread] = None
         self.objects: Dict[str, TrackedSpatialObject] = {}
 
+    @property
+    def tracked_objects(self) -> Dict[str, Any]:
+        return {
+            k: {
+                "position": v.position,
+                "velocity": v.velocity,
+                "last_update": v.last_update,
+                "occluded": v.occluded,
+            }
+            for k, v in self.objects.items()
+        }
+
     @staticmethod
     def _finite(array: np.ndarray, label: str) -> np.ndarray:
         array = np.asarray(array, dtype=np.float64)
@@ -63,13 +76,17 @@ class SpatialSynthesisEngine:
         sampled_depth = depth[sample_y, sample_x] / 1000.0
         fx, fy = intrinsic[0, 0], intrinsic[1, 1]
         cx, cy = intrinsic[0, 2], intrinsic[1, 2]
-        z_axis = np.linspace(0.0, 1.0, self.grid_shape[2], dtype=np.float64)
+        z_max = max(2.0, self.grid_shape[2] * self.voxel_size)
+        z_axis = np.linspace(0.0, z_max, self.grid_shape[2], dtype=np.float64)
 
         with self._lock:
             for z_index, z_value in enumerate(z_axis):
                 sdf_slice = sampled_depth - z_value
                 truncated = np.clip(sdf_slice / max(self.voxel_size, 1e-6), -1.0, 1.0)
-                self.tsdf[:, :, z_index] = 0.9 * self.tsdf[:, :, z_index] + 0.1 * truncated
+                w_old = self.weights[:, :, z_index]
+                mask = w_old == 0
+                new_tsdf = np.where(mask, truncated, 0.9 * self.tsdf[:, :, z_index] + 0.1 * truncated)
+                self.tsdf[:, :, z_index] = new_tsdf
                 self.weights[:, :, z_index] += 1.0
         return self.tsdf.copy()
 

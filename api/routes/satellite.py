@@ -34,6 +34,12 @@ async def satellite_command(request: SatelliteRequest):
         raise HTTPException(status_code=401, detail="Unauthorized: Invalid signature or timestamp drift")
 
     # 2. Extract input text or audio
+    from security.session_authorization import active_user_var
+    active_user_var.set({
+        "username": "satellite",
+        "role": "operator",
+        "permissions": ["chat", "tools"],
+    })
     payload = request.payload
     input_text = str(payload.get("text") or "").strip()
     audio_b64 = payload.get("audio")

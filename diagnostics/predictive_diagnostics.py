@@ -17,10 +17,11 @@ logger = logging.getLogger("SPARK_PREDICTIVE_DIAGNOSTICS")
 
 
 class PredictiveDiagnosticsEngine:
-    def __init__(self, sample_rate: int = 16000, n_mels: int = 64, partitioner: Optional[DatabasePartitioner] = None) -> None:
+    def __init__(self, sample_rate: int = 16000, n_mels: int = 64, partitioner: Optional[DatabasePartitioner] = None, use_simulation: bool = False, **kwargs) -> None:
         self.sample_rate = int(sample_rate)
         self.n_mels = int(n_mels)
         self.partitioner = partitioner or DatabasePartitioner()
+        self.use_simulation = use_simulation
         self._monitor_running = False
         self._monitor_thread: Optional[threading.Thread] = None
 

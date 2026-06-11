@@ -12,6 +12,8 @@ SPARK_PORT = int(os.getenv("SPARK_PORT", 8000))
 SPARK_WORKSPACE_DIR = os.getenv("SPARK_WORKSPACE_DIR", os.getcwd())
 SPARK_MODEL_PATH = os.getenv("SPARK_MODEL_PATH", "")
 LOG_LEVEL = os.getenv("LOG_LEVEL", "info")
+SPARK_PERSONA = os.getenv("SPARK_PERSONA", "spark")
+PERSONA_DIR = os.getenv("SPARK_PERSONA_DIR", os.path.join(SPARK_WORKSPACE_DIR, "persona"))
 
 # Groq token budgeting (auto-switch to Ollama at threshold)
 GROQ_DAILY_TOKEN_LIMIT = int(os.getenv("GROQ_DAILY_TOKEN_LIMIT", "80000"))  # Switch to Ollama at 80k tokens

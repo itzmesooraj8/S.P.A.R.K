@@ -1,0 +1,45 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+      - master
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Tests and Security Checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install CI tooling
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install -r requirements-dev.txt
+
+      - name: Ruff syntax/import sanity
+        run: ruff check api security tests --select E9,F63,F7,F82
+
+      - name: Compile critical modules
+        run: python -m py_compile api/auth.py api/server.py api/startup.py api/routes/auth.py api/routes/chat.py api/routes/websockets.py api/routes/override.py security/user_db.py security/secrets_encryptor.py security/audit.py tests/test_auth.py tests/test_audit.py tests/test_production_auth.py
+
+      - name: Unit tests
+        run: python -m unittest discover -s tests
+
+      - name: Security scan
+        run: bandit -q -r api security -x tests
+

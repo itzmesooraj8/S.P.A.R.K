@@ -19,10 +19,12 @@ class NetworkAnomalyDetector:
         self, 
         sample_interval: float = 1.0, 
         max_deviation_multiplier: float = 3.0,
+        active_sockets_threshold: float = 120.0,
         bus: Optional[Any] = None
     ):
         self.sample_interval = sample_interval
         self.max_deviation_multiplier = max_deviation_multiplier
+        self.active_sockets_threshold = float(active_sockets_threshold)
         self.bus = bus
         self.running = False
         self.monitor_thread: Optional[threading.Thread] = None
@@ -100,7 +102,7 @@ class NetworkAnomalyDetector:
         for idx, key in enumerate(keys):
             curr_val = metrics[key]
             baseline_val = self.baselines[idx]
-            threshold = max(baseline_val * self.max_deviation_multiplier, baseline_val + 50.0)
+            threshold = self.active_sockets_threshold if key == "active_sockets" else max(baseline_val * self.max_deviation_multiplier, baseline_val + 50.0)
             
             if curr_val > threshold:
                 anomalies_detected.append({

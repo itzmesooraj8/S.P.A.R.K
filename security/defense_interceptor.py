@@ -41,7 +41,9 @@ class DefensiveInterceptor:
             logger.error("DEFENSE INTERCEPTOR: Self-healing check failed: %s", exc)
 
         # 2. Cross-reference active process tables with network anomaly detector
-        detector = NetworkAnomalyDetector()
+        detector = NetworkAnomalyDetector(
+            active_sockets_threshold=float(os.getenv("SPARK_ACTIVE_SOCKETS_THRESHOLD", "120")),
+        )
         metrics = detector.sample_network_telemetry()
         detector.evaluate_metrics(metrics)
 

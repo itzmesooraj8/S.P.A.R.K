@@ -165,4 +165,10 @@ class ToleranceCalibrator:
         return float(adjusted)
 
 
-SIMPOptimizer2D = VoxelTopologyEngine
+class SIMPOptimizer2D(VoxelTopologyEngine):
+    def __init__(self, nelx: int = 24, nely: int = 12, volfrac: float = 0.45, penal: float = 3.0, **kwargs):
+        super().__init__(nelx=nelx, nely=nely, nelz=1, volfrac=volfrac, penal=penal, **kwargs)
+
+    def optimize(self, iterations: int = 8, target_volume_fraction: float | None = None) -> np.ndarray:
+        density = super().optimize(iterations=iterations, target_volume_fraction=target_volume_fraction)
+        return density[0]  # Return as 2D shape (nely, nelx)

@@ -37,7 +37,12 @@ gemma-3-4b-it-Q5_K_M.gguf
 
 # Local DB partitions
 knowledge_base/*.db
+knowledge_base/partitions/
+knowledge_base/secret.key
 knowledge_base/chroma_db/
+test_sandbox_env/
+test_advanced_sandbox/
+test_phase4_sandbox/
 
 # Scripts & System specific configuration
 register_spark_autostart.ps1

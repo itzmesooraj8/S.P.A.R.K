@@ -28,3 +28,6 @@ pillow
 pytesseract
 APScheduler>=3.10.0
 python-dotenv
+pyotp>=2.9.0
+cryptography>=42.0.0
+

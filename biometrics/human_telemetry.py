@@ -31,7 +31,9 @@ class VitalsSample:
 class BiometricTelemetryDaemon:
     """Face-mesh rPPG controller with affine thermal overlays and alert hooks."""
 
-    def __init__(self, sample_rate: float = 30.0, trace_window: int = 300) -> None:
+    def __init__(self, sample_rate: float = 30.0, trace_window: int = 300, sample_rate_fs: Optional[float] = None) -> None:
+        if sample_rate_fs is not None:
+            sample_rate = sample_rate_fs
         self.sample_rate = float(sample_rate)
         self.trace_window = int(trace_window)
         self.green_trace: list[float] = []
@@ -66,6 +68,12 @@ class BiometricTelemetryDaemon:
         high = highcut / nyquist
         b, a = sps.butter(order, [low, high], btype="band")
         return sps.filtfilt(b, a, data)
+
+    def butterworth_bandpass(self, data: np.ndarray, lowcut: float = 0.75, highcut: float = 4.0, order: int = 4) -> np.ndarray:
+        return self._butterworth_bandpass(data, lowcut, highcut, order)
+
+    def extract_roi_intensity(self, frame: np.ndarray, face_mesh_indices: Optional[np.ndarray] = None) -> float:
+        return self.extract_green_trace(frame, face_mesh_indices)
 
     def calculate_heart_rate(self, filtered_trace: np.ndarray) -> float:
         signal = np.asarray(filtered_trace, dtype=np.float64).reshape(-1)

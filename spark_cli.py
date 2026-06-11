@@ -39,9 +39,11 @@ except ImportError:
     IntentValidator = None
 
 try:
-    from core.spark_brain import TOOLS, spark_plan_and_execute
+    from core.spark_brain import TOOLS, set_runtime_memory_tokens, spark_plan_and_execute
 except ImportError:
     TOOLS = []
+    def set_runtime_memory_tokens(_tokens):
+        return None
     async def spark_plan_and_execute(goal: str) -> dict:
         return {"reply": f"Error: Core planning agent could not be loaded. Sanitized query: {goal}"}
 
@@ -66,10 +68,10 @@ def render_response_box(reply: str) -> None:
 
 
 def display_help() -> None:
-    """Prints a cleanly aligned list of available multi-agent tools and descriptions."""
+    """Prints a cleanly aligned list of available S.P.A.R.K. tools and descriptions."""
     width = 76
     print("\n┌" + "─" * (width - 2) + "┐")
-    print(f"│ {'REGISTERED SYSTEM TOOLS':^{(width - 4)}} │")
+    print(f"│ {'S.P.A.R.K. REGISTERED SYSTEM TOOLS':^{(width - 4)}} │")
     print("├" + "─" * (width - 2) + "┤")
     
     if not TOOLS:
@@ -149,19 +151,31 @@ async def run_system_cleanup() -> None:
 
 async def main() -> None:
     print("======================================================================")
-    print("  S.P.A.R.K. — SENTIENT PROACTIVE AUTONOMOUS RESPONSE KERNEL")
+    print("  S.P.A.R.K. — SMART PROCESSING AND ADAPTIVE REASONING KERNEL")
     print("  Interactive Bare-Metal Systems Console Modality [Online]")
     print("======================================================================")
-    print("Type 'help' to inspect registered tools. Type 'exit' or 'quit' to close.")
+    print("Type 'help' to inspect registered tools. Sensitive tools require session validation or confirmation.")
+    print("Type 'exit' or 'quit' to close.")
 
     try:
         from core.session_archivist import SessionContextArchivist
         archivist = SessionContextArchivist()
         calibration_states = await archivist.load_last_calibration_states()
+        calibration_snapshots = await archivist.load_historical_calibration_snapshots()
+        last_persona = await archivist.load_last_persona()
+        if not last_persona or not last_persona.get("name"):
+            last_persona = {"name": "S.P.A.R.K.", "backronym": "Smart Processing and Adaptive Reasoning Kernel"}
+        set_runtime_memory_tokens({
+            "last_calibration_state": calibration_states,
+            "historical_calibration_snapshots": calibration_snapshots,
+            "active_persona": last_persona,
+        })
         if calibration_states:
             print(f"[SPARK SYSTEM] Prior calibration states loaded: {calibration_states}")
         else:
             print("[SPARK SYSTEM] No prior calibration states found. Starting fresh.")
+        if last_persona.get("name"):
+            print(f"[SPARK SYSTEM] Active persona restored: {last_persona.get('name')}")
     except Exception as exc:
         print(f"[SPARK SYSTEM] Warning: Failed to load prior calibration states: {exc}")
 

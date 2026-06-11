@@ -32,7 +32,10 @@ from core.memory import MemoryStore, MemoryCategory
 from core.mcp_manager import MCPManager
 from core.planner import spark_plan_and_execute
 from core.local_brain_chain import local_chain_complete, chain_status
+from core.persona_manager import get_persona_manager
+from security.session_authorization import authorize_sensitive_tool_async
 from security.schema_validator import validate_tool_arguments, extract_json_object
+from security.audit import record_audit
 
 logger = logging.getLogger(__name__)
 spark_tools = SparkTools()
@@ -562,6 +565,36 @@ TOOLS = [
     {
         "type": "function",
         "function": {
+            "name": "run_swarm_workflow",
+            "description": "Execute a compound swarm workflow that routes CAD optimization, mesh slicing, and kinematics verification in a single local orchestration pass.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "request": {
+                        "type": "string",
+                        "description": "Full technical request to decompose and execute."
+                    },
+                    "volume_fraction": {
+                        "type": "number",
+                        "description": "Optional structural target volume fraction override."
+                    },
+                    "compliance_target": {
+                        "type": "number",
+                        "description": "Optional compliance target override."
+                    },
+                    "x": {"type": "number"},
+                    "y": {"type": "number"},
+                    "z": {"type": "number"},
+                    "current_draw": {"type": "number"},
+                    "torque_constant": {"type": "number"}
+                },
+                "required": ["request"]
+            }
+        }
+    },
+    {
+        "type": "function",
+        "function": {
             "name": "archive_session_state",
             "description": "Persist conversation history turn and update agent state metadata securely.",
             "parameters": {
@@ -614,6 +647,54 @@ try:
     json.dumps(TOOLS)
 except Exception as e:
     raise ValueError(f"SPARK: TOOLS list is not valid JSON: {e}")
+
+
+_runtime_memory_tokens: dict[str, Any] = {}
+
+
+def set_runtime_memory_tokens(tokens: dict[str, Any] | list[Any] | None) -> None:
+    """Store runtime memory tokens for prompt injection across planner turns."""
+    global _runtime_memory_tokens
+    if tokens is None:
+        _runtime_memory_tokens = {}
+        return
+    if isinstance(tokens, list):
+        _runtime_memory_tokens = {f"snapshot_{index}": token for index, token in enumerate(tokens)}
+        return
+    if isinstance(tokens, dict):
+        _runtime_memory_tokens = dict(tokens)
+        return
+    _runtime_memory_tokens = {"runtime": tokens}
+
+
+def get_runtime_memory_tokens() -> dict[str, Any]:
+    return dict(_runtime_memory_tokens)
+
+
+def _runtime_memory_block() -> str:
+    if not _runtime_memory_tokens:
+        return ""
+    try:
+        payload = json.dumps(_runtime_memory_tokens, ensure_ascii=False, default=str)
+    except Exception:
+        payload = str(_runtime_memory_tokens)
+    return f"[RUNTIME_MEMORY_TOKENS]\n{payload}"
+
+
+def _persona_system_block() -> str:
+    try:
+        return get_persona_manager().build_system_block().strip()
+    except Exception as exc:
+        logger.debug("Persona manager unavailable: %s", exc)
+        return ""
+
+
+def _persona_name() -> str:
+    try:
+        persona = get_persona_manager().get_selected_persona()
+        return persona.name or "S.P.A.R.K."
+    except Exception:
+        return "S.P.A.R.K."
 
 
 def _execute_python(code: str, description: str = "") -> str:
@@ -1236,12 +1317,17 @@ async def _get_dynamic_tools() -> list[dict[str, Any]]:
 
 async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
     dynamic_tools = await _get_dynamic_tools()
+    runtime_memory_block = _runtime_memory_block()
+    persona_block = _persona_system_block()
+    prompt_prefix = "\n\n".join(block for block in [persona_block, runtime_memory_block] if block)
+    planner_goal = goal if not prompt_prefix else f"{prompt_prefix}\n\n{goal}"
 
     def _sync_llm(prompt: str) -> str:
         try:
+            persona_name = _persona_name()
             response = _chat_completion(
                 [
-                    {"role": "system", "content": "You are SPARK's planning engine. Return only JSON."},
+                    {"role": "system", "content": f"You are {persona_name}'s planning engine. Return only JSON."},
                     {"role": "user", "content": prompt},
                 ],
                 allow_tools=False,
@@ -1258,7 +1344,7 @@ async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
                 asyncio.set_event_loop(loop)
                 try:
                     return loop.run_until_complete(_local_chat_completion([
-                        {"role": "system", "content": "You are SPARK's planning engine. Return only JSON."},
+                        {"role": "system", "content": f"You are {persona_name}'s planning engine. Return only JSON."},
                         {"role": "user", "content": prompt},
                     ]))
                 finally:
@@ -1285,7 +1371,7 @@ async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
         return _stringify_result(result)
 
     return await spark_plan_and_execute(
-        goal,
+        planner_goal,
         _sync_llm,
         _tool_executor,
         [tool["function"]["name"] for tool in dynamic_tools],
@@ -1295,7 +1381,31 @@ async def _run_planner(goal: str, stream_sink=None) -> dict[str, Any]:
 
 async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
     tool_name = _normalize_tool_name(tool_name)
+    record_audit("tool_execution_start", {"tool": tool_name, "arguments": tool_args})
+    auth_result = await authorize_sensitive_tool_async(tool_name, tool_args)
+    if not auth_result.allowed:
+        record_audit("tool_execution_blocked", {"tool": tool_name, "reason": auth_result.reason})
+        raise PermissionError(
+            f"Authorization required for {tool_name}. Reason: {auth_result.reason}"
+        )
+    try:
+        res = await _call_tool_impl(tool_name, tool_args)
+        # Convert result to a safe summary for audit logs
+        res_summary = str(res)[:1000]
+        # Redact any passwords/keys if they are in the result string
+        from security.audit import SENSITIVE_KEYS
+        for sensitive in SENSITIVE_KEYS:
+            if sensitive in res_summary.lower():
+                res_summary = "[redacted due to sensitive keys match]"
+                break
+        record_audit("tool_execution_success", {"tool": tool_name, "result": res_summary})
+        return res
+    except Exception as exc:
+        record_audit("tool_execution_failed", {"tool": tool_name, "error": str(exc)})
+        raise
 
+
+async def _call_tool_impl(tool_name: str, tool_args: dict[str, Any]) -> Any:
     if tool_name == "web_search":
         return web_search(tool_args["query"])
     if tool_name == "get_time":
@@ -1319,6 +1429,27 @@ async def _call_tool(tool_name: str, tool_args: dict[str, Any]) -> Any:
         from core.swarm_agent_router import SwarmAgentRouter
         router = SwarmAgentRouter()
         return await router.decompose_and_execute(tool_args["query"])
+    if tool_name == "run_swarm_workflow":
+        from core.swarm_workflow_engine import SwarmWorkflowEngine
+
+        engine = SwarmWorkflowEngine()
+        request = str(tool_args.get("request", "")).strip()
+        return await asyncio.to_thread(
+            engine.execute,
+            request,
+            {
+                "volume_fraction": tool_args.get("volume_fraction"),
+                "compliance_target": tool_args.get("compliance_target"),
+                "target_coordinates": {
+                    "x": tool_args.get("x"),
+                    "y": tool_args.get("y"),
+                    "z": tool_args.get("z"),
+                },
+                "current_draw": tool_args.get("current_draw"),
+                "torque_constant": tool_args.get("torque_constant"),
+                "runtime_memory_tokens": get_runtime_memory_tokens(),
+            },
+        )
     if tool_name == "archive_session_state":
         from core.session_archivist import SessionContextArchivist
         archivist = SessionContextArchivist()
@@ -1502,6 +1633,7 @@ async def _try_local_direct_tool_routing(user_input: str) -> dict[str, Any] | No
 
 async def handle(user_input: str, session_history: list[dict[str, Any]], stream_sink=None, cancel_event=None) -> dict[str, Any]:
     from security.intent_validator import validate_intent_text
+    from core.session_archivist import SessionContextArchivist
     
     # Run intent validation and conversational filler clean-up
     scan = validate_intent_text(user_input)
@@ -1513,6 +1645,10 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
         
     if scan.cleaned_text and scan.cleaned_text.strip():
         user_input = scan.cleaned_text
+
+    persona_manager = get_persona_manager()
+    active_persona = persona_manager.get_selected_persona()
+    archivist = SessionContextArchivist()
 
     # Check token budget at session start - block Groq early if budget is low
     remaining_tokens = token_counter.get_remaining_today()
@@ -1535,6 +1671,9 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     memories = facts + recent
     compact_memories = [str(m)[:180] for m in memories[:2]]
     memory_ctx = ("\n[MEMORY]\n" + "\n".join(f"- {m}" for m in compact_memories)) if compact_memories else ""
+    runtime_memory_block = _runtime_memory_block()
+    if runtime_memory_block:
+        memory_ctx = f"{memory_ctx}\n{runtime_memory_block}".strip()
 
     compact_history = []
     for message in session_history[-4:]:
@@ -1548,8 +1687,14 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
     groq_unavailable = time.time() < _groq_cooldown_until or client is None
     local_mode_active = groq_unavailable
 
+    persona_block = _persona_system_block()
+    persona_message = {"role": "system", "content": persona_block} if persona_block else None
+    persona_name = _persona_name()
+    system_message = {"role": "system", "content": f"{build_system_prompt(memory_ctx, local_mode_active=local_mode_active, persona_name=persona_name)}\n\n{SYSTEM_PROMPT}".strip()}
+
     messages = [
-        {"role": "system", "content": f"{build_system_prompt(memory_ctx, local_mode_active=local_mode_active)}\n\n{SYSTEM_PROMPT}".strip()},
+        *([persona_message] if persona_message else []),
+        system_message,
         *compact_history,
         {"role": "user", "content": user_input},
     ]
@@ -1573,6 +1718,20 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             greeting_prefix = "Good evening"
         reply = f"{greeting_prefix}, sir. How may I assist you today?"
         memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        try:
+            await archivist.save_turn(
+                conversation_id="spark_cli_identity",
+                role="system",
+                content="persona active",
+                state_metadata={"active_persona": {
+                    "name": active_persona.name,
+                    "voice_tone": active_persona.voice_tone,
+                    "response_style": active_persona.response_style,
+                    "backronym": active_persona.backronym,
+                }},
+            )
+        except Exception as exc:
+            logger.debug("Failed to persist persona state: %s", exc)
         if stream_sink:
             stream_sink("response_done", {"content": reply})
         return {"reply": reply, "tool_used": None, "tool_result": None}
@@ -1588,6 +1747,20 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             tool_out = await _call_tool("open_url", {"url": map_url, "query": location})
             reply = f"Opened Google Maps for {location}, sir."
             memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+            try:
+                await archivist.save_turn(
+                    conversation_id="spark_cli_identity",
+                    role="system",
+                    content="persona active",
+                    state_metadata={"active_persona": {
+                        "name": active_persona.name,
+                        "voice_tone": active_persona.voice_tone,
+                        "response_style": active_persona.response_style,
+                        "backronym": active_persona.backronym,
+                    }},
+                )
+            except Exception as exc:
+                logger.debug("Failed to persist persona state: %s", exc)
             return {"reply": reply, "tool_used": "open_url", "tool_result": tool_out}
         except Exception as exc:
             logger.warning("Deterministic maps intent failed: %s", exc)
@@ -1598,6 +1771,20 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             tool_out = await _call_tool("get_time", {})
             reply = f"{tool_out}, sir."
             memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+            try:
+                await archivist.save_turn(
+                    conversation_id="spark_cli_identity",
+                    role="system",
+                    content="persona active",
+                    state_metadata={"active_persona": {
+                        "name": active_persona.name,
+                        "voice_tone": active_persona.voice_tone,
+                        "response_style": active_persona.response_style,
+                        "backronym": active_persona.backronym,
+                    }},
+                )
+            except Exception as exc:
+                logger.debug("Failed to persist persona state: %s", exc)
             return {"reply": reply, "tool_used": "get_time", "tool_result": tool_out}
         except Exception as exc:
             logger.warning("Deterministic time intent failed: %s", exc)
@@ -1617,6 +1804,20 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
             reply = await _local_chat_completion(messages) or _offline_reply(user_input)
 
         memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+        try:
+            await archivist.save_turn(
+                conversation_id="spark_cli_identity",
+                role="system",
+                content="persona active",
+                state_metadata={"active_persona": {
+                    "name": active_persona.name,
+                    "voice_tone": active_persona.voice_tone,
+                    "response_style": active_persona.response_style,
+                    "backronym": active_persona.backronym,
+                }},
+            )
+        except Exception as exc:
+            logger.debug("Failed to persist persona state: %s", exc)
         if stream_sink:
             stream_sink("response_done", {"content": reply})
 
@@ -1660,6 +1861,20 @@ async def handle(user_input: str, session_history: list[dict[str, Any]], stream_
                     tool_out = await _call_tool("open_url", {"url": url, "query": search_terms})
                     reply = f"Opening {search_engine} search for '{search_terms}', sir."
                     memory.store(f"User: {user_input} | SPARK: {reply[:200]}", MemoryCategory.CONVERSATION)
+                    try:
+                        await archivist.save_turn(
+                            conversation_id="spark_cli_identity",
+                            role="system",
+                            content="persona active",
+                            state_metadata={"active_persona": {
+                                "name": active_persona.name,
+                                "voice_tone": active_persona.voice_tone,
+                                "response_style": active_persona.response_style,
+                                "backronym": active_persona.backronym,
+                            }},
+                        )
+                    except Exception as exc:
+                        logger.debug("Failed to persist persona state: %s", exc)
                     return {"reply": reply, "tool_used": "open_url", "tool_result": tool_out}
                 except Exception as exc:
                     logger.warning("Deterministic search intent failed: %s", exc)
