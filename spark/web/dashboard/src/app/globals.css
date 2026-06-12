@@ -1,0 +1,41 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --spark-bg: #0a0a0f;
+  --spark-card: #111118;
+  --spark-border: #1e1e2e;
+  --spark-accent: #00d4ff;
+  --spark-success: #00ff88;
+  --spark-warning: #ffaa00;
+  --spark-error: #ff4444;
+}
+
+body {
+  background: var(--spark-bg);
+  color: #e0e0e0;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.spark-card {
+  background: var(--spark-card);
+  border: 1px solid var(--spark-border);
+  border-radius: 8px;
+  padding: 16px;
+}
+
+.spark-accent { color: var(--spark-accent); }
+.spark-success { color: var(--spark-success); }
+.spark-warning { color: var(--spark-warning); }
+.spark-error { color: var(--spark-error); }
+
+.status-dot {
+  width: 8px; height: 8px; border-radius: 50%; display: inline-block;
+}
+.status-active { background: var(--spark-success); box-shadow: 0 0 8px var(--spark-success); }
+.status-idle { background: var(--spark-accent); }
+.status-error { background: var(--spark-error); }
+
+@keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.5; } }
+.pulse { animation: pulse 2s infinite; }
