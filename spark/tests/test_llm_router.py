@@ -58,8 +58,8 @@ class TestDeterministicClassification:
 
     def test_status_check(self):
         assert _classify_deterministic("show me the dashboard") == "status_check"
-        assert _classify_deterministic("system health") == "status_check"
-        assert _classify_deterministic("how are things") == "status_check"
+        assert _classify_deterministic("show system status") == "status_check"
+        assert _classify_deterministic("system health check") == "status_check"
 
     def test_conversation_fallback(self):
         assert _classify_deterministic("hello") == "conversation"

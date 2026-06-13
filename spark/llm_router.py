@@ -35,8 +35,10 @@ DETERMINISTIC_RULES: list[tuple[str, list[str]]] = [
     ("goal_creation", ["goal", "plan", "task", "achieve", "build", "create", "make", "develop", "implement"]),
     ("action_execution", ["open", "search", "run", "execute", "launch", "start", "find", "look up", "browse", "navigate", "type", "click", "send"]),
     ("memory_query", ["remember", "recall", "memory", "what did", "last time", "previously", "before"]),
-    ("status_check", ["status", "dashboard", "health", "how are", "system", "metrics", "performance"]),
+    ("status_check", ["show dashboard", "show status", "system health", "system status", "show metrics"]),
 ]
+
+CONVERSATION_KEYWORDS = ["hello", "hi", "hey", "how are", "what's up", "good morning", "good evening", "thanks", "thank you", "please", "help me", "what is", "what are", "can you", "tell me", "explain", "describe", "who are you", "what can you do"]
 
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
@@ -126,11 +128,19 @@ async def _classify_ollama(message: str) -> str | None:
 
 
 def _classify_deterministic(message: str) -> str:
+    import re
     message_lower = message.lower()
+    words = set(re.findall(r'\b\w+\b', message_lower))
+
+    for keyword in CONVERSATION_KEYWORDS:
+        keyword_words = set(re.findall(r'\b\w+\b', keyword))
+        if keyword_words.issubset(words):
+            return "conversation"
 
     for intent, keywords in DETERMINISTIC_RULES:
         for keyword in keywords:
-            if keyword in message_lower:
+            keyword_words = set(re.findall(r'\b\w+\b', keyword))
+            if keyword_words.issubset(words):
                 return intent
 
     return "conversation"

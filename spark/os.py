@@ -365,7 +365,7 @@ class SparkOS:
             app_name = user_input.split("open")[-1].strip() if "open" in lower else user_input
             risk = self.risk_engine.assess("open_application")
             if risk.requires_confirmation:
-                return {"reply": f"This requires confirmation: {risk.reason}", "action": "confirm_needed"}
+                return {"reply": f"Opening {app_name} requires permission. Would you like me to proceed?", "action": "confirm_needed", "pending_action": app_name}
             result = await self.retry_manager.execute_with_retry(
                 lambda app=app_name: self.actions.execute("open_application", {"app": app}, source="chat"),
                 strategies=["direct", "shell_command"],
@@ -375,12 +375,17 @@ class SparkOS:
             self.advanced_learning.record_outcome("open_application", "desktop", result.get("success", False))
             self.user_model.learn_tool_preference("open_application", result.get("success", False))
             self.preference_learner.observe_tool_use("open_application", result.get("success", False))
-            return {"reply": str(result), "action": "open"}
+            if result.get("success"):
+                return {"reply": f"Opened {app_name}.", "action": "open"}
+            else:
+                return {"reply": f"I couldn't open {app_name}. {result.get('error', 'Unknown error')}", "action": "error"}
 
         if any(w in lower for w in ["search", "find", "look up"]):
             query = user_input.replace("search", "").replace("find", "").replace("look up", "").strip()
             search_result = await self.actions.execute("web_search", {"query": query}, source="chat")
-            return {"reply": str(search_result), "action": "search"}
+            if isinstance(search_result, dict) and search_result.get("success"):
+                return {"reply": f"Here's what I found for '{query}': {search_result.get('result', 'No results')}", "action": "search"}
+            return {"reply": f"I searched for '{query}' but couldn't find results.", "action": "search"}
 
         if any(w in lower for w in ["browse", "playwright", "navigate"]):
             url = user_input.replace("browse", "").replace("playwright", "").replace("navigate", "").strip()

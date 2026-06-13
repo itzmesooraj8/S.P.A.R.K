@@ -10,6 +10,7 @@ import logging
 import sys
 
 from spark.os import SparkOS
+from spark.conversation.manager import ConversationManager
 
 logging.basicConfig(
     level=logging.INFO,
@@ -44,8 +45,26 @@ Commands:
 """)
 
 
+COMMANDS = {
+    "help": "help",
+    "dashboard": "dashboard",
+    "status": "status",
+    "goals": "goals",
+    "memory": "memory",
+    "agents": "agents",
+    "world": "world",
+    "skills": "skills",
+    "decisions": "decisions",
+    "clear": "clear",
+    "quit": "quit",
+    "exit": "quit",
+    "q": "quit",
+}
+
+
 async def interactive_loop(os: SparkOS) -> None:
-    """Main interactive loop."""
+    """Main interactive loop with conversation manager."""
+    conv = ConversationManager()
     print_banner()
 
     while True:
@@ -60,14 +79,14 @@ async def interactive_loop(os: SparkOS) -> None:
         if not user_input:
             continue
 
-        lower = user_input.lower()
+        lower = user_input.lower().strip()
 
         if lower in ("quit", "exit", "q"):
             print("Shutting down SPARK...")
             os.shutdown()
             break
 
-        if lower == "help":
+        if lower in ("help", "/help", "?"):
             print_help()
             continue
 
@@ -81,63 +100,97 @@ async def interactive_loop(os: SparkOS) -> None:
 
         if lower == "status":
             health = os.env_awareness.get_health()
-            print(f"Status: {health.get('status', 'unknown')}")
-            print(f"CPU: {health.get('cpu_percent', '?')}%")
-            print(f"Memory: {health.get('memory_percent', '?')}%")
+            print(f"\nSystem Status: {health.get('status', 'unknown')}")
+            print(f"  CPU: {health.get('cpu_percent', '?')}%")
+            print(f"  Memory: {health.get('memory_percent', '?')}%")
+            print(f"  Platform: {health.get('platform', '?')}")
             continue
 
         if lower == "goals":
             stats = os.goal_engine.stats()
-            print(f"Active goals: {stats.get('active', 0)}")
+            print(f"\nActive goals: {stats.get('active', 0)}")
             for g in stats.get("goals", []):
-                print(f"  - {g.get('desc', '?')} [{g.get('status', '?')}]")
+                print(f"  [{g.get('status', '?')}] {g.get('desc', '?')}")
+            if stats.get('active', 0) == 0:
+                print("  No active goals.")
             continue
 
         if lower == "memory":
-            print(f"Semantic: {os.semantic_memory.count()}")
-            print(f"Episodic: {os.episodic_memory.count()}")
+            print(f"\nMemory:")
+            print(f"  Semantic: {os.semantic_memory.count()} facts")
+            print(f"  Episodic: {os.episodic_memory.count()} turns")
             wm = os.working_memory.snapshot()
-            print(f"Working objective: {wm.get('objective', {}).get('description', 'None')}")
+            obj = wm.get("objective", {})
+            if obj.get("description"):
+                print(f"  Working objective: {obj['description']}")
+            else:
+                print(f"  Working objective: None")
             continue
 
         if lower == "agents":
             agents = [os.planner_agent, os.executor_agent, os.memory_agent, os.reflection_agent, os.observer_agent]
+            print("\nAgents:")
             for agent in agents:
                 info = agent.info()
-                print(f"  {info['name']}: {info['status']}")
+                status = info['status']
+                indicator = "●" if status == "idle" else "◉" if status == "running" else "✗"
+                print(f"  {indicator} {info['name']}: {status}")
             continue
 
         if lower == "world":
             snapshot = os.world_model.snapshot()
-            print(f"Activity: {snapshot.get('current_activity', 'unknown')}")
+            print(f"\nWorld Model:")
+            print(f"  Activity: {snapshot.get('current_activity', 'unknown')}")
             predictions = snapshot.get("predictions", [])
-            for p in predictions:
-                print(f"  Predicted: {p.get('need', '?')} ({p.get('confidence', 0):.0%})")
+            if predictions:
+                print(f"  Predictions:")
+                for p in predictions:
+                    print(f"    - {p.get('need', '?')} ({p.get('confidence', 0):.0%})")
+            else:
+                print(f"  No predictions yet.")
             continue
 
         if lower == "skills":
             skills = os.skill_registry.list_all()
+            print("\nLearned Skills:")
             if not skills:
-                print("No skills learned yet.")
+                print("  No skills learned yet.")
             for s in skills:
                 print(f"  {s.get('name', '?')}: {s.get('use_count', 0)} uses, {s.get('success_rate', 0):.0%} success")
             continue
 
         if lower == "decisions":
             decisions = os.decision_log.recent(10)
+            print("\nRecent Decisions:")
             if not decisions:
-                print("No decisions recorded.")
+                print("  No decisions recorded.")
             for d in decisions:
                 print(f"  [{d.get('action', '?')}] {d.get('reason', '?')[:60]}")
             continue
 
+        # Check for confirmation flow
+        if conv.is_waiting_confirmation():
+            confirmation = conv.handle_confirmation(user_input)
+            if confirmation:
+                if confirmation["confirmed"]:
+                    print("\nProceeding...")
+                    action = confirmation.get("action", {})
+                    if action:
+                        result = await os.process(action.get("reply", ""), source="cli")
+                        print(f"\n{conv.format_response(result, user_input)}")
+                else:
+                    print("\nCancelled.")
+                continue
+
         # Process as chat message
         try:
+            conv.record_turn("user", user_input)
             result = await os.process(user_input, source="cli")
-            reply = result.get("reply", "No response")
-            print(f"\n{reply}")
+            response = conv.format_response(result, user_input)
+            conv.record_turn("assistant", response)
+            print(f"\n{response}")
         except Exception as exc:
-            print(f"\nError: {exc}")
+            print(f"\nI encountered an error: {exc}")
 
 
 def main() -> int:
@@ -151,8 +204,9 @@ def main() -> int:
 def process_command(user_input: str) -> str:
     os = SparkOS()
     os.initialize()
+    conv = ConversationManager()
     result = asyncio.run(os.process(user_input))
-    return str(result.get("reply", ""))
+    return conv.format_response(result, user_input)
 
 
 if __name__ == "__main__":
