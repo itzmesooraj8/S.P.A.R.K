@@ -1,0 +1,37 @@
+[project]
+name = "spark"
+version = "0.1.0"
+description = "S.P.A.R.K. — AI Operating System inspired by Tony Stark's JARVIS"
+readme = "spark/README.md"
+license = {text = "MIT"}
+requires-python = ">=3.11"
+dependencies = [
+    "groq",
+    "httpx",
+    "fastapi",
+    "uvicorn",
+    "psutil",
+    "pygetwindow",
+    "pyautogui",
+    "chromadb",
+    "sentence-transformers",
+    "paho-mqtt",
+    "playwright",
+    "python-dotenv",
+    "pytest",
+    "pytest-asyncio",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest",
+    "pytest-asyncio",
+]
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.backends._legacy:_Backend"
+
+[tool.pytest.ini_options]
+testpaths = ["spark/tests"]
+asyncio_mode = "auto"

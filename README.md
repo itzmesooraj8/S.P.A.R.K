@@ -1,127 +1,130 @@
-# S.P.A.R.K
-**Sentient Proactive Autonomous Response Kernel**
-> Personal AI assistant. Runs locally. Actually intelligent.
+# S.P.A.R.K. — AI Operating System
 
-[![Python](https://img.shields.io/badge/Python-3.12%2B-3776AB?logo=python&logoColor=white)](https://www.python.org/)
-[![License](https://img.shields.io/badge/License-MIT-green.svg)](LICENSE)
-[![Platform](https://img.shields.io/badge/Platform-Windows%20%7C%20Linux%20%7C%20macOS-cyan)]()
+A continuously-running, environment-aware, goal-pursuing agent built in Python. Inspired by Tony Stark's JARVIS.
 
-Then open http://localhost:8000
+```
+Observe → Understand → Predict → Plan → Act → Reflect → Learn → Observe
+Forever. 24/7.
+```
 
-## Public Access
-SPARK can be exposed securely through a Cloudflare Tunnel or a VPS with HTTPS.
+## What SPARK Is
 
-Recommended remote-access setup:
-1. Set a strong `SPARK_ACCESS_TOKEN` in `.env`.
-2. Keep `SPARK_ENABLE_TUNNEL=1` only after the token is set.
-3. Point Cloudflare Tunnel at the local FastAPI server on `http://localhost:8000`.
-4. Replace the placeholder hostname in `cloudflared-config.yml` with your real domain, or use a tunnel token.
-5. Access the public URL over HTTPS and send `Authorization: Bearer <SPARK_ACCESS_TOKEN>` for protected routes.
+SPARK is not a chatbot wrapper. It's an AI operating system that:
 
-Protected routes include `/chat`, `/listen`, `/voice-chat`, `/status`, `/api/status`, and `/hud`.
-The login flow returns the currently configured bearer token so the HUD or client can reuse the same secret.
-
-For a step-by-step launch guide, see [docs/DEPLOYMENT_CHECKLIST.md](docs/DEPLOYMENT_CHECKLIST.md).
-For a live smoke test against your public URL, use [scripts/check_public_tunnel.py](scripts/check_public_tunnel.py).
+- Observes your screen and active applications every 5 seconds
+- Builds a live confidence model of what you're doing
+- Routes requests through an LLM intent classifier
+- Reasons about options using actual LLM scoring
+- Manages four types of memory (working/episodic/semantic/procedural)
+- Gates every action through a permission system
+- Retries failures with strategy switching
+- Falls back gracefully when backends are unavailable
+- Exposes everything through a real-time React dashboard
 
 ## Architecture
-```text
-User Input (Voice/Text) → Whisper STT → Orchestrator → Groq LLM
-                                                      ↓
-                                               Tool Selection
-                                    ┌──────────────┼──────────────┐
-                                  Search      Weather/News     System
-                                  Network       Browser          IoT
-                                                  ↓
-                                            ChromaDB Memory
-                                                  ↓
-                                        EdgeTTS → HUD WebSocket
+
+```
+spark/
+├── core/              — Event Bus, State Manager, DI Container, Config
+├── cognition/         — Goal Engine, Reasoning, Reflection, Planning
+├── awareness/         — Screen, App, Context, User, World Model
+├── memory/            — Semantic (ChromaDB), Episodic, Procedural, Working
+├── agents/            — Planner, Executor, Memory, Reflection, Observer
+├── autonomy/          — Continuous Agent Loop (the brain)
+├── planning/          — LLM Planner, Replanner, Multi-Agent Deliberation
+├── automation/        — Playwright, Desktop Intel, IoT, Autonomous Workflows
+├── integrations/      — Discord, Email, Telegram
+├── voice/             — Voice Engine + Always-Listening Loop
+├── communication/     — Voice Channel, Chat Channel
+├── authority/         — Permission Policy, Action Validator
+├── reliability/       — Risk Engine, Retry Manager, Failure Recovery
+├── observability/     — Metrics, Tracing, Audit Log
+├── security/          — Secrets, Permission Scopes, Sandbox
+├── user/              — User Model, Preference Learning
+├── learning/          — Learning Engine, Advanced Learning
+├── goals/             — Long-Term Goal Management
+├── skills/            — Reusable Skill System
+├── capabilities/      — Capability Registry
+├── decisions/         — Decision Log
+├── sync/              — Cross-Device Synchronization
+├── multimodal/        — Camera, Microphone, Sensors
+├── web/               — FastAPI + React Dashboard
+├── ui/                — JARVIS-Style Text Dashboard
+├── llm_router.py      — LLM Intent Classifier
+├── llm_bridge.py      — Clean LLM Interface (Groq → Ollama → Fallback)
+├── os.py              — Main Orchestrator
+└── tests/             — 117 tests
 ```
 
-## Features
-- `web_search`: live internet lookup for current information.
-- `get_system_stats`: CPU, RAM, disk, and system telemetry.
-- `get_clipboard`: read the current clipboard contents.
-- `open_url` and `open_app`: launch websites, maps, and desktop apps.
-- `get_news`: fetch current headlines for a topic.
-- `get_weather`: geocoded weather lookup through Open-Meteo.
-- `get_network_connections`: inspect active network sessions and listening sockets.
-- `control_device` and `list_devices`: MQTT-based home device control.
-- `scene_leaving`, `scene_arriving`, `scene_good_night`: scripted home scenes.
-- `read_screen` and `read_region`: OCR-based screen awareness.
-- `listen_and_transcribe`: microphone capture plus Whisper transcription.
-- `speak`: local text-to-speech output.
-- Memory-backed recall with ChromaDB and categorized fact extraction.
-
-## .env Setup
-Copy `.env.example` to `.env` and fill in the variables below.
-
-```env
-GROQ_API_KEY=your_groq_api_key_here
-SPARK_TOKEN=change-this-to-something-strong-32chars
-SPARK_ACCESS_TOKEN=change-this-to-a-strong-secret
-MQTT_HOST=192.168.1.100
-MQTT_PORT=1883
-NEWS_API_KEY=optional_newsapi_key
-```
-
-If both `SPARK_ACCESS_TOKEN` and `SPARK_TOKEN` are set, the API uses `SPARK_ACCESS_TOKEN` first.
-
-
-## Run
-Install dependencies, set up the environment, and launch the backend with your normal local start command. The HUD is served from the FastAPI app at `http://localhost:8000`.
-
-## Notes
-The repository keeps the current React HUD and FastAPI backend layout, while the phase prompts act as the functional specification for the assistant stack.
-
-## Cloudflare Tunnel Setup
+## Quick Start
 
 ```bash
-# Install cloudflared
-wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/cloudflared-linux-amd64.deb
-sudo dpkg -i cloudflared-linux-amd64.deb
+# Install dependencies
+pip install -r requirements.txt
 
-# Authenticate
-cloudflared tunnel login
+# Install Playwright (optional, for browser automation)
+playwright install
 
-# Create and run tunnel
-cloudflared tunnel create spark-home
-cloudflared tunnel run spark-home
+# Run SPARK
+python -m spark
+
+# Run tests
+python -m pytest spark/tests/ -v
 ```
 
-For Windows and long-term remote access, the repository includes `start_spark.ps1`, which launches the API and then starts Cloudflared if a valid tunnel configuration or token is present.
+## Configuration
 
-If you use the named tunnel config, update `cloudflared-config.yml` so the hostname matches a real DNS record in Cloudflare.
+SPARK uses environment variables for secrets:
 
-Systemd service for auto-start on boot:
-
-```ini
-[Unit]
-Description=SPARK Cloudflare Tunnel
-After=network.target
-
-[Service]
-ExecStart=/usr/local/bin/cloudflared tunnel run spark-home
-Restart=on-failure
-
-[Install]
-WantedBy=multi-user.target
-```
-
-## OCR Setup (Screen Awareness)
-To enable the `read_screen` functionality, install Tesseract OCR on your host machine:
-- **Linux**: `sudo apt install tesseract-ocr`
-- **Windows**: Install from [UB-Mannheim/tesseract](https://github.com/UB-Mannheim/tesseract/wiki)
-- **macOS**: `brew install tesseract`
-
-After system install, ensure Python dependencies are available:
-`pip install pillow pytesseract`
-
-## Wake Word Setup
-To enable the background "Hey SPARK" wake word engine:
 ```bash
-pip install openwakeword
-# If pyaudio fails on Windows, install it via pipwin:
-pip install pipwin
-pipwin install pyaudio
+# .env.example
+GROQ_API_KEY=your_groq_api_key
+GROQ_MODEL=llama-3.1-8b-instant
+DISCORD_TOKEN=your_discord_token
+TELEGRAM_TOKEN=your_telegram_token
+SMTP_HOST=smtp.gmail.com
+SMTP_USERNAME=your_email
+SMTP_PASSWORD=your_app_password
 ```
+
+## Intent Routing
+
+SPARK classifies user intent using LLM (Groq → Ollama → Deterministic fallback):
+
+| Intent | Example |
+|--------|---------|
+| `goal_creation` | "create a goal to learn FastAPI" |
+| `action_execution` | "open Chrome browser" |
+| `memory_query` | "remember my name is Sooraj" |
+| `status_check` | "show me the dashboard" |
+| `conversation` | "tell me a joke" |
+
+## Test Suite
+
+```bash
+python -m pytest spark/tests/ -v
+
+# 117 tests covering:
+# - Intent classification (19 tests)
+# - LLM bridge + fallback (14 tests)
+# - World model dynamic confidence (15 tests)
+# - Reasoning engine (12 tests)
+# - Autonomous loop (10 tests)
+# - Authority + retry + recovery (26 tests)
+# - Integration tests (21 tests)
+```
+
+## Tech Stack
+
+- **Language:** Python 3.11+
+- **LLM:** Groq (cloud) + Ollama (local) + Deterministic fallback
+- **Memory:** ChromaDB + sentence-transformers
+- **Vision:** DXCam / MSS / PyAutoGUI + EasyOCR / Tesseract
+- **Browser:** Playwright
+- **IoT:** paho-mqtt + Home Assistant
+- **Dashboard:** FastAPI + React/Next.js
+- **Testing:** pytest + pytest-asyncio
+
+## License
+
+MIT

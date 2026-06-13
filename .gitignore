@@ -1,4 +1,5 @@
 # S.P.A.R.K. Git Isolation Matrix
+
 # Compiled python files
 __pycache__/
 *.pyc
@@ -12,6 +13,7 @@ ENV/
 env/
 node_modules/
 dist/
+*.egg-info/
 
 # Logging and security traces
 *.log
@@ -43,6 +45,10 @@ knowledge_base/chroma_db/
 test_sandbox_env/
 test_advanced_sandbox/
 test_phase4_sandbox/
+
+# Testing
+.pytest_cache/
+chroma_db/
 
 # Scripts & System specific configuration
 register_spark_autostart.ps1
