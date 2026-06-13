@@ -403,16 +403,45 @@ class SparkOS:
     async def _handle_memory(self, user_input: str) -> dict[str, Any]:
         lower = user_input.lower()
 
+        if any(w in lower for w in ["remember"]):
+            fact = user_input
+            for prefix in ["remember that", "remember to", "remember", "make sure to remember", "don't forget"]:
+                if lower.startswith(prefix):
+                    fact = fact[len(prefix):].strip()
+                    break
+            if fact:
+                self.semantic_memory.store_fact(fact)
+                self.episodic_memory.record("user", user_input, {"type": "fact"})
+                return {"reply": f"I'll remember: {fact}", "action": "memory_stored"}
+            return {"reply": "What would you like me to remember?", "action": "memory"}
+
         if any(w in lower for w in ["who am i", "about me", "my profile"]):
             profile = self.user_model.get_profile()
-            return {"reply": str(profile), "action": "user_profile"}
+            name = profile.get("name", "unknown")
+            projects = profile.get("active_projects", [])
+            return {"reply": f"You are {name}. Active projects: {', '.join(projects) if projects else 'none yet'}.", "action": "user_profile"}
 
         if any(w in lower for w in ["preferences", "what do i prefer"]):
             prefs = self.preference_learner.snapshot()
-            return {"reply": str(prefs.get("inferred", {})), "action": "preferences"}
+            inferred = prefs.get("inferred", {})
+            tools = inferred.get("preferred_tools", {})
+            if tools:
+                tool_list = ", ".join(tools.keys())
+                return {"reply": f"Based on your usage, I've learned you prefer: {tool_list}", "action": "preferences"}
+            return {"reply": "I'm still learning your preferences. Use me more and I'll figure them out.", "action": "preferences"}
+
+        if any(w in lower for w in ["what is my name", "what's my name"]):
+            facts = self.semantic_memory.recall("name", top_k=5)
+            for fact in facts:
+                if "name" in fact.lower():
+                    return {"reply": f"I remember: {fact}", "action": "memory"}
+            return {"reply": "I don't have your name in memory yet. Tell me and I'll remember.", "action": "memory"}
 
         mem_result = await self.memory_agent.run("recall", query=user_input)
-        return {"reply": str(mem_result.get("results", [])), "action": "memory"}
+        results = mem_result.get("results", [])
+        if results:
+            return {"reply": f"I remember: {results[0]}", "action": "memory"}
+        return {"reply": "I don't have that in my memory yet. Would you like me to remember it?", "action": "memory"}
 
     async def _handle_status(self, user_input: str) -> dict[str, Any]:
         lower = user_input.lower()
@@ -427,7 +456,27 @@ class SparkOS:
         return {"reply": self.run_dashboard(), "action": "dashboard"}
 
     async def _handle_conversation(self, user_input: str) -> dict[str, Any]:
-        return {"reply": f"Received: {user_input}", "action": "conversation"}
+        lower = user_input.lower()
+
+        if any(w in lower for w in ["hello", "hi ", "hey", "good morning", "good evening", "good afternoon"]):
+            return {"reply": "Hello, sir. How can I help you today?", "action": "conversation"}
+
+        if any(w in lower for w in ["how are you", "how are things", "what's up"]):
+            return {"reply": "I'm running well, sir. All systems operational. What would you like me to do?", "action": "conversation"}
+
+        if any(w in lower for w in ["who are you", "what are you", "what is spark"]):
+            return {"reply": "I'm SPARK, your AI operating system. I observe, reason, plan, and act to help you achieve your goals.", "action": "conversation"}
+
+        if any(w in lower for w in ["thank", "thanks"]):
+            return {"reply": "You're welcome, sir. Let me know if you need anything else.", "action": "conversation"}
+
+        if any(w in lower for w in ["what can you do", "help me"]):
+            return {"reply": "I can help with goals, actions, memory, system status, and general questions. Try: 'open an app', 'remember something', or 'show dashboard'.", "action": "conversation"}
+
+        if any(w in lower for w in ["bye", "goodbye", "see you"]):
+            return {"reply": "Goodbye, sir. I'll be here when you need me.", "action": "conversation"}
+
+        return {"reply": f"I understand. How can I help with that?", "action": "conversation"}
 
     def learn_skill(self, name: str, steps: list[dict[str, Any]], description: str = "", tags: list[str] | None = None) -> dict[str, Any]:
         skill = self.skill_registry.learn_from_action(name, steps, description, tags)
