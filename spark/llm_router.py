@@ -62,7 +62,7 @@ async def classify_intent(message: str) -> str:
         logger.debug("Ollama classification failed: %s", exc)
 
     result = _classify_deterministic(message)
-    logger.info("Deterministic fallback: '%s' → %s", message[:50], result)
+    logger.info("Deterministic fallback: '%s' -> %s", message[:50], result)
     return result
 
 

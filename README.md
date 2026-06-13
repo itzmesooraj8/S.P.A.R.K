@@ -124,6 +124,24 @@ python -m pytest spark/tests/ -v
 # - Integration tests (21 tests)
 ```
 
+## Security
+
+SPARK has a layered security model:
+
+1. **Policy Engine** — Constitution for all actions (like OPA/Rego)
+2. **Authority Layer** — Permission gating (ALLOW/CONFIRM/DENY)
+3. **Risk Engine** — Pre-action risk assessment
+4. **Secrets Manager** — Never stores secrets in code
+5. **Sandbox** — Isolated execution for tools
+
+Every action passes: `Policy Engine → Authority Validator → Risk Engine → Execution`
+
+## Documentation
+
+- [Architecture](docs/ARCHITECTURE.md) — System design and data flow
+- [Security](docs/SECURITY.md) — Threat model and mitigations
+- [Runtime](docs/RUNTIME.md) — Startup sequence and configuration
+
 ## Tech Stack
 
 - **Language:** Python 3.11+

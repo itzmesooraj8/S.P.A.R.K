@@ -31,12 +31,7 @@ class ReasoningEngine:
         steps.append({"type": "analysis", "content": f"Analyzing: {question}"})
         steps.append({"type": "context", "content": context})
 
-        import asyncio
-        try:
-            loop = asyncio.get_running_loop()
-            conclusion = loop.run_until_complete(self._synthesize_llm(steps, question))
-        except RuntimeError:
-            conclusion = self._synthesize_deterministic(steps, question)
+        conclusion = self._synthesize_deterministic(steps, question)
 
         result = {
             "question": question,
@@ -47,18 +42,11 @@ class ReasoningEngine:
         return result
 
     def decide(self, options: list[str], criteria: list[str], context: str = "") -> dict[str, Any]:
-        """Evaluate options against criteria using LLM."""
-        import asyncio
+        """Evaluate options against criteria."""
         scored = []
-        try:
-            loop = asyncio.get_running_loop()
-            for option in options:
-                score = loop.run_until_complete(self._score_option_llm(option, criteria, context))
-                scored.append({"option": option, "score": score})
-        except RuntimeError:
-            for option in options:
-                score = self._score_option_deterministic(option, criteria, context)
-                scored.append({"option": option, "score": score})
+        for option in options:
+            score = self._score_option_deterministic(option, criteria, context)
+            scored.append({"option": option, "score": score})
 
         scored.sort(key=lambda x: x["score"], reverse=True)
         return {
