@@ -21,7 +21,7 @@ class VoiceChannel:
         if not self._enabled or not text:
             return False
         try:
-            from audio.tts import SparkVoice
+            from spark.audio.tts import SparkVoice
             voice = SparkVoice({})
             import asyncio
             asyncio.run(voice.speak(text))
@@ -32,7 +32,7 @@ class VoiceChannel:
 
     def listen(self, duration: int = 5) -> str:
         try:
-            from audio.stt import SparkEars
+            from spark.audio.stt import SparkEars
             ears = SparkEars()
             result = ears.listen(duration)
             return result or ""

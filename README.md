@@ -59,11 +59,21 @@ spark/
 ## Quick Start
 
 ```bash
-# Install dependencies
-pip install -r requirements.txt
+# Install base dependencies
+pip install -e .
 
-# Install Playwright (optional, for browser automation)
-playwright install
+# Install optional features as needed
+pip install -e ".[llm]"          # LLM support (Groq)
+pip install -e ".[vision]"       # Screen capture, OCR
+pip install -e ".[browser]"      # Playwright automation
+pip install -e ".[memory]"       # ChromaDB vector memory
+pip install -e ".[voice]"        # Voice I/O
+pip install -e ".[iot]"          # MQTT device control
+pip install -e ".[web]"          # FastAPI dashboard
+pip install -e ".[all]"          # Everything
+
+# Install Playwright browsers (if using browser automation)
+python -m playwright install
 
 # Run SPARK
 python -m spark

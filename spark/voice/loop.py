@@ -70,14 +70,14 @@ class VoiceLoop:
 
     def initialize(self) -> None:
         try:
-            from audio.stt import SparkEars
+            from spark.audio.stt import SparkEars
             self._stt_engine = SparkEars()
             logger.info("Voice loop STT initialized")
         except Exception as exc:
             logger.warning("STT init failed: %s", exc)
 
         try:
-            from audio.tts import SparkVoice
+            from spark.audio.tts import SparkVoice
             self._tts_engine = SparkVoice({})
             logger.info("Voice loop TTS initialized")
         except Exception as exc:

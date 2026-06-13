@@ -20,8 +20,8 @@ class VoiceEngine:
 
     def initialize(self) -> None:
         try:
-            from audio.stt import SparkEars
-            from audio.tts import SparkVoice
+            from spark.audio.stt import SparkEars
+            from spark.audio.tts import SparkVoice
             self._stt = SparkEars()
             self._tts = SparkVoice({})
             logger.info("Voice engine initialized")
