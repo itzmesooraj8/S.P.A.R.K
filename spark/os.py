@@ -87,6 +87,7 @@ from spark.integrations.discord_channel import DiscordIntegration
 from spark.integrations.email_channel import EmailIntegration
 from spark.integrations.telegram_channel import TelegramIntegration
 from spark.autonomy.loop import ContinuousAgentLoop
+from spark.llm_router import classify_intent
 from spark.voice.loop import VoiceLoop
 from spark.user.model import UserModel
 from spark.user.preferences import PreferenceLearner
@@ -314,14 +315,25 @@ class SparkOS:
         return result
 
     async def _handle_request(self, user_input: str, context: dict[str, Any]) -> dict[str, Any]:
-        lower = user_input.lower()
+        intent = await classify_intent(user_input)
+        self.metrics.increment(f"intent.{intent}")
 
-        if any(w in lower for w in ["goal", "plan", "task", "do", "achieve"]):
-            plan_result = await self.planner_agent.run(user_input)
-            goal_id = plan_result.get("goal_id", "")
-            self.working_memory.set_objective(user_input, plan_result.get("steps", 0))
-            self.decision_log.log("goal_created", f"Created goal: {user_input[:50]}", {"goal_id": goal_id})
-            return {"reply": f"Goal created with {plan_result.get('steps', 0)} steps", "action": "plan", "goal_id": goal_id}
+        if intent == "goal_creation":
+            return await self._handle_goal(user_input)
+
+        if intent == "action_execution":
+            return await self._handle_action(user_input)
+
+        if intent == "memory_query":
+            return await self._handle_memory(user_input)
+
+        if intent == "status_check":
+            return await self._handle_status(user_input)
+
+        return await self._handle_conversation(user_input)
+
+    async def _handle_goal(self, user_input: str) -> dict[str, Any]:
+        lower = user_input.lower()
 
         if any(w in lower for w in ["life goal", "long term", "my goal"]):
             goal_desc = user_input.replace("life goal", "").replace("long term", "").replace("my goal", "").strip()
@@ -332,9 +344,14 @@ class SparkOS:
             report = self.life_goals.get_progress_report()
             return {"reply": str(report), "action": "progress_report"}
 
-        if any(w in lower for w in ["remember", "memory", "recall"]):
-            mem_result = await self.memory_agent.run("recall", query=user_input)
-            return {"reply": str(mem_result.get("results", [])), "action": "memory"}
+        plan_result = await self.planner_agent.run(user_input)
+        goal_id = plan_result.get("goal_id", "")
+        self.working_memory.set_objective(user_input, plan_result.get("steps", 0))
+        self.decision_log.log("goal_created", f"Created goal: {user_input[:50]}", {"goal_id": goal_id})
+        return {"reply": f"Goal created with {plan_result.get('steps', 0)} steps", "action": "plan", "goal_id": goal_id}
+
+    async def _handle_action(self, user_input: str) -> dict[str, Any]:
+        lower = user_input.lower()
 
         if any(w in lower for w in ["screenshot", "screen", "what do you see"]):
             path = self.screen_capture.capture()
@@ -365,14 +382,21 @@ class SparkOS:
             search_result = await self.actions.execute("web_search", {"query": query}, source="chat")
             return {"reply": str(search_result), "action": "search"}
 
+        if any(w in lower for w in ["browse", "playwright", "navigate"]):
+            url = user_input.replace("browse", "").replace("playwright", "").replace("navigate", "").strip()
+            result = await self.playwright.navigate(url)
+            return {"reply": str(result), "action": "browse"}
+
         if any(w in lower for w in ["skill", "learn", "how to"]):
             skill = self.skill_registry.find_best(user_input)
             if skill:
                 return {"reply": f"Known skill: {skill.name} ({skill.use_count} uses, {skill.success_rate:.0%} success)", "action": "skill_found"}
             return {"reply": f"Skill not found. I can learn: {user_input}", "action": "skill_learn"}
 
-        if any(w in lower for w in ["status", "dashboard", "health"]):
-            return {"reply": self.run_dashboard(), "action": "dashboard"}
+        return {"reply": f"Action received: {user_input}", "action": "acknowledge"}
+
+    async def _handle_memory(self, user_input: str) -> dict[str, Any]:
+        lower = user_input.lower()
 
         if any(w in lower for w in ["who am i", "about me", "my profile"]):
             profile = self.user_model.get_profile()
@@ -382,6 +406,12 @@ class SparkOS:
             prefs = self.preference_learner.snapshot()
             return {"reply": str(prefs.get("inferred", {})), "action": "preferences"}
 
+        mem_result = await self.memory_agent.run("recall", query=user_input)
+        return {"reply": str(mem_result.get("results", [])), "action": "memory"}
+
+    async def _handle_status(self, user_input: str) -> dict[str, Any]:
+        lower = user_input.lower()
+
         if any(w in lower for w in ["metrics", "performance"]):
             return {"reply": str(self.metrics.snapshot()), "action": "metrics"}
 
@@ -389,7 +419,10 @@ class SparkOS:
             devices = self.device_coordinator.get_all_devices()
             return {"reply": f"Connected devices: {len(devices)}", "action": "devices", "devices": devices}
 
-        return {"reply": f"Received: {user_input}", "action": "acknowledge"}
+        return {"reply": self.run_dashboard(), "action": "dashboard"}
+
+    async def _handle_conversation(self, user_input: str) -> dict[str, Any]:
+        return {"reply": f"Received: {user_input}", "action": "conversation"}
 
     def learn_skill(self, name: str, steps: list[dict[str, Any]], description: str = "", tags: list[str] | None = None) -> dict[str, Any]:
         skill = self.skill_registry.learn_from_action(name, steps, description, tags)

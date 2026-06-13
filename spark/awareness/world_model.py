@@ -127,15 +127,42 @@ class WorldModel:
         return best_match
 
     def _predict_needs(self, activity: str, focused: str) -> list[dict[str, Any]]:
+        if len(self._activity_history) < 3:
+            return []
+
+        recent = self._activity_history[-10:]
+        total = len(recent)
+
+        activity_counts: dict[str, int] = {}
+        for entry in recent:
+            act = entry.get("activity", "unknown")
+            activity_counts[act] = activity_counts.get(act, 0) + 1
+
+        app_counts: dict[str, int] = {}
+        for entry in recent:
+            app = entry.get("focused_app", "")
+            if app:
+                app_counts[app] = app_counts.get(app, 0) + 1
+
         predictions = []
+
         if activity == "software_development":
-            predictions.append({"need": "terminal_access", "confidence": 0.8, "reason": "development session active"})
-            predictions.append({"need": "web_search", "confidence": 0.6, "reason": "likely researching code"})
+            dev_confidence = activity_counts.get("software_development", 0) / total
+            if dev_confidence >= 0.3:
+                predictions.append({"need": "terminal_access", "confidence": dev_confidence, "reason": f"dev activity {dev_confidence:.0%} of recent"})
+                predictions.append({"need": "web_search", "confidence": dev_confidence * 0.75, "reason": "likely researching code"})
+
         elif activity == "research":
-            predictions.append({"need": "bookmark_management", "confidence": 0.7, "reason": "browsing for information"})
-            predictions.append({"need": "note_taking", "confidence": 0.5, "reason": "research findings"})
+            research_confidence = activity_counts.get("research", 0) / total
+            if research_confidence >= 0.3:
+                predictions.append({"need": "bookmark_management", "confidence": research_confidence, "reason": f"research {research_confidence:.0%} of recent"})
+                predictions.append({"need": "note_taking", "confidence": research_confidence * 0.7, "reason": "research findings"})
+
         elif activity == "communication":
-            predictions.append({"need": "message_summarization", "confidence": 0.6, "reason": "active in chat apps"})
+            comm_confidence = activity_counts.get("communication", 0) / total
+            if comm_confidence >= 0.3:
+                predictions.append({"need": "message_summarization", "confidence": comm_confidence, "reason": f"communication {comm_confidence:.0%} of recent"})
+
         return predictions
 
     def _update_habits(self, focused: str, active: list[str]) -> None:
