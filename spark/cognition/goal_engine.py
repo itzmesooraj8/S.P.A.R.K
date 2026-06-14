@@ -90,7 +90,7 @@ class Plan:
     def progress(self) -> float:
         if not self.steps:
             return 0.0
-        done = sum(1 for s in self.steps if s.status in (SubtaskStatus.DONE, SubtaskStatus.SKIPPPED))
+        done = sum(1 for s in self.steps if s.status in (SubtaskStatus.DONE, SubtaskStatus.SKIPPED))
         return done / len(self.steps)
 
     def advance(self) -> bool:
@@ -236,7 +236,7 @@ class GoalEngine:
                 if not success and subtask.can_retry():
                     subtask.retry_count += 1
                     subtask.status = SubtaskStatus.PENDING
-                    goal.plan.add_adaptive_note(f"Retrying step {subtask.name} (attempt {subtask.retry_count})")
+                    goal.plan.add_adaptive_note(f"Retrying step {subtask.description} (attempt {subtask.retry_count})")
                 break
         goal.updated_at = time.time()
 

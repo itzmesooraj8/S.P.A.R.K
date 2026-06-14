@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-import time
+import threading
 from typing import Any
 
 logger = logging.getLogger("spark.communication.voice")
@@ -22,9 +22,8 @@ class VoiceChannel:
             return False
         try:
             from spark.audio.tts import SparkVoice
-            voice = SparkVoice({})
-            import asyncio
-            asyncio.run(voice.speak(text))
+            voice = SparkVoice()
+            voice.speak(text)
             return True
         except Exception as exc:
             logger.warning("Voice output failed: %s", exc)

@@ -111,17 +111,18 @@ Return ONLY the JSON."""
 
     async def _call_llm(self, prompt: str) -> str:
         try:
-            response = httpx.post(
-                f"{self._host}/api/chat",
-                json={
-                    "model": self._model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "stream": False,
-                },
-                timeout=120.0,
-            )
-            response.raise_for_status()
-            return response.json().get("message", {}).get("content", "")
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    f"{self._host}/api/chat",
+                    json={
+                        "model": self._model,
+                        "messages": [{"role": "user", "content": prompt}],
+                        "stream": False,
+                    },
+                    timeout=120.0,
+                )
+                response.raise_for_status()
+                return response.json().get("message", {}).get("content", "")
         except Exception as exc:
             logger.error("LLM call failed: %s", exc)
             return ""

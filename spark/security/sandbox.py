@@ -52,10 +52,12 @@ class Sandbox:
 
     def execute_in_sandbox(self, command: str, timeout: int = 30) -> dict[str, Any]:
         import subprocess
+        import shlex
         try:
+            args = shlex.split(command)
             result = subprocess.run(
-                command,
-                shell=True,
+                args,
+                shell=False,
                 capture_output=True,
                 text=True,
                 timeout=timeout,
