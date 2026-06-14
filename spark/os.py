@@ -458,6 +458,16 @@ class SparkOS:
     async def _handle_conversation(self, user_input: str) -> dict[str, Any]:
         lower = user_input.lower()
 
+        if any(w in lower for w in ["what time", "what's the time", "current time", "time is it"]):
+            import datetime
+            now = datetime.datetime.now()
+            return {"reply": f"The current time is {now.strftime('%I:%M %p')} on {now.strftime('%B %d, %Y')}.", "action": "time"}
+
+        if any(w in lower for w in ["what date", "what's the date", "current date", "today's date", "what day"]):
+            import datetime
+            now = datetime.datetime.now()
+            return {"reply": f"Today is {now.strftime('%A, %B %d, %Y')}.", "action": "date"}
+
         if any(w in lower for w in ["hello", "hi ", "hey", "good morning", "good evening", "good afternoon"]):
             return {"reply": "Hello, sir. How can I help you today?", "action": "conversation"}
 
@@ -471,7 +481,7 @@ class SparkOS:
             return {"reply": "You're welcome, sir. Let me know if you need anything else.", "action": "conversation"}
 
         if any(w in lower for w in ["what can you do", "help me"]):
-            return {"reply": "I can help with goals, actions, memory, system status, news, web search, and general questions. Try: 'open an app', 'search for something', 'get news', or 'show dashboard'.", "action": "conversation"}
+            return {"reply": "I can help with goals, actions, memory, system status, news, web search, time, date, and general questions. Try: 'open an app', 'what time is it', 'get news', or 'show dashboard'.", "action": "conversation"}
 
         if any(w in lower for w in ["bye", "goodbye", "see you"]):
             return {"reply": "Goodbye, sir. I'll be here when you need me.", "action": "conversation"}
@@ -485,20 +495,32 @@ class SparkOS:
         return await self._handle_general(user_input)
 
     async def _handle_news(self, user_input: str) -> dict[str, Any]:
-        """Handle news requests using web search."""
-        query = user_input
-        for prefix in ["news", "headline", "current event", "what's happening", "show me", "provide me", "get"]:
-            query = query.replace(prefix, "").strip()
-        if not query:
-            query = "technology news"
-
+        """Handle news requests using LLM to generate news summary."""
         try:
-            result = await self.actions.execute("web_search", {"query": f"latest news {query}"}, source="chat")
-            if isinstance(result, dict) and result.get("success"):
-                return {"reply": f"Here are the latest news on {query}:\n\n{result.get('result', 'No results found')}", "action": "news"}
-            return {"reply": f"I searched for news about {query} but couldn't retrieve results right now. Please try again later.", "action": "news"}
+            from spark.llm_bridge import LLMBridge
+            import httpx
+            import os
+
+            api_key = os.environ.get("GROQ_API_KEY", "")
+            if not api_key:
+                return {"reply": "I need an API key to fetch news. Please set GROQ_API_KEY in your .env file.", "action": "error"}
+
+            model = os.environ.get("GROQ_MODEL", "llama-3.1-8b-instant")
+            prompt = f"Provide a concise news summary about: {user_input}. Include 3-5 recent developments or key points. Be factual and specific. Format with bullet points."
+
+            response = httpx.post(
+                "https://api.groq.com/openai/v1/chat/completions",
+                headers={"Authorization": f"Bearer {api_key}", "Content-Type": "application/json"},
+                json={"model": model, "messages": [{"role": "user", "content": prompt}], "max_tokens": 500},
+                timeout=30.0,
+            )
+
+            if response.status_code == 200:
+                result = response.json()["choices"][0]["message"]["content"]
+                return {"reply": f"Here's what I found:\n\n{result}", "action": "news"}
+            return {"reply": "I couldn't retrieve news right now. Please try again later.", "action": "news"}
         except Exception as exc:
-            return {"reply": f"I encountered an error searching for news: {exc}", "action": "error"}
+            return {"reply": f"I encountered an error fetching news: {exc}", "action": "error"}
 
     async def _handle_search(self, user_input: str) -> dict[str, Any]:
         """Handle search requests using web search."""

@@ -31,15 +31,6 @@ SYSTEM_PROMPT = """You are an intent classifier. Given a user message, classify 
 
 Return ONLY the intent label. No explanation. No punctuation. Just the label."""
 
-DETERMINISTIC_RULES: list[tuple[str, list[str]]] = [
-    ("goal_creation", ["goal", "plan", "task", "achieve", "build", "create", "make", "develop", "implement"]),
-    ("action_execution", ["open", "search", "run", "execute", "launch", "start", "find", "look up", "browse", "navigate", "type", "click", "send"]),
-    ("memory_query", ["remember", "recall", "memory", "what did", "last time", "previously", "before", "what is my", "what's my", "my name"]),
-    ("status_check", ["show dashboard", "show status", "system health", "system status", "show metrics"]),
-]
-
-CONVERSATION_KEYWORDS = ["hello", "hi ", "hey ", "how are", "what's up", "good morning", "good evening", "thanks", "thank you", "please", "help me", "can you", "tell me", "explain", "describe", "who are you", "what can you do"]
-
 GROQ_API_URL = "https://api.groq.com/openai/v1/chat/completions"
 OLLAMA_API_URL = "http://localhost:11434/api/chat"
 
@@ -128,20 +119,43 @@ async def _classify_ollama(message: str) -> str | None:
 
 
 def _classify_deterministic(message: str) -> str:
-    import re
-    message_lower = message.lower()
+    message_lower = message.lower().strip()
     words = set(re.findall(r'\b\w+\b', message_lower))
 
-    for keyword in CONVERSATION_KEYWORDS:
+    conversation_keywords = ["hello", "hi ", "hey ", "how are", "what's up", "good morning", "good evening", "thanks", "thank you", "please", "help me", "can you", "tell me", "explain", "describe", "who are you", "what can you do"]
+
+    for keyword in conversation_keywords:
         keyword_words = set(re.findall(r'\b\w+\b', keyword))
         if keyword_words.issubset(words):
             return "conversation"
 
-    for intent, keywords in DETERMINISTIC_RULES:
-        for keyword in keywords:
-            keyword_words = set(re.findall(r'\b\w+\b', keyword))
-            if keyword_words.issubset(words):
-                return intent
+    memory_keywords = ["remember", "recall", "memory", "what did i say", "what did i", "last time", "previously", "before", "what is my", "what's my", "my name", "my favorite", "what do i"]
+    for keyword in memory_keywords:
+        keyword_words = set(re.findall(r'\b\w+\b', keyword))
+        if keyword_words.issubset(words):
+            return "memory_query"
+
+    goal_keywords = ["goal", "plan", "task", "achieve", "build", "create", "make", "develop", "implement"]
+    for keyword in goal_keywords:
+        if keyword in words:
+            return "goal_creation"
+
+    action_keywords = ["open", "search", "run", "execute", "launch", "start", "find", "look up", "browse", "navigate", "type", "click", "send"]
+    for keyword in action_keywords:
+        if keyword in words:
+            return "action_execution"
+
+    news_keywords = ["news", "headline", "current event", "what's happening", "india news", "world news", "technology news"]
+    for keyword in news_keywords:
+        keyword_words = set(re.findall(r'\b\w+\b', keyword))
+        if keyword_words.issubset(words) or keyword in message_lower:
+            return "conversation"
+
+    status_keywords = ["show dashboard", "show status", "system health", "system status", "show metrics", "dashboard"]
+    for keyword in status_keywords:
+        keyword_words = set(re.findall(r'\b\w+\b', keyword))
+        if keyword_words.issubset(words):
+            return "status_check"
 
     return "conversation"
 

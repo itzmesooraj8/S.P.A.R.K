@@ -1,9 +1,10 @@
-"""Desktop Intelligence — Not just open_app() but intelligent interaction."""
+"""Desktop Intelligence — System-level operations."""
 
 from __future__ import annotations
 
 import logging
-import time
+import subprocess
+import os
 from typing import Any
 
 logger = logging.getLogger("spark.automation.desktop_intel")
@@ -11,89 +12,108 @@ logger = logging.getLogger("spark.automation.desktop_intel")
 
 class DesktopIntelligence:
     """
-    Intelligent desktop automation.
+    Intelligent desktop automation with Windows app mapping.
 
-    Not just:
-        open_app()
-
-    But:
-        Locate button → Understand window → Click intelligently
+    Maps common app names to their Windows executables.
     """
 
-    def __init__(self) -> None:
-        self._last_action = ""
+    APP_MAP = {
+        "notepad": "notepad.exe",
+        "calculator": "calc.exe",
+        "paint": "mspaint.exe",
+        "word": "winword.exe",
+        "excel": "excel.exe",
+        "powerpoint": "powerpnt.exe",
+        "chrome": "chrome.exe",
+        "firefox": "firefox.exe",
+        "edge": "msedge.exe",
+        "brave": "brave.exe",
+        "opera": "opera.exe",
+        "vs code": "code.exe",
+        "visual studio code": "code.exe",
+        "cursor": "cursor.exe",
+        "terminal": "wt.exe",
+        "command prompt": "cmd.exe",
+        "powershell": "powershell.exe",
+        "file explorer": "explorer.exe",
+        "task manager": "taskmgr.exe",
+        "settings": "ms-settings:",
+        "microsoft store": "ms-windows-store:",
+        "spotify": "spotify.exe",
+        "discord": "discord.exe",
+        "slack": "slack.exe",
+        "teams": "teams.exe",
+        "zoom": "zoom.exe",
+        "telegram": "telegram.exe",
+        "whatsapp": "whatsapp.exe",
+        "obsidian": "obsidian.exe",
+        "notion": "notion.exe",
+        "figma": "figma.exe",
+        "photoshop": "photoshop.exe",
+        "blender": "blender.exe",
+        "vlc": "vlc.exe",
+        "mpv": "mpv.exe",
+        "7zip": "7z.exe",
+        "winrar": "winrar.exe",
+    }
 
-    def find_element(self, description: str, screenshot_path: str | None = None) -> dict[str, Any]:
-        """Find a UI element by description using vision."""
-        try:
-            from spark.vision.understand import VisionUnderstander
-            vision = VisionUnderstander()
-            if screenshot_path:
-                result = vision.understand(screenshot_path, f"Find the '{description}' element. Return its approximate position.")
-                return {"found": True, "details": result.get("analysis", ""), "position": None}
-        except Exception:
-            pass
-        return {"found": False, "error": "Vision not available"}
+    def open_application(self, app_name: str) -> dict[str, Any]:
+        """Open an application by name."""
+        app_lower = app_name.lower().strip()
 
-    def click_element(self, x: int, y: int) -> dict[str, Any]:
-        """Click at coordinates."""
+        if app_lower in self.APP_MAP:
+            exe = self.APP_MAP[app_lower]
+            try:
+                if exe.endswith(":"):
+                    os.startfile(exe)
+                else:
+                    subprocess.Popen(exe, shell=False)
+                return {"success": True, "app": app_name, "exe": exe}
+            except Exception as exc:
+                return {"success": False, "error": f"Failed to open {app_name}: {exc}"}
+
         try:
-            import pyautogui
-            pyautogui.click(x, y)
-            return {"success": True, "x": x, "y": y}
-        except ImportError:
-            return {"success": False, "error": "pyautogui not installed"}
+            subprocess.Popen(f'start {app_name}', shell=True)
+            return {"success": True, "app": app_name}
         except Exception as exc:
-            return {"success": False, "error": str(exc)}
+            return {"success": False, "error": f"Could not find or open {app_name}: {exc}"}
 
-    def type_text(self, text: str, interval: float = 0.05) -> dict[str, Any]:
-        """Type text with human-like delay."""
+    def type_text(self, text: str) -> dict[str, Any]:
+        """Type text into focused window."""
         try:
             import pyautogui
-            pyautogui.typewrite(text, interval=interval)
+            pyautogui.typewrite(text, interval=0.05)
             return {"success": True, "text": text}
         except ImportError:
             return {"success": False, "error": "pyautogui not installed"}
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 
-    def hotkey(self, *keys: str) -> dict[str, Any]:
-        """Press a hotkey combination."""
+    def take_screenshot(self) -> dict[str, Any]:
+        """Take a screenshot."""
         try:
             import pyautogui
-            pyautogui.hotkey(*keys)
-            return {"success": True, "keys": list(keys)}
+            path = "screenshot.png"
+            pyautogui.screenshot(path)
+            return {"success": True, "path": path}
         except ImportError:
             return {"success": False, "error": "pyautogui not installed"}
         except Exception as exc:
             return {"success": False, "error": str(exc)}
 
-    def get_screen_size(self) -> tuple[int, int]:
+    def get_clipboard(self) -> str:
+        """Get clipboard content."""
         try:
-            import pyautogui
-            return pyautogui.size()
+            import pyperclip
+            return pyperclip.paste()
         except Exception:
-            return (1920, 1080)
+            return ""
 
-    def get_mouse_position(self) -> tuple[int, int]:
+    def set_clipboard(self, text: str) -> bool:
+        """Set clipboard content."""
         try:
-            import pyautogui
-            return pyautogui.position()
+            import pyperclip
+            pyperclip.copy(text)
+            return True
         except Exception:
-            return (0, 0)
-
-    def move_mouse(self, x: int, y: int, duration: float = 0.3) -> dict[str, Any]:
-        try:
-            import pyautogui
-            pyautogui.moveTo(x, y, duration=duration)
-            return {"success": True, "x": x, "y": y}
-        except Exception as exc:
-            return {"success": False, "error": str(exc)}
-
-    def scroll(self, clicks: int) -> dict[str, Any]:
-        try:
-            import pyautogui
-            pyautogui.scroll(clicks)
-            return {"success": True, "clicks": clicks}
-        except Exception as exc:
-            return {"success": False, "error": str(exc)}
+            return False
