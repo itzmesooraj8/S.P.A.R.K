@@ -36,9 +36,9 @@ class AuthorityPolicy:
         Permission.NETWORK_ACCESS,
         Permission.VOICE_OUTPUT,
         Permission.ACCESS_FILES,
+        Permission.OPEN_BROWSER,
     ])
     requires_confirmation: list[Permission] = field(default_factory=lambda: [
-        Permission.OPEN_BROWSER,
         Permission.EXECUTE_SHELL,
         Permission.SEND_EMAIL,
     ])

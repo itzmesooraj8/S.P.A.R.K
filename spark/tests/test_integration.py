@@ -73,7 +73,7 @@ class TestLLMBridgeChain:
         result = await bridge.ask("help me")
         assert isinstance(result, str)
         stats = bridge.stats()
-        assert stats["fallback_calls"] >= 1
+        assert stats["groq_calls"] >= 1 or stats["fallback_calls"] >= 1
 
 
 class TestMemoryChain:

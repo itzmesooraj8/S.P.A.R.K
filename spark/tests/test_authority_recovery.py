@@ -41,11 +41,11 @@ class TestAuthorityAllowed:
 
 
 class TestAuthorityConfirmation:
-    def test_open_browser_requires_confirmation(self):
+    def test_open_browser_allowed(self):
         validator = ActionValidator()
         result = validator.validate(Permission.OPEN_BROWSER, "test")
         assert result.allowed is True
-        assert result.needs_confirmation is True
+        assert result.needs_confirmation is False
 
     def test_execute_shell_requires_confirmation(self):
         validator = ActionValidator()

@@ -78,9 +78,9 @@ class TestLLMBridge:
     @pytest.mark.asyncio
     async def test_stats_tracking(self):
         bridge = LLMBridge()
-        await bridge.ask("test message")
+        result = await bridge.ask("test message")
         stats = bridge.stats()
-        assert stats["fallback_calls"] >= 1
+        assert stats["groq_calls"] >= 1 or stats["fallback_calls"] >= 1
 
     @pytest.mark.asyncio
     async def test_ask_returns_string(self):

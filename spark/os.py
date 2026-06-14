@@ -471,12 +471,66 @@ class SparkOS:
             return {"reply": "You're welcome, sir. Let me know if you need anything else.", "action": "conversation"}
 
         if any(w in lower for w in ["what can you do", "help me"]):
-            return {"reply": "I can help with goals, actions, memory, system status, and general questions. Try: 'open an app', 'remember something', or 'show dashboard'.", "action": "conversation"}
+            return {"reply": "I can help with goals, actions, memory, system status, news, web search, and general questions. Try: 'open an app', 'search for something', 'get news', or 'show dashboard'.", "action": "conversation"}
 
         if any(w in lower for w in ["bye", "goodbye", "see you"]):
             return {"reply": "Goodbye, sir. I'll be here when you need me.", "action": "conversation"}
 
-        return {"reply": f"I understand. How can I help with that?", "action": "conversation"}
+        if any(w in lower for w in ["news", "headline", "current event", "what's happening"]):
+            return await self._handle_news(user_input)
+
+        if any(w in lower for w in ["search", "look up", "find", "google"]):
+            return await self._handle_search(user_input)
+
+        return await self._handle_general(user_input)
+
+    async def _handle_news(self, user_input: str) -> dict[str, Any]:
+        """Handle news requests using web search."""
+        query = user_input
+        for prefix in ["news", "headline", "current event", "what's happening", "show me", "provide me", "get"]:
+            query = query.replace(prefix, "").strip()
+        if not query:
+            query = "technology news"
+
+        try:
+            result = await self.actions.execute("web_search", {"query": f"latest news {query}"}, source="chat")
+            if isinstance(result, dict) and result.get("success"):
+                return {"reply": f"Here are the latest news on {query}:\n\n{result.get('result', 'No results found')}", "action": "news"}
+            return {"reply": f"I searched for news about {query} but couldn't retrieve results right now. Please try again later.", "action": "news"}
+        except Exception as exc:
+            return {"reply": f"I encountered an error searching for news: {exc}", "action": "error"}
+
+    async def _handle_search(self, user_input: str) -> dict[str, Any]:
+        """Handle search requests using web search."""
+        query = user_input
+        for prefix in ["search", "look up", "find", "google", "for", "about"]:
+            query = query.replace(prefix, "").strip()
+        if not query:
+            return {"reply": "What would you like me to search for?", "action": "search"}
+
+        try:
+            result = await self.actions.execute("web_search", {"query": query}, source="chat")
+            if isinstance(result, dict) and result.get("success"):
+                return {"reply": f"Here's what I found for '{query}':\n\n{result.get('result', 'No results found')}", "action": "search"}
+            return {"reply": f"I searched for '{query}' but couldn't retrieve results right now.", "action": "search"}
+        except Exception as exc:
+            return {"reply": f"I encountered an error searching: {exc}", "action": "error"}
+
+    async def _handle_general(self, user_input: str) -> dict[str, Any]:
+        """Handle general questions using the LLM bridge."""
+        try:
+            from spark.llm_bridge import LLMBridge
+            bridge = LLMBridge()
+            response = await bridge.ask(
+                user_input,
+                system_prompt="You are SPARK, a helpful AI operating system. Be concise and helpful.",
+                max_tokens=300,
+            )
+            if response and len(response.strip()) > 0:
+                return {"reply": response.strip(), "action": "llm_response"}
+            return {"reply": "I'm not sure how to help with that. Could you rephrase?", "action": "conversation"}
+        except Exception as exc:
+            return {"reply": f"I encountered an error: {exc}", "action": "error"}
 
     def learn_skill(self, name: str, steps: list[dict[str, Any]], description: str = "", tags: list[str] | None = None) -> dict[str, Any]:
         skill = self.skill_registry.learn_from_action(name, steps, description, tags)

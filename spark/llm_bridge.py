@@ -15,6 +15,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import httpx
 
 logger = logging.getLogger("spark.llm_bridge")
