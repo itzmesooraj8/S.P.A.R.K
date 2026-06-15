@@ -194,11 +194,40 @@ async def interactive_loop(os: SparkOS) -> None:
 
 
 def main() -> int:
-    os = SparkOS()
-    os.initialize()
-    logger.info("SPARK AI Operating System v2.0 ready")
-    asyncio.run(interactive_loop(os))
+    import sys as _sys
+    if "--voice" in _sys.argv:
+        os = SparkOS()
+        os.initialize()
+        logger.info("Starting voice mode...")
+        asyncio.run(voice_loop_main(os))
+    else:
+        os = SparkOS()
+        os.initialize()
+        logger.info("SPARK AI Operating System v2.0 ready")
+        asyncio.run(interactive_loop(os))
     return 0
+
+
+async def voice_loop_main(os: SparkOS) -> None:
+    """Voice loop entry point."""
+    from spark.voice.loop import VoiceLoop
+
+    async def process_voice(text: str) -> str:
+        result = await os.process(text, source="voice")
+        return result.get("reply", "I didn't understand that.")
+
+    voice = VoiceLoop()
+    voice.initialize()
+    voice.on_process(process_voice)
+
+    print("=" * 60)
+    print("  SPARK VOICE MODE")
+    print("  Say 'Hey SPARK' to activate")
+    print("  Say 'stop' to interrupt")
+    print("  Press Ctrl+C to exit")
+    print("=" * 60)
+
+    await voice.start()
 
 
 def process_command(user_input: str) -> str:

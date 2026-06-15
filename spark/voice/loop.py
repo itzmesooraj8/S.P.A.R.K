@@ -1,4 +1,4 @@
-"""Voice Loop — Always listening, understands interruptions, maintains context."""
+"""Voice Loop — Always listening with wake word, beep, STT, TTS."""
 
 from __future__ import annotations
 
@@ -26,47 +26,30 @@ class VoiceTurn:
     content: str
     timestamp: float = field(default_factory=time.time)
     is_interrupt: bool = False
-    confidence: float = 0.0
 
 
 class VoiceLoop:
     """
     Always-listening voice system.
 
-    Tony Stark never types. The system is always listening:
-    - Detects wake word
-    - Streams transcription in real-time
-    - Handles interruptions naturally
-    - Maintains conversation context
-
-    Example flow:
-    User: "Jarvis"
-    SPARK: "Yes, sir?"
-    User: "Open my project"
-    SPARK: *opens project*
-    User: "No, the other one"
-    SPARK: *switches to correct project*
-    User: "Deploy it"
-    SPARK: *deploys*
-    User: "Actually stop"
-    SPARK: *stops deployment*
+    Flow:
+    1. Listen for wake word ("Hey SPARK")
+    2. Play beep sound
+    3. Whisper STT transcribes speech
+    4. SparkOS.process() handles the command
+    5. pyttsx3 TTS speaks the response
+    6. Back to listening
     """
 
     def __init__(self, wake_words: list[str] | None = None) -> None:
-        self._wake_words = wake_words or ["jarvis", "spark", "hey spark"]
+        self._wake_words = wake_words or ["hey spark", "spark", "jarvis"]
         self._state = VoiceState.SLEEPING
         self._conversation: list[VoiceTurn] = []
         self._max_context = 20
-        self._wake_threshold = 0.5
         self._stt_engine = None
         self._tts_engine = None
         self._on_process: Callable[[str], Coroutine[Any, Any, str]] | None = None
-        self._on_wake: Callable[[], Coroutine[Any, Any, None]] | None = None
-        self._on_interrupt: Callable[[], Coroutine[Any, Any, None]] | None = None
         self._running = False
-        self._last_voice_activity = 0.0
-        self._silence_threshold = 2.0
-        self._stream_buffer: list[str] = []
 
     def initialize(self) -> None:
         try:
@@ -78,7 +61,7 @@ class VoiceLoop:
 
         try:
             from spark.audio.tts import SparkVoice
-            self._tts_engine = SparkVoice({})
+            self._tts_engine = SparkVoice()
             logger.info("Voice loop TTS initialized")
         except Exception as exc:
             logger.warning("TTS init failed: %s", exc)
@@ -86,15 +69,9 @@ class VoiceLoop:
     def on_process(self, handler: Callable[[str], Coroutine[Any, Any, str]]) -> None:
         self._on_process = handler
 
-    def on_wake(self, handler: Callable[[], Coroutine[Any, Any, None]]) -> None:
-        self._on_wake = handler
-
-    def on_interrupt(self, handler: Callable[[], Coroutine[Any, Any, None]]) -> None:
-        self._on_interrupt = handler
-
     async def start(self) -> None:
         self._running = True
-        self._state = VoiceState.LISTENING
+        self._state = VoiceState.SLEEPING
         logger.info("Voice loop started — listening for wake word")
 
         while self._running:
@@ -127,8 +104,7 @@ class VoiceLoop:
                     logger.info("Wake word detected: %s", wake_word)
                     self._state = VoiceState.LISTENING
                     self._conversation.append(VoiceTurn(role="wake", content=text))
-                    if self._on_wake:
-                        await self._on_wake()
+                    self._play_beep()
                     await self._speak("Yes, sir?")
                     return
         await asyncio.sleep(0.5)
@@ -145,12 +121,11 @@ class VoiceLoop:
             logger.info("Interruption detected: %s", text)
             self._state = VoiceState.INTERRUPTED
             self._conversation.append(VoiceTurn(role="user", content=text, is_interrupt=True))
-            if self._on_interrupt:
-                await self._on_interrupt()
             return
 
         if any(w in text_lower for w in self._wake_words):
             self._conversation.append(VoiceTurn(role="user", content=text))
+            self._play_beep()
             await self._speak("Yes, sir?")
             return
 
@@ -175,6 +150,18 @@ class VoiceLoop:
         self._state = VoiceState.LISTENING
         await self._speak("Stopped, sir.")
 
+    def _play_beep(self) -> None:
+        """Play a short beep to indicate listening."""
+        try:
+            import winsound
+            winsound.Beep(1000, 200)
+        except ImportError:
+            try:
+                import os
+                os.system("printf '\\a'")
+            except Exception:
+                pass
+
     async def _transcribe(self, duration: int = 5) -> str:
         if self._stt_engine is None:
             return ""
@@ -195,7 +182,7 @@ class VoiceLoop:
 
     def get_context(self, limit: int = 10) -> list[dict[str, Any]]:
         return [
-            {"role": t.role, "content": t.content, "timestamp": t.timestamp, "is_interrupt": t.is_interrupt}
+            {"role": t.role, "content": t.content, "timestamp": t.timestamp}
             for t in self._conversation[-limit:]
         ]
 
