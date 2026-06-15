@@ -122,7 +122,7 @@ def _classify_deterministic(message: str) -> str:
     message_lower = message.lower().strip()
     words = set(re.findall(r'\b\w+\b', message_lower))
 
-    conversation_keywords = ["hello", "hi ", "hey ", "how are", "what's up", "good morning", "good evening", "thanks", "thank you", "please", "help me", "can you", "tell me", "explain", "describe", "who are you", "what can you do"]
+    conversation_keywords = ["hello", "hi ", "hey ", "how are", "what's up", "good morning", "good evening", "thanks", "thank you", "please", "help me", "can you help", "explain", "describe", "who are you", "what can you do"]
 
     for keyword in conversation_keywords:
         keyword_words = set(re.findall(r'\b\w+\b', keyword))
@@ -145,11 +145,11 @@ def _classify_deterministic(message: str) -> str:
         if keyword in words:
             return "action_execution"
 
-    news_keywords = ["news", "headline", "current event", "what's happening", "india news", "world news", "technology news"]
+    news_keywords = ["news", "headline", "current event", "what's happening", "what is happening", "what happened", "latest", "today in", "india news", "world news", "technology news", "tell me about"]
     for keyword in news_keywords:
         keyword_words = set(re.findall(r'\b\w+\b', keyword))
         if keyword_words.issubset(words) or keyword in message_lower:
-            return "conversation"
+            return "action_execution"
 
     status_keywords = ["show dashboard", "show status", "system health", "system status", "show metrics", "dashboard"]
     for keyword in status_keywords:

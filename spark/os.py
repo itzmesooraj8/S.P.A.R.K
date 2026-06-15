@@ -1,5 +1,5 @@
 """
-SPARK — AI Operating System v4.0
+SPARK — AI Operating System v2.0
 
 The closest practical approximation of JARVIS.
 
@@ -112,7 +112,7 @@ logger = logging.getLogger("spark")
 
 
 class SparkOS:
-    """SPARK AI Operating System v4.0 — Closest practical approximation of JARVIS."""
+    """SPARK AI Operating System v2.0 — Closest practical approximation of JARVIS."""
 
     def __init__(self) -> None:
         self.container = Container.get_instance()
@@ -123,7 +123,7 @@ class SparkOS:
         if self._initialized:
             return
 
-        logger.info("Initializing SPARK AI Operating System v4.0...")
+        logger.info("Initializing SPARK AI Operating System v2.0...")
         self.container.initialize()
 
         self.persona = PersonaIdentity()
@@ -230,7 +230,7 @@ class SparkOS:
         self._setup_awareness_handlers()
 
         self._initialized = True
-        logger.info("SPARK AI Operating System v4.0 initialized")
+        logger.info("SPARK AI Operating System v2.0 initialized")
 
     def _register_default_tools(self) -> None:
         tools = {
@@ -598,7 +598,7 @@ class SparkOS:
         return self.dashboard.render_text()
 
     def shutdown(self) -> None:
-        logger.info("Shutting down SPARK AI Operating System v4.0...")
+        logger.info("Shutting down SPARK AI Operating System v2.0...")
         self._running = False
         self.continuous_loop.stop()
         self.voice_loop.stop()
@@ -610,4 +610,4 @@ class SparkOS:
         self.sandbox.cleanup()
         self.audit.log("system_shutdown", "spark", "shutdown_complete")
         Container.reset()
-        logger.info("SPARK v4.0 shutdown complete")
+        logger.info("SPARK v2.0 shutdown complete")

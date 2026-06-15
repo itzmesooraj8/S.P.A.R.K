@@ -1,5 +1,5 @@
 """
-S.P.A.R.K. — AI Operating System v2.0
+S.P.A.R.K. — AI Operating System
 Main entry point with interactive CLI.
 """
 

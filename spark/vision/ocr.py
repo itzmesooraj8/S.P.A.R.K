@@ -19,6 +19,12 @@ class VisionOCR:
     def __init__(self) -> None:
         self._backend = None
         self._reader = None
+        self._initialized = False
+
+    def _ensure_initialized(self) -> None:
+        if self._initialized:
+            return
+        self._initialized = True
         self._initialize_backend()
 
     def _initialize_backend(self) -> None:
@@ -53,6 +59,7 @@ class VisionOCR:
 
     def extract_text(self, image_path: str) -> str:
         """Extract all text from an image."""
+        self._ensure_initialized()
         if self._backend == "easyocr":
             return self._extract_easyocr(image_path)
         elif self._backend == "tesseract":
@@ -63,6 +70,7 @@ class VisionOCR:
 
     def extract_with_positions(self, image_path: str) -> list[dict[str, Any]]:
         """Extract text with bounding box positions."""
+        self._ensure_initialized()
         if self._backend == "easyocr":
             return self._extract_easyocr_detailed(image_path)
         elif self._backend == "paddleocr":
