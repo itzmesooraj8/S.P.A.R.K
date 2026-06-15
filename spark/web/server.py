@@ -6,9 +6,12 @@ import asyncio
 import json
 import logging
 import time
+from pathlib import Path
 from typing import Any
 
 logger = logging.getLogger("spark.web.server")
+
+DASHBOARD_DIR = Path(__file__).parent / "dashboard"
 
 
 def create_app(spark_os=None):
@@ -16,6 +19,8 @@ def create_app(spark_os=None):
     try:
         from fastapi import FastAPI, WebSocket, WebSocketDisconnect
         from fastapi.middleware.cors import CORSMiddleware
+        from fastapi.staticfiles import StaticFiles
+        from fastapi.responses import FileResponse
     except ImportError:
         logger.error("FastAPI not installed: pip install fastapi uvicorn")
         return None
@@ -24,6 +29,13 @@ def create_app(spark_os=None):
     app.add_middleware(CORSMiddleware, allow_origins=["*"], allow_methods=["*"], allow_headers=["*"])
 
     _connections: list[WebSocket] = []
+
+    @app.get("/")
+    async def serve_index():
+        index_path = DASHBOARD_DIR / "index.html"
+        if index_path.exists():
+            return FileResponse(str(index_path))
+        return {"error": "Dashboard not found"}
 
     @app.get("/api/status")
     async def get_status():
@@ -113,7 +125,10 @@ def create_app(spark_os=None):
         except WebSocketDisconnect:
             _connections.remove(websocket)
         except Exception:
-            _connections.remove(websocket)
+            if websocket in _connections:
+                _connections.remove(websocket)
+
+    app.mount("/static", StaticFiles(directory=str(DASHBOARD_DIR)), name="static")
 
     return app
 
