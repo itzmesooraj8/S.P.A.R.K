@@ -44,7 +44,8 @@ class DesktopIntelligence:
         "slack": "slack.exe",
         "teams": "teams.exe",
         "zoom": "zoom.exe",
-        "telegram": "telegram.exe",
+        "telegram": r"C:\Users\itzme\AppData\Roaming\Telegram Desktop\Telegram.exe",
+        "telegram desktop": r"C:\Users\itzme\AppData\Roaming\Telegram Desktop\Telegram.exe",
         "whatsapp": "whatsapp.exe",
         "obsidian": "obsidian.exe",
         "notion": "notion.exe",
@@ -66,8 +67,13 @@ class DesktopIntelligence:
             try:
                 if exe.endswith(":"):
                     os.startfile(exe)
-                else:
-                    subprocess.Popen(exe, shell=False)
+                    return {"success": True, "app": app_name, "exe": exe}
+
+                if os.path.exists(exe):
+                    subprocess.Popen([exe], shell=False)
+                    return {"success": True, "app": app_name, "exe": exe}
+
+                subprocess.Popen(f'start {exe}', shell=True)
                 return {"success": True, "app": app_name, "exe": exe}
             except Exception as exc:
                 return {"success": False, "error": f"Failed to open {app_name}: {exc}"}

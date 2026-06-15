@@ -1,4 +1,4 @@
-"""STT — Speech-to-Text with Whisper and hallucination filtering."""
+"""STT — Speech-to-Text using faster-whisper with hallucination filtering."""
 
 import logging
 import os
@@ -28,27 +28,29 @@ WHISPER_HALLUCINATIONS = {
 
 
 class SparkEars:
-    """Speech-to-Text using Whisper with hallucination filtering."""
+    """Speech-to-Text using faster-whisper with hallucination filtering."""
 
     def __init__(self) -> None:
         self._model = None
+        self._model_name = "tiny"
 
     def _get_model(self) -> Any:
         if self._model is None:
             try:
-                import whisper
-                self._model = whisper.load_model("base")
-                logger.info("Whisper model loaded")
+                os.environ["HF_HUB_DISABLE_SYMLINKS_WARNING"] = "1"
+                from faster_whisper import WhisperModel
+                self._model = WhisperModel(self._model_name, device="cpu", compute_type="int8")
+                logger.info("faster-whisper model loaded: %s", self._model_name)
             except ImportError:
-                logger.warning("whisper not installed: pip install openai-whisper")
+                logger.warning("faster-whisper not installed: pip install faster-whisper")
                 return None
             except Exception as exc:
-                logger.warning("Whisper load failed: %s", exc)
+                logger.warning("faster-whisper load failed: %s", exc)
                 return None
         return self._model
 
     def listen(self, duration: int = 5) -> str | None:
-        """Listen for speech and return transcription."""
+        """Listen to microphone and transcribe speech."""
         model = self._get_model()
         if model is None:
             return None
@@ -59,13 +61,11 @@ class SparkEars:
 
             chunk = 1024
             sample_rate = 16000
-            format = pyaudio.paInt16
-            channels = 1
 
             p = pyaudio.PyAudio()
             stream = p.open(
-                format=format,
-                channels=channels,
+                format=pyaudio.paInt16,
+                channels=1,
                 rate=sample_rate,
                 input=True,
                 frames_per_buffer=chunk,
@@ -82,8 +82,8 @@ class SparkEars:
 
             audio_data = np.frombuffer(b"".join(frames), dtype=np.int16).astype(np.float32) / 32768.0
 
-            result = model.transcribe(audio_data, language="en")
-            raw_text = result.get("text", "")
+            segments, _ = model.transcribe(audio_data, language="en", beam_size=1)
+            raw_text = " ".join([segment.text for segment in segments])
 
             return self._filter(raw_text)
 
