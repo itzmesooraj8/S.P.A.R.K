@@ -237,7 +237,7 @@ class SparkOS:
             "web_search": lambda query: self.browser.search(query),
             "open_url": lambda url: self.browser.open_url(url),
             "take_screenshot": lambda: self.desktop.take_screenshot(),
-            "open_application": lambda app: self.desktop.open_application(app),
+            "open_application": lambda app: self.desktop_intel.open_application(app),
             "type_text": lambda text: self.desktop.type_text(text),
             "read_clipboard": lambda: self.desktop.get_clipboard(),
             "write_clipboard": lambda text: self.desktop.set_clipboard(text),
@@ -398,7 +398,17 @@ class SparkOS:
                 return {"reply": f"Known skill: {skill.name} ({skill.use_count} uses, {skill.success_rate:.0%} success)", "action": "skill_found"}
             return {"reply": f"Skill not found. I can learn: {user_input}", "action": "skill_learn"}
 
-        return {"reply": f"Action received: {user_input}", "action": "acknowledge"}
+        if any(w in lower for w in ["weather", "temperature", "forecast", "rain"]):
+            location = user_input
+            for word in ["what", "is", "the", "weather", "in", "today", "current", "tell", "me", "like"]:
+                location = location.replace(word, "").strip()
+            location = location.strip() or "your location"
+            return await self._handle_general(f"What is the current weather in {location}? Give temperature, conditions, and a brief forecast.")
+
+        if any(w in lower for w in ["news", "headline", "what's happening", "whats happening"]):
+            return await self._handle_news(user_input)
+
+        return {"reply": f"I received your command. How would you like me to proceed?", "action": "acknowledge"}
 
     async def _handle_memory(self, user_input: str) -> dict[str, Any]:
         lower = user_input.lower()

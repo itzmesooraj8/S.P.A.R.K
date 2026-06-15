@@ -2,7 +2,6 @@
 
 import logging
 import os
-import tempfile
 from typing import Any
 
 logger = logging.getLogger("spark.audio.stt")
@@ -71,6 +70,10 @@ class SparkEars:
                 frames_per_buffer=chunk,
             )
 
+            # Discard first 0.5s to flush stale buffer
+            for _ in range(int(sample_rate / chunk * 0.5)):
+                stream.read(chunk, exception_on_overflow=False)
+
             frames = []
             for _ in range(int(sample_rate / chunk * duration)):
                 data = stream.read(chunk, exception_on_overflow=False)
@@ -81,6 +84,11 @@ class SparkEars:
             p.terminate()
 
             audio_data = np.frombuffer(b"".join(frames), dtype=np.int16).astype(np.float32) / 32768.0
+
+            # Skip if audio is effectively silent (RMS below threshold)
+            rms = np.sqrt(np.mean(audio_data ** 2))
+            if rms < 0.002:
+                return None
 
             segments, _ = model.transcribe(audio_data, language="en", beam_size=1)
             raw_text = " ".join([segment.text for segment in segments])
